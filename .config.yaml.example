@@ -1,0 +1,19 @@
+# Copy this file to .config.yaml and edit the model catalogue for this installation.
+models:
+  - id: gpt-5.6-luna
+    label: GPT 5.6 Luna
+    platform: cliproxy
+  - id: gemini-3.5-flash
+    label: Gemini 3.5 Flash
+    platform: gemini
+  - id: gemini-3.6-flash
+    label: Gemini 3.6 Flash
+    platform: gemini
+  - id: deepseek/deepseek-v4-flash-0731
+    label: DeepSeek V4 Flash
+    platform: llm
+
+embeddingModel:
+  id: gemini-embedding-2
+  label: Gemini Embedding 2
+  platform: gemini

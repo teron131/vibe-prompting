@@ -1,19 +1,13 @@
 ---
 name: design-agent-prompt
-description: Draft, review, simplify, or reorganize prompts for configurable business agents. Use when defining an agent's audience and outcome, supported scope, language handling, clarification and refusal behavior, file or tool routing, trusted sources, or expected answer quality before validating the result with the standalone agent runner.
+description: Draft, review, simplify, or reorganize prompt text. Use when defining an agent's audience and outcome, supported scope, language handling, clarification and refusal behavior, tool guidance, trusted sources, or expected answer quality.
 ---
 
 # Design an Agent Prompt
 
-Write business instructions, not code, a persona essay, or a catalogue of every imaginable case. Read the current profile, prompt, enabled tools, and runtime behavior before proposing changes.
+Work directly on the prompt text. Write useful instructions, not code, a persona essay, or a catalogue of every imaginable case. Read the current prompt and only the runtime facts needed to avoid promising unavailable behavior.
 
-## Use the Canonical Artifacts
-
-Treat the local Agent Profile as the editable unit, not a standalone prompt string. Keep structured settings in its JSON or YAML profile, keep the long role prompt in the referenced Markdown file, and keep project-specific checkpoint definitions in the referenced checkpoint file. Use the schemas exported by `src/vibe-prompting/evaluation` when code is available; do not create a parallel profile or scoring shape inside the skill.
-
-The profile owns its prompt reference, model pool, enabled tool descriptions, loop limit, evaluator definition file, and checkpoint file. Evaluation cases and model-role assignments belong to an Evaluation Plan. Tool implementations and arbitrary application code are not prompt-editing artifacts.
-
-When drafting from freestyle intent, produce the smallest coherent profile and prompt first. Select only relevant definitions from the configured checkpoint pack, then rewrite their question, criteria, applicability, anchors, weights, and hard-gate policy for the actual agent. The defaults are a starting vocabulary, not a universal rubric.
+This skill owns prompt-design judgment and prompt edits. It does not define an application data model, evaluator schema, backend workflow, target adapter, or Langfuse contract. Runtime configuration is evidence about what the prompt may ask the agent to do, not a prompt-design concept to generalize.
 
 ## Build the Prompt
 
@@ -48,7 +42,7 @@ Omit the language gate when the agent has no language restriction. Reorder only 
 
 ## Check the Runtime Boundary
 
-A prompt gate is a model instruction, not technical enforcement. If language, scope, safety, or data handling must be guaranteed, identify the application-level router, valWhaidator, permission, or policy that enforces it.
+A prompt gate is a model instruction, not technical enforcement. If language, scope, safety, or data handling must be guaranteed, identify the application-level router, validator, permission, or policy that enforces it.
 
 Confirm that the model can detect the state named by the prompt. For example, “if a file is attached” is unreliable when the runtime supplies a search tool but does not clearly tell the model that an attachment exists. Treat repeated attachment misses, unavailable tools, stale sources, and provider-specific behavior as possible runtime or model problems before adding more prompt text.
 
@@ -68,8 +62,6 @@ When the user is still deciding whether a prompt should change, report the findi
 
 ## Validate
 
-After drafting or materially changing a prompt, use the repo-local `agent-test-bench` skill. Define expected behavior before running cases, test changed behavior three times in fresh chats, inspect actual tool calls as well as final answers, and distinguish correctness from consistency. Change the prompt only when repeated evidence exposes a meaningful prompt problem.
+After drafting or materially changing a prompt, hand the prompt and the changed behavior to the repo-local `agent-test-bench` skill. That skill owns cases, repetitions, runner operation, trace inspection, and result reporting. Do not import or invoke the Prompting application backend for this workflow.
 
-Represent each judgment as a canonical `CheckpointResult`: `fail`, `partial`, `pass`, `unknown`, or `not_applicable`, projected to `0`, `0.5`, `1`, or `null`. Allow `partial` only when the configured checkpoint has a deliberate partial anchor. Missing evidence is `unknown`; only project configuration can make a checkpoint `not_applicable`. Include concise evidence references, suspected ownership, and evaluator identity. Review hard-gate failures and unknown hard gates separately from the weighted average.
-
-Before editing again, compare the exact artifact revisions and attribute the failure to the profile, model, runtime, tool, data, case, or `unclear`. Do not add prompt text to compensate for a runtime, tool, data, or test-case failure.
+Use the returned evidence to decide whether another prompt edit is warranted. Before editing again, determine whether the problem belongs to the prompt, model, runtime, tool, source data, or test case. Do not add prompt text to compensate for a runtime, tool, data, or test-case failure.

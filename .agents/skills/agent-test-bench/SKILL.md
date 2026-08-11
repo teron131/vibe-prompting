@@ -7,27 +7,15 @@ description: Run and inspect the repository's standalone BuildingAI agent tests.
 
 Obey the repository `AGENTS.md` scope. Use the existing runner rather than rebuilding application services or authentication.
 
+This skill owns test design, runner operation, repeated execution, trace inspection, and evidence reporting for the existing standalone bench. It does not own prompt-design principles or the Prompting application backend. Use `design-agent-prompt` for prompt edits, and do not import backend clients, target protocols, evaluator workflows, or application schemas into this bench workflow.
+
 ## Prepare a Test
 
-1. Read the selected canonical Agent Profile and its referenced Markdown prompt, evaluator file, and checkpoint file. Confirm the runtime configuration path explicitly before executing the selected Target Agent.
+1. Read the JSON configuration loaded by `test_agent.ts`, select the `Default` configuration or a named profile, and resolve its `rolePromptFile` relative to that JSON file.
 2. Change ordinary settings in the JSON and edit long role prompts in their referenced Markdown files. Restart the standalone CLI or UI to reload prompt edits; no manual sync step is required.
 3. Keep each run focused on one question or configuration difference so its output and trace remain attributable.
 4. Keep local credentials in the repository `.env`; the runner loads it automatically without overriding variables already exported by the shell. CLIProxyAPI chat requires `CLIPROXYAPI_API_KEY` or the `OPENAI_API_KEY` fallback. Vercel models require `AI_GATEWAY_API_KEY` or `VERCEL_OIDC_TOKEN`. File-backed knowledge-base tests read `GEMINI_API_KEY` from the process environment. Exa search uses `EXA_API_KEY` when present and otherwise uses the hosted server's free allowance. Langfuse is optional and activates when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are present; `LANGFUSE_BASE_URL` selects a non-default host.
 5. Source `~/.zshrc` before a run launched from a non-interactive tool shell so its exported credentials are available; do not copy shell-managed keys into repository files.
-
-## Use Canonical Cases and Checkpoints
-
-Represent a scripted input as a canonical `TestCase`: normalized messages, optional file references, expected outcome, applicable checkpoint identifiers, and only useful metadata. One-turn example strings may remain raw during onboarding, but convert them to Test Cases before repeatable execution. Use an `EvaluationPlan` to select local strings, canonical cases, or an optional Langfuse dataset; assign available models to target and evaluator roles; and set repetitions, concurrency, and budgets explicitly.
-
-Score every applicable case and checkpoint independently with the canonical `CheckpointResult` shape:
-
-- `fail` projects to `0`, `partial` to `0.5`, and `pass` to `1`.
-- Use `partial` only when the checkpoint defines a partial anchor.
-- Use `unknown` with a reason when required evidence is missing; do not guess.
-- Use `not_applicable` only when the project checkpoint configuration marks the aspect inapplicable.
-- Attach concise message, tool-event, trace, or artifact evidence and attribute the suspected owner as profile, model, runtime, tool, data, case, or unclear.
-
-Aggregate only numeric results with the configured checkpoint weights. Report hard-gate failures and unknown hard gates separately so neither can disappear into a high average. Bind every recorded result to the exact artifact revision ID and content hash used for the run.
 
 ## Choose Test Depth
 
@@ -108,11 +96,11 @@ Run every selected case three times in separate new chats with the same profile,
 - **2/3 passed:** Inconsistent; report the difference and investigate before changing the prompt.
 - **0-1/3 passed:** Failed or unreliable for this test batch.
 
-Judge each run against the predefined expected behaviour and configured checkpoints, then record consistency separately. Three similar wrong answers are a consistent failure, not a stable success. Inspect actual tool calls and the final answer rather than scoring fluency alone. Change the prompt only when repeated evidence exposes a meaningful profile problem; distinguish it from a model, runtime, tool, data, or case problem.
+Judge each run against the predefined expected behaviour, then record consistency separately. Three similar wrong answers are a consistent failure, not a stable success. Inspect actual tool calls and the final answer rather than scoring fluency alone. Change the prompt only when repeated evidence exposes a meaningful prompt problem; distinguish it from a model, runtime, tool, data, or case problem.
 
-## Improve General Prompt Guidance
+## Return Prompt Findings
 
-After each material test batch, actively review and improve the repo-local `design-agent-prompt` skill when the evidence reveals a reusable prompting lesson. Generalize the lesson across agent types and runtimes instead of copying one profile's domain facts, raw test cases, model or provider quirks, or one-off workarounds. Add guidance only when it would materially improve how future prompts are drafted or reviewed; keep profile-specific findings in the test logbook. Validate `design-agent-prompt` after changing it.
+When repeated evidence identifies a prompt problem, report the smallest demonstrated prompt issue and hand it back to `design-agent-prompt`. Do not edit prompting guidance, invent a reusable evaluator contract, or turn one profile's domain facts, raw cases, model behavior, provider quirks, or one-off workaround into a general rule from inside the bench workflow.
 
 ## Keep a Concise Logbook
 
@@ -133,7 +121,7 @@ Use Langfuse as raw supporting evidence for the fields it actually records. Do n
 Run one terminal turn:
 
 ```bash
-pnpm exec tsx test_agent.ts PROFILE MESSAGE
+node test_agent.ts PROFILE MESSAGE
 ```
 
 Use the CLI for a one-turn case. Use the UI for a scripted multi-turn workflow.
@@ -141,13 +129,13 @@ Use the CLI for a one-turn case. Use the UI for a scripted multi-turn workflow.
 Select another supported model:
 
 ```bash
-pnpm exec tsx test_agent.ts --model MODEL PROFILE MESSAGE
+node test_agent.ts --model MODEL PROFILE MESSAGE
 ```
 
 Start the local browser UI:
 
 ```bash
-pnpm exec tsx test_agent.ts --ui
+node test_agent.ts --ui
 ```
 
 Profile and model are selectable in the page. Supplying `PROFILE` or `--model MODEL` only chooses the initial selection.
@@ -155,7 +143,7 @@ Profile and model are selectable in the page. Supplying `PROFILE` or `--model MO
 Attach one or more UTF-8 text files as an in-memory knowledge base:
 
 ```bash
-pnpm exec tsx test_agent.ts --file PATH --file PATH PROFILE MESSAGE
+node test_agent.ts --file PATH --file PATH PROFILE MESSAGE
 ```
 
 Open the localhost URL printed in the terminal. The UI uses a dynamically allocated free port. Use the model selector for comparisons and reset the conversation between independent tests.
