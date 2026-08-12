@@ -1,3 +1,3 @@
-/** Exposes the intentional public surface of the LangGraph Evaluator Agent. */
+/** Publishes the compiled evaluator graph as the LangGraph application entrypoint. */
 
-export {};
+export { evaluatorGraph } from "./graph.ts";

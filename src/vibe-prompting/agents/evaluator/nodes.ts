@@ -1,3 +1,3 @@
-/** Composes evaluation operations as deterministic, adapter-backed, or LangChain-assisted graph nodes. */
+/** Keeps Target execution, judging, and result recording separate from graph topology. */
 
 export {};

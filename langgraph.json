@@ -1,0 +1,8 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["."],
+  "env": ".env",
+  "graphs": {
+    "evaluator": "./src/vibe-prompting/agents/evaluator/graph.ts:evaluatorGraph"
+  }
+}

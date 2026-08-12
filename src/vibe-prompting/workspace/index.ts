@@ -1,3 +1,3 @@
-/** Exposes the intentional public operations for working with a local prompt workspace. */
+/** Publishes prompt-workspace operations while keeping path safety and revision storage internal. */
 
 export {};

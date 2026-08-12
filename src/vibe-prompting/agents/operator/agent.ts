@@ -1,3 +1,3 @@
-/** Builds the neutral ReAct Operator over bounded workspace and evaluation tools. */
+/** Hosts the neutral prompt-editing worker separately from evaluation and Target execution. */
 
 export {};

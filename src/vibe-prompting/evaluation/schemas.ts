@@ -1,4 +1,4 @@
-/** Defines structured LLM-judge outputs and reusable score-result types. */
+/** Defines the persistence-independent score contract shared by judges and evaluator workflows. */
 
 import { z } from "zod";
 
@@ -26,7 +26,6 @@ export const booleanOutputSchema = z.object({
   value: z.boolean().describe("The binary evaluation result."),
 });
 
-/** Creates a structured-output schema restricted to the configured categories. */
 export function createCategoricalOutputSchema<
   const CATEGORIES extends readonly [string, ...string[]],
 >(categories: CATEGORIES) {
@@ -37,7 +36,6 @@ export function createCategoricalOutputSchema<
   });
 }
 
-/** Creates a structured-output schema restricted to the configured numeric range. */
 export function createNumericOutputSchema(minValue: number, maxValue: number) {
   return z.object({
     comment: commentSchema,

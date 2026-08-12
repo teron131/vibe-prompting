@@ -1,4 +1,4 @@
-/** Defines the intentional public exports of the vibe-prompting backend package. */
+/** Publishes the supported backend surface while keeping evaluator composition and workspace internals private. */
 
 export * from "./agents/target/index.ts";
 export * from "./clients/index.ts";

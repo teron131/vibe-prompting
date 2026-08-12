@@ -1,3 +1,3 @@
-/** Provides backend-wide logging helpers without owning evaluation or agent policy. */
+/** Reserves shared logging mechanics without mixing them into evaluation or agent policy. */
 
 export {};

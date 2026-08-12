@@ -1,4 +1,4 @@
-/** Runs model-backed judges with structured outputs while leaving ordering, blocking, aggregation, and persistence to the evaluator workflow. */
+/** Runs structured-output LLM judges while leaving orchestration, gates, and persistence to their owners. */
 
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { type BaseMessageLike, SystemMessage } from "@langchain/core/messages";
@@ -23,7 +23,6 @@ export type LlmJudgeOptions = {
 const INVALID_NUMERIC_RANGE_MESSAGE =
   "Numeric judge range must contain finite values with minValue below maxValue.";
 
-/** Owns the configured judge model and rubric, invokes native structured output, and returns a typed score result. */
 export abstract class LlmJudge<VALUE, TYPE extends JudgeScoreType> {
   abstract readonly dataType: TYPE;
   readonly instructions: string;
@@ -38,7 +37,6 @@ export abstract class LlmJudge<VALUE, TYPE extends JudgeScoreType> {
     this.name = requireText(name, "Judge name");
   }
 
-  /** Evaluates native LangChain messages and preserves reasoning and evidence alongside the score. */
   async evaluate(
     messages: BaseMessageLike[],
     options?: Partial<RunnableConfig>,
@@ -54,7 +52,6 @@ export abstract class LlmJudge<VALUE, TYPE extends JudgeScoreType> {
   }
 }
 
-/** Produces a boolean score suitable for binary checks. */
 export class BooleanJudge extends LlmJudge<boolean, "BOOLEAN"> {
   readonly dataType = "BOOLEAN" as const;
   protected readonly outputSchema = booleanOutputSchema;
@@ -69,7 +66,6 @@ export type CategoricalJudgeOptions<CATEGORIES extends readonly [string, ...stri
     categories: CATEGORIES;
   };
 
-/** Produces one label from an explicit set and exposes the allowed categories to callers. */
 export class CategoricalJudge<
   const CATEGORIES extends readonly [string, ...string[]],
 > extends LlmJudge<CATEGORIES[number], "CATEGORICAL"> {
@@ -90,7 +86,6 @@ export type NumericJudgeOptions = LlmJudgeOptions & {
   minValue: number;
 };
 
-/** Produces a bounded number and exposes the configured range to callers. */
 export class NumericJudge extends LlmJudge<number, "NUMERIC"> {
   readonly dataType = "NUMERIC" as const;
   readonly maxValue: number;

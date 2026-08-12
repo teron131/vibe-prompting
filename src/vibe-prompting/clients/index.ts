@@ -1,4 +1,4 @@
-/** Exposes configured factories that return native LangChain model clients. */
+/** Publishes configured client factories while keeping provider routing inside each client owner. */
 
 export { createEmbeddingModel, type EmbeddingModelOptions } from "./embedding.ts";
 export { createLangfuseClient, createLangfuseTelemetry } from "./langfuse.ts";

@@ -1,3 +1,3 @@
-/** Owns the Operator's default instructions and UX-specific prompt customization. */
+/** Keeps Operator behavior and UI guidance versionable outside its runtime implementation. */
 
 export {};

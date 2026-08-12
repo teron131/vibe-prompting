@@ -1,3 +1,3 @@
-/** Defines tools for discovering and reading the prompt-workspace skills available to an agent. */
+/** Keeps skill discovery and reading scoped to the configured prompt workspace. */
 
 export {};

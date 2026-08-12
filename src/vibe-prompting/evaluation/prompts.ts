@@ -1,3 +1,3 @@
-/** Owns versionable instructions used by model-backed evaluators. */
+/** Keeps judge instructions versionable outside judge execution and use-case configuration. */
 
 export {};

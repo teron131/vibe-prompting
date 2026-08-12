@@ -1,3 +1,3 @@
-/** Connects the Evaluator Agent to Langfuse Experiment Runner operations and result summaries. */
+/** Adapts completed evaluator runs to Langfuse experiments without coupling judges to persistence. */
 
 export {};
