@@ -1,5 +1,6 @@
 /** Defines the intentional public exports of the vibe-prompting backend package. */
 
+export * from "./agents/target/index.ts";
 export * from "./clients/index.ts";
 export {
   CONFIG_PATH,
