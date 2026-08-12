@@ -13,4 +13,5 @@ export {
   type PlatformId,
   type RuntimeConfig,
 } from "./config.ts";
+export * from "./evaluation/index.ts";
 export * from "./tools/index.ts";
