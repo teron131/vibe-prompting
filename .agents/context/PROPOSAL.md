@@ -23,7 +23,7 @@ Evaluator schemas and workflow complexity should be extracted from real applicat
 - **Prompt:** The editable string being tested. It may be supplied directly or loaded from Markdown, but its storage layout is not part of the evaluation contract.
 - **Model clients:** Resolve available chat and embedding providers through LangChain while keeping provider configuration at the external boundary.
 - **Target protocol:** Runs prompt text with normalized messages and a requested model identifier. A Target implementation owns its framework, tools, loop mechanics, and configuration, then returns produced messages, the actual model identifier, and best-effort metadata.
-- **Evaluation:** Applies LLM-backed judgments to observed runs through boolean, categorical, or numeric outputs. Every result may include concise reasoning and evidence, while free-form text is supporting feedback rather than the primary score.
+- **Evaluation:** Applies LLM-backed judgments to observed runs through boolean, categorical, numeric, text, or correction outputs. Comparative results use structured score types, while text feedback and corrected outputs remain explicit standalone results.
 - **Evaluator workflow:** Coordinates cases, Target runs, evaluator calls, repetitions, and Langfuse recording. LangGraph implements the workflow when graph-shaped control is useful; LangChain supplies model and agent helpers where needed.
 - **Operator:** A later neutral interface for creating or editing prompt text under user direction. It is separate from evaluation and is not inherently an optimizer.
 - **Langfuse:** Owns published datasets, experiments, traces, scores, annotations, comparisons, and complete run history. The evaluator runner integrates judges with the Langfuse SDK; individual judge classes remain independent from experiment orchestration and persistence.
@@ -33,10 +33,11 @@ Evaluator schemas and workflow complexity should be extracted from real applicat
 - Start with one thin end-to-end run and one or two LLM judges over observable evidence.
 - Require concise evidence for judgments rather than relying on an unexplained overall vibe.
 - Cluster judges by their primary output: boolean for binary checks, categorical for explicit qualitative labels, and numeric for bounded quantitative judgments.
+- Use text for standalone qualitative feedback and correction for a proposed replacement output rather than forcing either into a comparative score.
 - Treat blocking gates as evaluator-workflow policy applied to a judge result, not as another judge family.
 - Keep judge reasoning in score comments and evidence metadata rather than using unaggregatable text as the primary score.
 - Add datasets, repetitions, aggregation, weighting, gates, unknown states, attribution, and workflow routing only when concrete runs require them.
-- Keep use-case-specific intention, language, scope, and tool expectations in evaluator configuration rather than hard-coding one universal rubric.
+- Keep use-case-specific intention, language, scope, and tool expectations in evaluator configuration rather than hard-coding universal evaluation criteria.
 - Treat models as an available pool and assign them per run rather than permanently binding models to roles.
 - Use scores for comparison and prioritization, not as claims of scientific objectivity.
 
@@ -55,7 +56,7 @@ Evaluator schemas and workflow complexity should be extracted from real applicat
 - Another Langfuse dashboard, dataset editor, trace viewer, annotation system, or prompt registry.
 - A scientific evaluation framework with mandatory calibration, large judge ensembles, or statistical ceremony.
 - Deterministic and LLM evaluators forced behind one generic mechanism when this application currently requires only LLM judges.
-- A universal rubric forced onto every use case.
+- Universal evaluation criteria forced onto every use case.
 - Teacher/student terminology or distillation machinery.
 - Provider-specific Target contracts or permanently fixed model roles.
 - Filesystem, revision, Operator, UI, or MCP machinery inside the evaluation kernel.

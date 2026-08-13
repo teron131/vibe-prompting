@@ -128,8 +128,8 @@ Usage, latency, trace references, provider details, and other metadata are best 
 ### Boundary
 
 - Judges score already-produced inputs and outputs independently of Target execution.
-- Judges use boolean, categorical, or numeric structured outputs.
-- Free-form reasoning and evidence support the score rather than becoming a primary text score.
+- Comparative judges use boolean, categorical, or numeric structured outputs.
+- Text scores hold standalone qualitative feedback, corrections hold proposed replacement output, and score comments and evidence explain either result.
 - Use-case-specific instructions, categories, examples, and expectations remain configurable.
 - Blocking and passing behavior belongs to workflow policy rather than another judge family.
 - Judge classes do not own Langfuse clients, experiments, score persistence, or telemetry lifecycle.
@@ -142,7 +142,8 @@ Usage, latency, trace references, provider details, and other metadata are best 
 - [x] Keep blocking or passing policy outside the judge class hierarchy.
 - [x] Add structured result fields only when they have clear comparison or routing consumers.
 - [x] Keep use-case-specific criteria and examples in judge input or configuration.
-- [ ] Select the first application-specific judges and rubrics from a concrete prompt-evaluation case.
+- [x] Accept a non-empty invocation-supplied criterion list with Boolean, categorical, numeric, text, and correction score contracts.
+- [ ] Select the first application-specific judges and evaluation criteria from a concrete prompt-evaluation case.
 - [ ] Avoid semantic subclasses such as `LanguageGate` or `IntentionGate` until repeated usage proves that they own behavior beyond configuration.
 
 ### Primitive Demo
@@ -169,8 +170,8 @@ Usage, latency, trace references, provider details, and other metadata are best 
 - [x] Run the primitive Gemini judge demo through a Langfuse SDK experiment evaluator.
 - [x] Persist judge comments and evidence metadata with their scores.
 - [x] Verify through the Langfuse API that both primitive scores were stored as boolean `false` values.
-- [ ] Add a reusable judge-to-Langfuse evaluator conversion instead of rewriting translation at each usage site.
-- [ ] Add a Langfuse-backed runner that owns experiments, telemetry, score persistence, flushing, and shutdown.
+- [x] Add a reusable judge-to-Langfuse evaluator conversion instead of rewriting translation at each usage site.
+- [x] Add a Langfuse-backed runner that owns experiments, telemetry, score persistence, flushing, and shutdown.
 - [ ] Add an explicit local runner selected only by `LANGFUSE_ENABLED=false`.
 - [ ] Validate Langfuse credentials at startup whenever Langfuse is enabled.
 - [ ] Record prompt text, messages, requested and actual Target model, judge identity, judge instructions, output, and available trace evidence.
@@ -180,7 +181,7 @@ Usage, latency, trace references, provider details, and other metadata are best 
 ### Proof
 
 - [x] Langfuse records retain the correct boolean data type and supporting comment for the primitive examples.
-- [ ] Categorical and numeric judges retain their correct Langfuse score types and constraints.
+- [ ] Categorical, numeric, text, and correction results retain their correct Langfuse score types and constraints.
 - [ ] The same judge runs through either the Langfuse-backed runner or explicit local-only runner without importing Langfuse itself.
 - [ ] Missing Langfuse credentials fail clearly by default, while `LANGFUSE_ENABLED=false` runs without remote persistence.
 - [ ] One headless command evaluates supplied prompt text through a Target and records the run in Langfuse.
@@ -198,10 +199,10 @@ Usage, latency, trace references, provider details, and other metadata are best 
 ### Work
 
 - [ ] Define the first end-to-end state from a concrete prompt, example, Target run, and judge result.
-- [ ] Implement the end-to-end evaluator as a LangGraph workflow once its stages and routing are concrete.
+- [x] Implement the first evaluator pass as a LangGraph workflow while leaving future stages and routing uncommitted.
 - [ ] Make repetitions, model assignments, concurrency, and spend limits explicit run inputs when introduced.
 - [ ] Add aggregation, weighting, hard gates, missing-evidence states, and attribution separately only when real comparisons require them.
-- [ ] Keep use-case-specific intention, language, scope, format, quality, and tool-use criteria in judge configuration.
+- [x] Keep every use-case-specific criterion in per-invocation judge configuration rather than the graph contract.
 - [ ] Keep models assignable per run rather than permanently binding a model to a role.
 - [ ] Keep Exa available but unattached until a verifier has an evidence need it can actually satisfy.
 

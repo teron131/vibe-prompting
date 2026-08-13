@@ -1,14 +1,23 @@
-/** Runs structured-output LLM judges while leaving orchestration, gates, and persistence to their owners. */
+/** Runs structured-output LLM judges while leaving workflow policy and persistence to their owners. */
 
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { type BaseMessageLike, SystemMessage } from "@langchain/core/messages";
+import { type BaseMessageLike, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import type { ZodType } from "zod";
 
 import {
+  buildCriteriaPrompt,
+  buildCriteriaSystemPrompt,
+  type EvaluationSubject,
+} from "./prompts.ts";
+import {
   booleanOutputSchema,
   createCategoricalOutputSchema,
+  createEvaluationReportSchema,
   createNumericOutputSchema,
+  type EvaluationCriteria,
+  evaluationCriteriaSchema,
+  type EvaluationReport,
   type JudgeOutput,
   type JudgeResult,
   type JudgeScoreType,
@@ -19,6 +28,38 @@ export type LlmJudgeOptions = {
   model: BaseChatModel;
   name: string;
 };
+
+export type CriteriaEvaluatorOptions = {
+  criteria: EvaluationCriteria;
+  model: BaseChatModel;
+};
+
+export class CriteriaEvaluator {
+  readonly criteria: EvaluationCriteria;
+  readonly model: BaseChatModel;
+  private readonly outputSchema: ReturnType<typeof createEvaluationReportSchema>;
+
+  constructor({ criteria, model }: CriteriaEvaluatorOptions) {
+    this.criteria = evaluationCriteriaSchema.parse(criteria);
+    this.model = model;
+    this.outputSchema = createEvaluationReportSchema(this.criteria);
+  }
+
+  async evaluate(
+    subject: EvaluationSubject,
+    options?: Partial<RunnableConfig>,
+  ): Promise<EvaluationReport> {
+    return this.model
+      .withStructuredOutput<EvaluationReport>(this.outputSchema)
+      .invoke(
+        [
+          new SystemMessage(buildCriteriaSystemPrompt(this.criteria)),
+          new HumanMessage(buildCriteriaPrompt(subject, this.criteria)),
+        ],
+        options,
+      );
+  }
+}
 
 const INVALID_NUMERIC_RANGE_MESSAGE =
   "Numeric judge range must contain finite values with minValue below maxValue.";
