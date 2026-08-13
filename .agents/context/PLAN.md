@@ -184,13 +184,13 @@ Usage, latency, trace references, provider details, and other metadata are best 
 - [ ] Categorical, numeric, text, and correction results retain their correct Langfuse score types and constraints.
 - [ ] The same judge runs through either the Langfuse-backed runner or explicit local-only runner without importing Langfuse itself.
 - [ ] Missing Langfuse credentials fail clearly by default, while `LANGFUSE_ENABLED=false` runs without remote persistence.
-- [ ] One headless command evaluates supplied prompt text through a Target and records the run in Langfuse.
+- [x] One headless command evaluates supplied prompt text through a Target and records the run in Langfuse.
 
 ## Evaluator Workflow Orchestration
 
 ### Boundary
 
-- The evaluator workflow executes cases, invokes Target adapters and judges, and sends results to the selected runner.
+- The evaluator workflow uses LangGraph as its entrypoint and runs Target tasks and configured judges inside a Langfuse experiment.
 - LangGraph owns explicit stages, state, routing, parallelism, and bounded revisits when those behaviors are concrete.
 - LangChain owns model invocation, structured output, middleware, and agent helpers where useful.
 - Models remain an available pool rather than being permanently assigned to roles.
@@ -198,22 +198,24 @@ Usage, latency, trace references, provider details, and other metadata are best 
 
 ### Work
 
-- [ ] Define the first end-to-end state from a concrete prompt, example, Target run, and judge result.
+- [x] Define the first end-to-end state from a concrete prompt, example, Target run, and judge result.
 - [x] Implement the first evaluator pass as a LangGraph workflow while leaving future stages and routing uncommitted.
-- [ ] Make repetitions, model assignments, concurrency, and spend limits explicit run inputs when introduced.
+- [x] Accept multiple evaluator models per run, retain model attribution on every score, and optionally exclude the Target model from the evaluator pool.
+- [x] Make evaluator-model selection and case concurrency explicit run inputs.
+- [ ] Add repetitions and spend limits only when introduced.
 - [ ] Add aggregation, weighting, hard gates, missing-evidence states, and attribution separately only when real comparisons require them.
 - [x] Keep every use-case-specific criterion in per-invocation judge configuration rather than the graph contract.
-- [ ] Keep models assignable per run rather than permanently binding a model to a role.
+- [x] Keep models assignable per run rather than permanently binding a model to a role.
 - [ ] Keep Exa available but unattached until a verifier has an evidence need it can actually satisfy.
 
 ### First End-to-End Slice
 
 ```text
 Prompt text + one example + requested model
-→ Application-owned Target
-→ One LLM judge returns a structured result
-→ Selected runner records or returns the result
-→ Target trace and score are inspected against the observable evidence
+→ Evaluator graph starts the Langfuse experiment
+→ Application-owned Target adapter runs each case
+→ Configured LLM judges return structured scores
+→ Langfuse records the Target trace and attributed scores
 ```
 
 ### Proof

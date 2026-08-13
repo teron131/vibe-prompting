@@ -1,4 +1,4 @@
-/** Runs Target tasks through Langfuse experiments and translates the evaluator graph's structured report into native scores. */
+/** Runs Target tasks through Langfuse experiments and converts structured judge reports into native scores. */
 
 import {
   type Evaluation,
@@ -7,6 +7,7 @@ import {
   LangfuseClient,
 } from "@langfuse/client";
 import type { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { z } from "zod";
 
 import { createLangfuseClient, createLangfuseTelemetry } from "../../clients/langfuse.ts";
 import {
@@ -15,7 +16,14 @@ import {
   evaluationCriteriaSchema,
   type EvaluationReport,
 } from "../../evaluation/schemas.ts";
-import { evaluatorGraph } from "./graph.ts";
+import { evaluateCriteria } from "./judge.ts";
+
+export const evaluatorModelsSchema = z
+  .array(z.string().trim().min(1))
+  .min(1)
+  .refine((models) => new Set(models).size === models.length, {
+    message: "Evaluator models must be unique.",
+  });
 
 export type EvaluatorExperimentOptions<
   INPUT = unknown,
@@ -25,7 +33,7 @@ export type EvaluatorExperimentOptions<
   criteria: EvaluationCriteria;
   data: ExperimentItem<INPUT, EXPECTED_OUTPUT, METADATA>[];
   description?: string;
-  evaluatorModel: string;
+  evaluatorModels: string[];
   maxConcurrency?: number;
   metadata?: Record<string, unknown>;
   name: string;
@@ -62,7 +70,7 @@ export class LangfuseExperimentRunner {
     criteria,
     data,
     description,
-    evaluatorModel,
+    evaluatorModels,
     maxConcurrency,
     metadata,
     name,
@@ -71,26 +79,28 @@ export class LangfuseExperimentRunner {
   }: EvaluatorExperimentOptions<INPUT, EXPECTED_OUTPUT, METADATA>) {
     this.start();
     const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
+    const configuredEvaluatorModels = evaluatorModelsSchema.parse(evaluatorModels);
 
     try {
       return await this.client.experiment.run({
         data,
         description,
-        evaluators: [
-          async ({ expectedOutput, input, metadata: itemMetadata, output }) => {
-            const { evaluation } = await evaluatorGraph.invoke({
-              criteria: configuredCriteria,
-              evaluatorModel,
-              expectedOutput,
-              input,
-              metadata: itemMetadata,
-              output,
-            });
-            return toLangfuseEvaluations(evaluation, configuredCriteria);
-          },
-        ],
+        evaluators: configuredEvaluatorModels.map(
+          (evaluatorModel) =>
+            async ({ expectedOutput, input, metadata: itemMetadata, output }) => {
+              const evaluation = await evaluateCriteria({
+                criteria: configuredCriteria,
+                evaluatorModel,
+                expectedOutput,
+                input,
+                metadata: itemMetadata,
+                output,
+              });
+              return toLangfuseEvaluations(evaluation, configuredCriteria, evaluatorModel);
+            },
+        ),
         maxConcurrency,
-        metadata: { ...metadata, evaluatorModel },
+        metadata: { ...metadata, evaluatorModels: configuredEvaluatorModels },
         name,
         runName,
         task,
@@ -117,6 +127,7 @@ export class LangfuseExperimentRunner {
 export function toLangfuseEvaluations(
   report: EvaluationReport,
   criteria: EvaluationCriteria,
+  evaluatorModel: string,
 ): Evaluation[] {
   const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
   const validatedReport = createEvaluationReportSchema(configuredCriteria).parse(report);
@@ -132,9 +143,11 @@ export function toLangfuseEvaluations(
       dataType: result.dataType,
       metadata: {
         criterion: criterion.instructions,
+        criterionName: result.name,
+        evaluatorModel,
         evidence: result.evidence,
       },
-      name: result.name,
+      name: `${result.name}@${evaluatorModel}`,
       value: result.dataType === "BOOLEAN" ? (result.value ? 1 : 0) : result.value,
     };
   });

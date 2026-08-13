@@ -2,9 +2,7 @@
 .pnpm-store/
 docs/
 .playwright-cli/
-agent-test-bench/
-test_agent.html
-test_agent.ts
+*test*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
