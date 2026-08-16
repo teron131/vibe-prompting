@@ -1,6 +1,13 @@
-/** Publishes the supported backend surface while keeping evaluator composition and workspace internals private. */
+/** Publishes the transport-neutral evaluation facade while keeping runtime adapters and workflow internals opt-in. */
 
-export * from "./agents/target/index.ts";
+export * from "./api/index.ts";
+export {
+  allocateTargetRuns,
+  type TargetModelMode,
+  type TargetModels,
+  targetModelModeSchema,
+  type TargetRun,
+} from "./agents/target/model-runs.ts";
 export * from "./clients/index.ts";
 export {
   CONFIG_PATH,

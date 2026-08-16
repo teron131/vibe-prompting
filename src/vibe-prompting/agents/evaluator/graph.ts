@@ -1,7 +1,7 @@
 /** Owns the end-to-end evaluator workflow, including Langfuse experiment execution around Target tasks and criteria scoring. */
 
 import { END, START, StateGraph, StateSchema } from "@langchain/langgraph";
-import type { ExperimentItem, ExperimentResult } from "@langfuse/client";
+import type { ExperimentResult } from "@langfuse/client";
 import { z } from "zod";
 
 import { evaluationCriteriaSchema } from "../../evaluation/schemas.ts";
@@ -13,10 +13,12 @@ export type Target = {
   invoke(input: unknown): PromiseLike<unknown>;
 };
 
-const experimentDataSchema = z.custom<ExperimentItem[]>(
-  (value) => Array.isArray(value) && value.length > 0,
-  "Experiment data must contain at least one item.",
-);
+const evaluatorCaseSchema = z.object({
+  input: z.unknown().refine((input) => input !== undefined, "Case input is required."),
+  expectedOutput: z.unknown().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  criteria: evaluationCriteriaSchema,
+});
 const targetSchema = z.custom<Target>(
   (value) =>
     typeof value === "object" &&
@@ -32,10 +34,9 @@ const targetSchema = z.custom<Target>(
 const experimentResultSchema = z.custom<ExperimentResult>();
 
 const EvaluatorInput = new StateSchema({
-  name: z.string().trim().min(1),
+  name: z.string().trim().min(1).default("evaluation"),
   target: targetSchema,
-  data: experimentDataSchema,
-  criteria: evaluationCriteriaSchema,
+  cases: z.array(evaluatorCaseSchema).min(1),
   judges: judgesSchema,
   skipTargetModel: z.boolean().default(false),
   maxConcurrency: z.number().int().positive().optional(),
@@ -66,9 +67,18 @@ const runExperiment: typeof EvaluatorState.Node = async (state) => {
   defaultRunner ??= new LangfuseExperimentRunner();
   const experiment = await defaultRunner.run({
     name: state.name,
-    data: state.data,
+    data: state.cases.map(({ input, expectedOutput, metadata }, caseIndex) => ({
+      input,
+      expectedOutput,
+      metadata: { ...metadata, caseIndex },
+    })),
     task: async (item) => state.target.invoke(item.input),
-    criteria: state.criteria,
+    criteria: (metadata) => {
+      const caseIndex = requireCaseIndex(metadata);
+      const testCase = state.cases[caseIndex];
+      if (!testCase) throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
+      return testCase.criteria;
+    },
     judges: { model: judgeModels },
     runName: state.runName,
     description: state.description,
@@ -77,6 +87,14 @@ const runExperiment: typeof EvaluatorState.Node = async (state) => {
   });
   return { experiment };
 };
+
+function requireCaseIndex(metadata: Record<string, unknown> | undefined): number {
+  const caseIndex = metadata?.caseIndex;
+  if (typeof caseIndex !== "number" || !Number.isInteger(caseIndex) || caseIndex < 0) {
+    throw new Error("Evaluation case metadata is missing a valid case index.");
+  }
+  return caseIndex;
+}
 
 export const evaluatorGraph = new StateGraph({
   input: EvaluatorInput,

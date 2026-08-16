@@ -30,7 +30,7 @@ export type EvaluatorExperimentOptions<
   name: string;
   data: ExperimentItem<INPUT, EXPECTED_OUTPUT, METADATA>[];
   task: ExperimentTask<INPUT, EXPECTED_OUTPUT, METADATA>;
-  criteria: EvaluationCriteria;
+  criteria: EvaluationCriteria | ((metadata: METADATA | undefined) => EvaluationCriteria);
   judges: Judges;
   runName?: string;
   description?: string;
@@ -75,7 +75,16 @@ export class LangfuseExperimentRunner {
     metadata,
   }: EvaluatorExperimentOptions<INPUT, EXPECTED_OUTPUT, METADATA>) {
     this.start();
-    const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
+    let criteriaMetadata: string[] | "per-item";
+    let resolveCriteria: (metadata: METADATA | undefined) => EvaluationCriteria;
+    if (typeof criteria === "function") {
+      criteriaMetadata = "per-item";
+      resolveCriteria = (metadata) => evaluationCriteriaSchema.parse(criteria(metadata));
+    } else {
+      const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
+      criteriaMetadata = configuredCriteria.map(({ name }) => name);
+      resolveCriteria = () => configuredCriteria;
+    }
     const configuredJudges = judgesSchema.parse(judges);
     const judgeModels = getJudgeModels(configuredJudges);
 
@@ -85,7 +94,9 @@ export class LangfuseExperimentRunner {
         data,
         task,
         evaluators: [
-          async ({ input, output, expectedOutput, metadata: itemMetadata }) => {
+          async (subject) => {
+            const { input, output, expectedOutput, metadata: itemMetadata } = subject;
+            const configuredCriteria = resolveCriteria(itemMetadata);
             const evaluations = await evaluateWithJudges(
               {
                 input,
@@ -106,7 +117,7 @@ export class LangfuseExperimentRunner {
         maxConcurrency,
         metadata: {
           ...metadata,
-          evaluationCriteria: configuredCriteria.map(({ name: criterion }) => criterion),
+          evaluationCriteria: criteriaMetadata,
           judgeModels,
         },
       });

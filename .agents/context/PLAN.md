@@ -2,17 +2,19 @@
 
 ## Objective
 
-Deliver a Langfuse-backed backend that evaluates prompt-driven Target runs through one or more LLM judges while preserving native AI SDK and LangChain message behavior.
+Deliver a transport-neutral Langfuse-backed evaluation API that evaluates prompt-driven Target runs through one or more LLM judges while preserving native AI SDK and LangChain message behavior.
 
 This plan is grouped by work area rather than sequence. A checked item means the behavior exists and has relevant proof; an unchecked item is pending or still needs an end-to-end review.
 
 ## Current Flow
 
 ```text
-Prompt text or complete message history
+evaluate(Target, cases with inline criteria)
+-> Evaluator graph
+-> Prompt text or complete message history
 -> Target generates one response
 -> Langfuse experiment captures each case
--> Judge graph fans out across configured judge models
+-> Judges graph fans out across configured judge models
 -> Each judge evaluates every configured criterion in one structured-output call
 -> Langfuse stores attributed scores, comments, and evidence
 ```
@@ -57,13 +59,13 @@ Prompt text or complete message history
 - [x] Support round-robin case assignment as the default list strategy.
 - [x] Support an `all` strategy that runs every case on every Target model.
 - [x] Keep Target-run allocation in a higher-level caller so the evaluator graph continues to receive one model-specific Target.
-- [ ] Integrate the model-run planner into that higher-level public caller.
+- [ ] Integrate the model-run planner into a backend, CLI, or MCP host that resolves Targets before calling the evaluation API.
 
 ## Criteria and Judges
 
-- [x] Accept a non-empty invocation-supplied criterion list.
+- [x] Accept a non-empty invocation-supplied criterion list for each case.
 - [x] Support Boolean, categorical, numeric, text, and correction result contracts.
-- [x] Validate unique criterion names, unique categories, numeric ranges, and exactly one matching result per criterion.
+- [x] Generate unique internal criterion names from the public case criteria, validate unique categories and numeric ranges, and require exactly one matching result per criterion.
 - [x] Build the judge prompt only from the criterion types actually present.
 - [x] Evaluate all configured criteria in one structured-output call per judge model.
 - [x] Accept one judge model or a unique list without introducing a separate panel abstraction.
@@ -87,7 +89,9 @@ Prompt text or complete message history
 ## Evaluator Graphs
 
 - [x] Expose a simple evaluator graph that wraps one Langfuse experiment.
-- [x] Expose a judge graph that fans one case out to one or more judge models and collects their reports.
+- [x] Expose a judges graph that fans one case out to one or more judge models and collects their reports.
+- [x] Delegate the compact public evaluation API to the evaluator graph rather than maintaining a parallel execution path.
+- [x] Resolve each case's inline criteria inside the evaluator graph's experiment run.
 - [x] Allow the evaluator graph to skip a judge model whose configured ID equals the Target model ID.
 - [x] Keep case concurrency as a public graph input passed to Langfuse.
 - [x] Reuse one process-lifetime Langfuse runner so repeated graph invocations retain the registered telemetry provider.
@@ -100,12 +104,13 @@ Prompt text or complete message history
 - [x] Define the first multi-turn shape as one complete prior message history plus one generated next response.
 - [x] Preserve tool calls and tool-result messages needed for a valid continuation.
 - [x] Avoid a custom replay-loop or conversation-simulator abstraction.
-- [ ] Add a minimal public caller that runs fixed-history N+1 cases through the evaluator graph.
+- [ ] Add a minimal `evaluate()` example that runs fixed-history N+1 cases through the evaluator graph.
 - [ ] Decide how long tool outputs are shortened while preserving `tool_call_id`, tool name, status, and enough evidence for continuation and evaluation.
 
 ## Latest Verification Evidence
 
 - [x] Formatting, lint, typecheck, and deterministic adapter smokes passed after the current adapter simplification.
+- [x] The compact public API passed schema, import-boundary, formatting, lint, and typecheck verification with adapters and graph internals kept opt-in.
 - [x] A live fixed-output Target run through the structural evaluator boundary persisted its input, output, experiment observation, and attributed Boolean score in Langfuse without an expected output.
 - [x] A deterministic smoke preserved parallel LangChain tool calls, matching success and error `ToolMessage` results, native AI SDK messages, and native LangChain messages.
 - [x] Live Gemini 3.6 smokes proved native LangChain invoke and stream continuation, a native AI SDK tool loop, and LangChain-to-AI-SDK continuation with matching call and result IDs.
@@ -120,9 +125,9 @@ Prompt text or complete message history
 
 ## Next Work
 
-1. Add the higher-level caller that expands Target model runs before invoking the evaluator graph.
+1. Add a backend, CLI, or MCP host that resolves Targets and expands model runs before invoking the evaluation API.
 2. Verify categorical, numeric, text, and correction score records through the Langfuse API.
-3. Add the smallest fixed-history N+1 caller after the public invocation shape is stable.
+3. Add the smallest fixed-history N+1 example through the stable public `evaluate()` shape.
 
 ## Open Decisions
 

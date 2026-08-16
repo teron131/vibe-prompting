@@ -1,4 +1,4 @@
-/** Exposes the two native agent-runtime adapters supported by the initial evaluator backend. */
+/** Publishes opt-in runtime adapters separately from the opaque evaluator contract. */
 
 export {
   AiSdkAdapter,

@@ -11,8 +11,8 @@ The product should make useful prompt-review instincts repeatable with little se
 Prompting has three independent surfaces:
 
 - The existing coding-agent baseline uses `design-agent-prompt` to edit prompt Markdown and `agent-test-bench` to run the standalone BuildingAI agent.
-- The application backend runs opaque Targets, LLM judges, LangGraph workflows, and Langfuse experiments without importing either skill or the standalone bench.
-- A later Operator, UI, or MCP interface may call the same backend, but none is required for the evaluation kernel.
+- The application backend exposes one transport-neutral evaluation call over opaque Targets, LLM judges, and Langfuse experiments without importing either skill or the standalone bench.
+- A later Operator, CLI, UI, or MCP interface may call the same backend, but none is required for the evaluation kernel.
 
 ## Evaluation Model
 
@@ -20,7 +20,7 @@ Prompting has three independent surfaces:
 - A Target receives any evaluator case input and returns any judgeable output, while the optional adapters support strings and message histories and expose their configured model ID.
 - Fixed-history N+1 evaluation supplies one complete conversation and generates exactly one next response.
 - Assistant tool calls and matching tool-result messages remain part of the history; long tool results may be shortened, but unmatched calls must not be created by cropping.
-- Each run supplies a list of criteria, and one structured-output call evaluates all criteria for each judge model.
+- Each case keeps its criteria beside its raw input, and one structured-output call evaluates all of that case's criteria for each judge model.
 - A judge model may be supplied as one model or a list, and multiple judges run independently with model attribution on every score.
 - A Target model may be supplied as one model or a list; a higher-level caller expands round-robin or all-model runs before invoking the evaluator graph with one model-specific Target.
 - The workflow may skip a judge whose configured model ID equals the Target model ID.
@@ -32,7 +32,7 @@ Prompting has three independent surfaces:
 1. Keep provider configuration and OpenAI-compatible LangChain clients explicit and independently usable.
 2. Keep the evaluator Target boundary SDK-agnostic while retaining AI SDK and LangChain adapters as optional integration conveniences.
 3. Run invocation-supplied criteria through one or more LLM judges and persist attributed structured results through Langfuse experiments.
-4. Use LangGraph for explicit workflow state and fan-out while keeping the first end-to-end graph simple.
+4. Use `evaluatorGraph` as the backend orchestration surface while keeping graph state out of the public request.
 5. Add reusable datasets, aggregation, disagreement handling, an Operator, UI, or MCP only when concrete usage requires them.
 
 ## What Not to Build
@@ -47,6 +47,6 @@ Prompting has three independent surfaces:
 
 ## Current Direction
 
-The first useful backend is a required Langfuse experiment around an opaque Target invocation and one or more judge models. The evaluator owns only the input-output boundary and model attribution, while optional integrations may preserve native framework behavior outside the graph.
+The first useful backend is `evaluate(target, request)`, which normalizes the compact public contract and delegates the complete experiment workflow to `evaluatorGraph`. The request contains only cases and inline criteria, the result contains plain case evaluations, and optional integrations may preserve native framework behavior outside this boundary.
 
 The existing coding-agent workflow remains a separate manual way to edit and test prompts. A later user-facing interface should call the same backend rather than duplicate evaluation behavior.
