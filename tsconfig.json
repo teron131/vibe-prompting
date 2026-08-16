@@ -9,5 +9,5 @@
     "target": "ES2023",
     "types": ["node"]
   },
-  "include": ["agent-test-bench/**/*.ts", "src/**/*.ts", "tests/**/*.ts", "test_agent.ts"]
+  "include": ["agent-test-bench/**/*.ts", "src/**/*.ts", "tests/**/*.ts", "test_*.ts"]
 }

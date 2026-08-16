@@ -1,57 +1,77 @@
-/** Defines the persistence-independent score contract shared by judges and evaluator workflows. */
+/** Defines the persistence-independent evaluation input and score contracts shared by judges and workflows. */
 
 import { z } from "zod";
 
+export const evaluationSubjectSchema = z.object({
+  input: z.unknown(),
+  output: z.unknown(),
+  expectedOutput: z.unknown().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export type EvaluationSubject = z.infer<typeof evaluationSubjectSchema>;
 export type JudgeScoreType = "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
 
 export type JudgeOutput<VALUE> = {
+  value: VALUE;
   comment: string;
   evidence: string[];
-  value: VALUE;
 };
 
-export type JudgeResult<VALUE, TYPE extends JudgeScoreType> = JudgeOutput<VALUE> & {
-  dataType: TYPE;
+export type JudgeResult<VALUE, TYPE extends JudgeScoreType> = {
   name: string;
-};
+  dataType: TYPE;
+} & JudgeOutput<VALUE>;
 
 const commentSchema = z
   .string()
+  .trim()
   .min(1)
   .describe("Briefly explain how the criterion led to this result.");
 const EVIDENCE_DESCRIPTION =
   "Concrete details from the evaluation record that support the result, or an empty array when none are available.";
-const evidenceSchema = z.array(z.string().min(1)).describe(EVIDENCE_DESCRIPTION);
-
-export const booleanOutputSchema = z.object({
+const evidenceSchema = z.array(z.string().trim().min(1)).describe(EVIDENCE_DESCRIPTION);
+const resultDetails = {
   comment: commentSchema,
   evidence: evidenceSchema,
-  value: z.boolean().describe("Whether the evaluated result satisfies the criterion."),
-});
-
-const criterionFields = {
-  instructions: z.string().trim().min(1),
-  name: z.string().trim().min(1),
 };
 
+export const booleanOutputSchema = z.object({
+  value: z.boolean().describe("Whether the evaluated result satisfies the criterion."),
+  ...resultDetails,
+});
+
+const criterionNameSchema = z.string().trim().min(1);
+const criterionInstructionSchema = z.string().trim().min(1);
+
 const criterionSchema = z.discriminatedUnion("dataType", [
-  z.object({ ...criterionFields, dataType: z.literal("BOOLEAN") }),
   z.object({
-    ...criterionFields,
-    categories: z.array(z.string().trim().min(1)).min(2),
+    name: criterionNameSchema,
+    dataType: z.literal("BOOLEAN"),
+    instruction: criterionInstructionSchema,
+  }),
+  z.object({
+    name: criterionNameSchema,
     dataType: z.literal("CATEGORICAL"),
+    instruction: criterionInstructionSchema,
+    categories: z.array(z.string().trim().min(1)).min(2),
   }),
   z.object({
-    ...criterionFields,
+    name: criterionNameSchema,
     dataType: z.literal("NUMERIC"),
-    maxValue: z.number(),
+    instruction: criterionInstructionSchema,
     minValue: z.number(),
+    maxValue: z.number(),
   }),
-  z.object({ ...criterionFields, dataType: z.literal("TEXT") }),
   z.object({
-    dataType: z.literal("CORRECTION"),
-    instructions: criterionFields.instructions,
+    name: criterionNameSchema,
+    dataType: z.literal("TEXT"),
+    instruction: criterionInstructionSchema,
+  }),
+  z.object({
     name: z.literal("output"),
+    dataType: z.literal("CORRECTION"),
+    instruction: criterionInstructionSchema,
   }),
 ]);
 
@@ -87,45 +107,51 @@ export const evaluationCriteriaSchema = z
     });
   });
 
-const resultFields = {
-  comment: commentSchema,
-  evidence: evidenceSchema,
-  name: z.string().trim().min(1).describe("The evaluated criterion name, copied exactly."),
-};
+const resultNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .describe("The evaluated criterion name, copied exactly.");
 
 const evaluationResultSchema = z.discriminatedUnion("dataType", [
   z.object({
-    ...resultFields,
+    name: resultNameSchema,
     dataType: z.literal("BOOLEAN"),
     value: z.boolean().describe("Whether the evaluated result satisfies the criterion."),
+    ...resultDetails,
   }),
   z.object({
-    ...resultFields,
+    name: resultNameSchema,
     dataType: z.literal("CATEGORICAL"),
     value: z
       .string()
+      .trim()
       .min(1)
       .describe("The configured category that best matches the evaluated result."),
+    ...resultDetails,
   }),
   z.object({
-    ...resultFields,
-    dataType: z.literal("CORRECTION"),
     name: z.literal("output"),
-    value: z.string().min(1).describe("The complete replacement Target output."),
+    dataType: z.literal("CORRECTION"),
+    value: z.string().trim().min(1).describe("The complete replacement Target output."),
+    ...resultDetails,
   }),
   z.object({
-    ...resultFields,
+    name: resultNameSchema,
     dataType: z.literal("NUMERIC"),
     value: z.number().describe("The score assigned under the criterion's scale."),
+    ...resultDetails,
   }),
   z.object({
-    ...resultFields,
+    name: resultNameSchema,
     dataType: z.literal("TEXT"),
     value: z
       .string()
+      .trim()
       .min(1)
       .max(500)
       .describe("The standalone qualitative assessment requested by the criterion."),
+    ...resultDetails,
   }),
 ]);
 
@@ -209,20 +235,18 @@ export function createCategoricalOutputSchema<
   const CATEGORIES extends readonly [string, ...string[]],
 >(categories: CATEGORIES) {
   return z.object({
-    comment: commentSchema,
-    evidence: evidenceSchema,
     value: z.enum(categories).describe("The category that best matches the evaluated result."),
+    ...resultDetails,
   });
 }
 
 export function createNumericOutputSchema(minValue: number, maxValue: number) {
   return z.object({
-    comment: commentSchema,
-    evidence: evidenceSchema,
     value: z
       .number()
       .min(minValue)
       .max(maxValue)
       .describe("The score assigned under the criterion's scale."),
+    ...resultDetails,
   });
 }

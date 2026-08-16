@@ -7,38 +7,35 @@ import {
   LangfuseClient,
 } from "@langfuse/client";
 import type { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { z } from "zod";
 
 import { createLangfuseClient, createLangfuseTelemetry } from "../../clients/langfuse.ts";
 import {
   createEvaluationReportSchema,
   type EvaluationCriteria,
   evaluationCriteriaSchema,
-  type EvaluationReport,
 } from "../../evaluation/schemas.ts";
-import { evaluateCriteria } from "./judge.ts";
-
-export const evaluatorModelsSchema = z
-  .array(z.string().trim().min(1))
-  .min(1)
-  .refine((models) => new Set(models).size === models.length, {
-    message: "Evaluator models must be unique.",
-  });
+import {
+  evaluateWithJudges,
+  getJudgeModels,
+  type JudgeEvaluation,
+  type Judges,
+  judgesSchema,
+} from "./judges.ts";
 
 export type EvaluatorExperimentOptions<
   INPUT = unknown,
   EXPECTED_OUTPUT = unknown,
   METADATA extends Record<string, unknown> = Record<string, unknown>,
 > = {
-  criteria: EvaluationCriteria;
+  name: string;
   data: ExperimentItem<INPUT, EXPECTED_OUTPUT, METADATA>[];
+  task: ExperimentTask<INPUT, EXPECTED_OUTPUT, METADATA>;
+  criteria: EvaluationCriteria;
+  judges: Judges;
+  runName?: string;
   description?: string;
-  evaluatorModels: string[];
   maxConcurrency?: number;
   metadata?: Record<string, unknown>;
-  name: string;
-  runName?: string;
-  task: ExperimentTask<INPUT, EXPECTED_OUTPUT, METADATA>;
 };
 
 export type LangfuseExperimentRunnerOptions = {
@@ -67,43 +64,51 @@ export class LangfuseExperimentRunner {
     EXPECTED_OUTPUT = unknown,
     METADATA extends Record<string, unknown> = Record<string, unknown>,
   >({
-    criteria,
+    name,
     data,
+    task,
+    criteria,
+    judges,
+    runName,
     description,
-    evaluatorModels,
     maxConcurrency,
     metadata,
-    name,
-    runName,
-    task,
   }: EvaluatorExperimentOptions<INPUT, EXPECTED_OUTPUT, METADATA>) {
     this.start();
     const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
-    const configuredEvaluatorModels = evaluatorModelsSchema.parse(evaluatorModels);
+    const configuredJudges = judgesSchema.parse(judges);
+    const judgeModels = getJudgeModels(configuredJudges);
 
     try {
       return await this.client.experiment.run({
-        data,
-        description,
-        evaluators: configuredEvaluatorModels.map(
-          (evaluatorModel) =>
-            async ({ expectedOutput, input, metadata: itemMetadata, output }) => {
-              const evaluation = await evaluateCriteria({
-                criteria: configuredCriteria,
-                evaluatorModel,
-                expectedOutput,
-                input,
-                metadata: itemMetadata,
-                output,
-              });
-              return toLangfuseEvaluations(evaluation, configuredCriteria, evaluatorModel);
-            },
-        ),
-        maxConcurrency,
-        metadata: { ...metadata, evaluatorModels: configuredEvaluatorModels },
         name,
-        runName,
+        data,
         task,
+        evaluators: [
+          async ({ input, output, expectedOutput, metadata: itemMetadata }) => {
+            const evaluations = await evaluateWithJudges(
+              {
+                input,
+                output,
+                expectedOutput,
+                metadata: itemMetadata,
+              },
+              configuredCriteria,
+              configuredJudges,
+            );
+            return evaluations.flatMap((evaluation) =>
+              toLangfuseEvaluations(evaluation, configuredCriteria),
+            );
+          },
+        ],
+        runName,
+        description,
+        maxConcurrency,
+        metadata: {
+          ...metadata,
+          evaluationCriteria: configuredCriteria.map(({ name: criterion }) => criterion),
+          judgeModels,
+        },
       });
     } finally {
       await Promise.all([this.client.flush(), this.telemetry.forceFlush()]);
@@ -125,12 +130,11 @@ export class LangfuseExperimentRunner {
 }
 
 export function toLangfuseEvaluations(
-  report: EvaluationReport,
+  evaluation: JudgeEvaluation,
   criteria: EvaluationCriteria,
-  evaluatorModel: string,
 ): Evaluation[] {
   const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
-  const validatedReport = createEvaluationReportSchema(configuredCriteria).parse(report);
+  const validatedReport = createEvaluationReportSchema(configuredCriteria).parse(evaluation.report);
   const criteriaByName = new Map(
     configuredCriteria.map((criterion) => [criterion.name, criterion]),
   );
@@ -139,16 +143,16 @@ export function toLangfuseEvaluations(
     const criterion = criteriaByName.get(result.name);
     if (!criterion) throw new Error(`Unknown criterion: ${result.name}.`);
     return {
-      comment: result.comment,
+      name: `${result.name}@${evaluation.model}`,
       dataType: result.dataType,
+      value: result.dataType === "BOOLEAN" ? (result.value ? 1 : 0) : result.value,
+      comment: result.comment,
       metadata: {
-        criterion: criterion.instructions,
         criterionName: result.name,
-        evaluatorModel,
+        criterion: criterion.instruction,
+        judgeModel: evaluation.model,
         evidence: result.evidence,
       },
-      name: `${result.name}@${evaluatorModel}`,
-      value: result.dataType === "BOOLEAN" ? (result.value ? 1 : 0) : result.value,
     };
   });
 }

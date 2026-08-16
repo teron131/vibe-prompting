@@ -5,11 +5,7 @@ import { type BaseMessageLike, HumanMessage, SystemMessage } from "@langchain/co
 import type { RunnableConfig } from "@langchain/core/runnables";
 import type { ZodType } from "zod";
 
-import {
-  buildCriteriaPrompt,
-  buildCriteriaSystemPrompt,
-  type EvaluationSubject,
-} from "./prompts.ts";
+import { buildCriteriaPrompt, buildCriteriaSystemPrompt } from "./prompts.ts";
 import {
   booleanOutputSchema,
   createCategoricalOutputSchema,
@@ -18,28 +14,29 @@ import {
   type EvaluationCriteria,
   evaluationCriteriaSchema,
   type EvaluationReport,
+  type EvaluationSubject,
   type JudgeOutput,
   type JudgeResult,
   type JudgeScoreType,
 } from "./schemas.ts";
 
 export type LlmJudgeOptions = {
-  instructions: string;
   model: BaseChatModel;
   name: string;
+  instruction: string;
 };
 
 export type CriteriaEvaluatorOptions = {
-  criteria: EvaluationCriteria;
   model: BaseChatModel;
+  criteria: EvaluationCriteria;
 };
 
 export class CriteriaEvaluator {
-  readonly criteria: EvaluationCriteria;
   readonly model: BaseChatModel;
+  readonly criteria: EvaluationCriteria;
   private readonly outputSchema: ReturnType<typeof createEvaluationReportSchema>;
 
-  constructor({ criteria, model }: CriteriaEvaluatorOptions) {
+  constructor({ model, criteria }: CriteriaEvaluatorOptions) {
     this.criteria = evaluationCriteriaSchema.parse(criteria);
     this.model = model;
     this.outputSchema = createEvaluationReportSchema(this.criteria);
@@ -66,16 +63,16 @@ const INVALID_NUMERIC_RANGE_MESSAGE =
 
 export abstract class LlmJudge<VALUE, TYPE extends JudgeScoreType> {
   abstract readonly dataType: TYPE;
-  readonly instructions: string;
   readonly model: BaseChatModel;
   readonly name: string;
+  readonly instruction: string;
 
   protected abstract readonly outputSchema: ZodType<JudgeOutput<VALUE>>;
 
-  constructor({ instructions, model, name }: LlmJudgeOptions) {
-    this.instructions = requireText(instructions, "Judge instructions");
+  constructor({ model, name, instruction }: LlmJudgeOptions) {
     this.model = model;
     this.name = requireText(name, "Judge name");
+    this.instruction = requireText(instruction, "Judge instruction");
   }
 
   async evaluate(
@@ -84,11 +81,11 @@ export abstract class LlmJudge<VALUE, TYPE extends JudgeScoreType> {
   ): Promise<JudgeResult<VALUE, TYPE>> {
     const output = await this.model
       .withStructuredOutput<JudgeOutput<VALUE>>(this.outputSchema)
-      .invoke([new SystemMessage(this.instructions), ...messages], options);
+      .invoke([new SystemMessage(this.instruction), ...messages], options);
     return {
-      ...output,
-      dataType: this.dataType,
       name: this.name,
+      dataType: this.dataType,
+      ...output,
     };
   }
 }
@@ -96,10 +93,6 @@ export abstract class LlmJudge<VALUE, TYPE extends JudgeScoreType> {
 export class BooleanJudge extends LlmJudge<boolean, "BOOLEAN"> {
   readonly dataType = "BOOLEAN" as const;
   protected readonly outputSchema = booleanOutputSchema;
-
-  constructor(options: LlmJudgeOptions) {
-    super(options);
-  }
 }
 
 export type CategoricalJudgeOptions<CATEGORIES extends readonly [string, ...string[]]> =
@@ -123,24 +116,24 @@ export class CategoricalJudge<
 }
 
 export type NumericJudgeOptions = LlmJudgeOptions & {
-  maxValue: number;
   minValue: number;
+  maxValue: number;
 };
 
 export class NumericJudge extends LlmJudge<number, "NUMERIC"> {
   readonly dataType = "NUMERIC" as const;
-  readonly maxValue: number;
   readonly minValue: number;
+  readonly maxValue: number;
   protected readonly outputSchema: ZodType<JudgeOutput<number>>;
 
-  constructor({ maxValue, minValue, ...options }: NumericJudgeOptions) {
+  constructor({ minValue, maxValue, ...options }: NumericJudgeOptions) {
     super(options);
     if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || minValue >= maxValue) {
       throw new Error(INVALID_NUMERIC_RANGE_MESSAGE);
     }
 
-    this.maxValue = maxValue;
     this.minValue = minValue;
+    this.maxValue = maxValue;
     this.outputSchema = createNumericOutputSchema(minValue, maxValue);
   }
 }

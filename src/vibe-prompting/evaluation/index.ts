@@ -11,14 +11,15 @@ export {
   NumericJudge,
   type NumericJudgeOptions,
 } from "./evaluators.ts";
-export type { EvaluationSubject } from "./prompts.ts";
 export {
   type EvaluationCriterion,
   type EvaluationCriteria,
+  type EvaluationSubject,
   createEvaluationReportSchema,
   evaluationCriteriaSchema,
   type EvaluationResult,
   evaluationReportSchema,
+  evaluationSubjectSchema,
   type EvaluationReport,
   type JudgeOutput,
   type JudgeResult,

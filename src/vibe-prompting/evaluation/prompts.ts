@@ -1,13 +1,6 @@
 /** Builds the neutral evidence packet used by the composite evaluator without embedding use-case policy in its execution code. */
 
-import type { EvaluationCriteria } from "./schemas.ts";
-
-export type EvaluationSubject = {
-  expectedOutput?: unknown;
-  input: unknown;
-  metadata?: Record<string, unknown>;
-  output: unknown;
-};
+import type { EvaluationCriteria, EvaluationSubject } from "./schemas.ts";
 
 export function buildCriteriaSystemPrompt(criteria: EvaluationCriteria): string {
   const dataTypes = new Set(criteria.map(({ dataType }) => dataType));

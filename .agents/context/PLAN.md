@@ -2,305 +2,131 @@
 
 ## Objective
 
-Deliver a Langfuse-backed application that evaluates and iterates on prompt strings across different Target runtimes without adopting any runtime's agent configuration as the product model.
+Deliver a Langfuse-backed backend that evaluates prompt-driven Target runs through one or more LLM judges while preserving native AI SDK and LangChain message behavior.
 
-The baseline product input is prompt text, usually stored in Markdown, plus messages or examples and a requested model. Target implementations own tools, loop mechanics, provider integration, and framework-specific configuration. Langfuse retains the complete evaluation record.
+This plan is grouped by work area rather than sequence. A checked item means the behavior exists and has relevant proof; an unchecked item is pending or still needs an end-to-end review.
 
-## How to Use This Plan
-
-The sections below are independent work areas rather than sequential stages. Work may move between them as concrete usage exposes the next useful boundary, and a checked item means the behavior has been implemented and proven rather than merely discussed.
-
-## Application Flow
+## Current Flow
 
 ```text
-Prompt text + messages/examples + requested model
-→ Target implementation executes its runtime
-→ Produced messages and best-effort metadata
-→ LLM judges inspect observable evidence
-→ Evaluator workflow records runs and judgments in Langfuse
-→ User or Operator decides whether to edit the prompt
+Prompt text or complete message history
+-> Target generates one response
+-> Langfuse experiment captures each case
+-> Judge graph fans out across configured judge models
+-> Each judge evaluates every configured criterion in one structured-output call
+-> Langfuse stores attributed scores, comments, and evidence
 ```
-
-## Work Areas
-
-- [ ] Coding-agent baseline
-- [ ] Configuration and model clients
-- [ ] Target runtime adapters
-- [ ] LLM judges and score contracts
-- [ ] Langfuse execution and persistence
-- [ ] Evaluator workflow orchestration
-- [ ] Prompt Operator and persistence
-- [ ] Minimal UI and optional external interfaces
-
-These area-level boxes represent complete usable capabilities; completed sub-items do not imply that the whole area is finished.
 
 ## Coding-Agent Baseline
 
-The existing manual workflow remains outside the application:
-
-```text
-design-agent-prompt
-→ coding agent edits prompt Markdown
-→ agent-test-bench runs the existing standalone agent
-→ coding agent reviews the evidence and decides whether to edit again
-```
-
-### Work
-
-- [ ] Keep `design-agent-prompt` focused on prompt-design judgment and direct prompt edits.
-- [ ] Keep `agent-test-bench` focused on cases, runner operation, repetitions, trace inspection, and reporting.
-- [ ] Keep the standalone runner and its configuration independent from the Prompting application.
-- [ ] Do not import application clients, Target protocols, evaluators, schemas, or workflows into either skill.
-- [ ] Do not import the skills, standalone runner, or its profile format into the application backend.
-
-This baseline may be used for comparison or manual supervision, but it is not an application dependency.
-
-## Configuration and Model Clients
-
-### Boundary
-
-- Load provider configuration from the environment.
-- Load the user-editable model catalogue from private `.config.yaml`, with `.config.yaml.example` as its committed template.
-- Expose native LangChain chat and embedding clients without leaking provider routing into evaluation logic.
-- Keep model selection explicit and preserve the actual model identity used.
-- Treat external tools as independent clients or tools rather than Target or evaluator policy.
-
-### Work
-
-- [ ] Load provider credentials and configurable base URLs from the environment.
-- [ ] Load the user-editable chat and embedding model catalogue.
-- [ ] Route each requested chat model through its preferred configured platform, using the generic endpoint only when the preferred credentials are unavailable.
-- [ ] Provide the configured embedding client.
-- [ ] Make selected external tools available through their supported remote interface without attaching them to any workflow by default.
-- [ ] Keep client construction independently inspectable without executing a model call.
-
-### Proof
-
-- [ ] Each configured chat model can complete a focused live smoke.
-- [ ] The embedding client can produce one vector with the configured model.
-- [ ] External tool discovery returns only the intended tools.
-- [ ] Missing optional providers do not prevent unrelated configured clients from loading.
-- [ ] No client imports the repo-local skills or standalone bench.
-
-## Target Runtime Adapters
-
-### Boundary
-
-The stable required facts are message content and requested or actual model identity. Runtime-specific tools, loop mechanics, configuration, structured output, and optional metadata remain native to each adapter.
-
-The required input is:
-
-- A native message sequence for the supported runtime.
-- A requested model identifier configured on the adapter.
-
-The required output is:
-
-- The messages produced by the run, preserving assistant tool calls and tool-result messages when the runtime exposes them.
-- The model identifier actually used.
-
-Usage, latency, trace references, provider details, and other metadata are best effort. Execution failures must surface, but an adapter does not manufacture metadata its runtime cannot expose.
-
-### Work
-
-- [x] Implement concrete AI SDK and LangChain adapters rather than a speculative universal agent protocol.
-- [x] Preserve native AI SDK and LangChain messages, tool calls, and tool results.
-- [x] Keep structured output as an invocation mode rather than another adapter family.
-- [x] Capture requested and actual model identity with best-effort runtime metadata.
-- [ ] Prove a complete application-owned Target run with supplied prompt text and messages.
-- [ ] Surface execution failures with their original causes through the eventual public evaluation command.
-
-### Non-goals
-
-- A universal agent configuration or tool schema.
-- Adapters for hypothetical frameworks.
-- Compatibility with the standalone runner's internal profile format.
-- Evaluator logic, prompt editing, persistence, or filesystem tools inside Target adapters.
-
-### Proof
-
-- [ ] One headless command runs supplied prompt text and messages through a Target adapter.
-- [ ] The output contains produced messages and the actual model identifier.
-- [ ] Target-specific tools and loop mechanics remain inside the implementation.
-- [ ] Another supported adapter can replace the first without changing judge concepts.
-
-## LLM Judges and Score Contracts
-
-### Boundary
-
-- Judges score already-produced inputs and outputs independently of Target execution.
-- Comparative judges use boolean, categorical, or numeric structured outputs.
-- Text scores hold standalone qualitative feedback, corrections hold proposed replacement output, and score comments and evidence explain either result.
-- Use-case-specific instructions, categories, examples, and expectations remain configurable.
-- Blocking and passing behavior belongs to workflow policy rather than another judge family.
-- Judge classes do not own Langfuse clients, experiments, score persistence, or telemetry lifecycle.
-
-### Work
-
-- [x] Define `LlmJudge` independently from Target execution and Langfuse experiment orchestration.
-- [x] Provide boolean, categorical, and numeric judge classes whose schemas align with Langfuse score types.
-- [x] Preserve judge reasoning as the Langfuse score comment and evidence as score metadata.
-- [x] Keep blocking or passing policy outside the judge class hierarchy.
-- [x] Add structured result fields only when they have clear comparison or routing consumers.
-- [x] Keep use-case-specific criteria and examples in judge input or configuration.
-- [x] Accept a non-empty invocation-supplied criterion list with Boolean, categorical, numeric, text, and correction score contracts.
-- [ ] Select the first application-specific judges and evaluation criteria from a concrete prompt-evaluation case.
-- [ ] Avoid semantic subclasses such as `LanguageGate` or `IntentionGate` until repeated usage proves that they own behavior beyond configuration.
-
-### Primitive Demo
-
-- [x] Run a Gemini correctness judge against `1 + 1 = 3` and receive `false` with reasoning.
-- [x] Run a Gemini English-language judge against a Japanese response and receive `false` with reasoning.
-- [x] Run multiple fixed examples through the same experiment invocation.
-- [x] Confirm that evaluation does not modify the candidate prompt or response.
-
-## Langfuse Execution and Persistence
-
-### Boundary
-
-- Langfuse owns published datasets, dataset items, experiments, runs, traces, observations, scores, annotations, comparisons, and complete run history.
-- A Langfuse-backed runner converts judge results into Langfuse SDK evaluator results and owns client, telemetry, experiment, score-writing, flush, and shutdown lifecycle.
-- Langfuse is enabled by default once the runner exists.
-- One process-wide `LANGFUSE_ENABLED=false` opt-out selects explicit local-only execution.
-- Enabled operation fails at startup when required Langfuse credentials are missing.
-- Local files copy only prompt content, Langfuse references, or working evidence that later workflows prove they need.
-
-### Work
-
-- [x] Initialize the Langfuse client and OpenTelemetry trace processor.
-- [x] Run the primitive Gemini judge demo through a Langfuse SDK experiment evaluator.
-- [x] Persist judge comments and evidence metadata with their scores.
-- [x] Verify through the Langfuse API that both primitive scores were stored as boolean `false` values.
-- [x] Add a reusable judge-to-Langfuse evaluator conversion instead of rewriting translation at each usage site.
-- [x] Add a Langfuse-backed runner that owns experiments, telemetry, score persistence, flushing, and shutdown.
-- [ ] Add an explicit local runner selected only by `LANGFUSE_ENABLED=false`.
-- [ ] Validate Langfuse credentials at startup whenever Langfuse is enabled.
-- [ ] Record prompt text, messages, requested and actual Target model, judge identity, judge instructions, output, and available trace evidence.
-- [ ] Support an optional Langfuse dataset when reusable cases become useful.
-- [ ] Keep full local duplication and bidirectional synchronization out of scope.
-
-### Proof
-
-- [x] Langfuse records retain the correct boolean data type and supporting comment for the primitive examples.
-- [ ] Categorical, numeric, text, and correction results retain their correct Langfuse score types and constraints.
-- [ ] The same judge runs through either the Langfuse-backed runner or explicit local-only runner without importing Langfuse itself.
-- [ ] Missing Langfuse credentials fail clearly by default, while `LANGFUSE_ENABLED=false` runs without remote persistence.
-- [x] One headless command evaluates supplied prompt text through a Target and records the run in Langfuse.
-
-## Evaluator Workflow Orchestration
-
-### Boundary
-
-- The evaluator workflow uses LangGraph as its entrypoint and runs Target tasks and configured judges inside a Langfuse experiment.
-- LangGraph owns explicit stages, state, routing, parallelism, and bounded revisits when those behaviors are concrete.
-- LangChain owns model invocation, structured output, middleware, and agent helpers where useful.
-- Models remain an available pool rather than being permanently assigned to roles.
-- Exa remains optional for verification because shared retrieval with the Target does not provide independent evidence.
-
-### Work
-
-- [x] Define the first end-to-end state from a concrete prompt, example, Target run, and judge result.
-- [x] Implement the first evaluator pass as a LangGraph workflow while leaving future stages and routing uncommitted.
-- [x] Accept multiple evaluator models per run, retain model attribution on every score, and optionally exclude the Target model from the evaluator pool.
-- [x] Make evaluator-model selection and case concurrency explicit run inputs.
-- [ ] Add repetitions and spend limits only when introduced.
-- [ ] Add aggregation, weighting, hard gates, missing-evidence states, and attribution separately only when real comparisons require them.
-- [x] Keep every use-case-specific criterion in per-invocation judge configuration rather than the graph contract.
-- [x] Keep models assignable per run rather than permanently binding a model to a role.
-- [ ] Keep Exa available but unattached until a verifier has an evidence need it can actually satisfy.
-
-### First End-to-End Slice
-
-```text
-Prompt text + one example + requested model
-→ Evaluator graph starts the Langfuse experiment
-→ Application-owned Target adapter runs each case
-→ Configured LLM judges return structured scores
-→ Langfuse records the Target trace and attributed scores
-```
-
-### Proof
-
-- [ ] Evaluator outputs remain attributable to judge instructions, model version, input, output, and observable evidence.
-- [ ] The same judge can score outputs from both supported Target runtimes without depending on their internal configuration.
-- [ ] Every added repetition, aggregation, gate, or workflow branch has a demonstrated decision-making use.
-
-## Prompt Operator and Persistence
-
-### Trigger
-
-Build this area after evaluation usage shows that users want the application to create or edit prompt text directly.
-
-### Boundary
-
-- The Operator is a neutral worker that creates or edits prompt strings under user direction.
-- The Operator is separate from evaluation and may make non-improvement edits when explicitly requested.
-- Direct prompt read, write, and patch operations are preferred when the application owns persistence.
-- Workspace-scoped file operations are secondary support for existing local Markdown workflows.
-- Target tools, runtime source code, arbitrary repository navigation, and general shell execution remain outside the Operator.
-
-### Work
-
-- [ ] Implement the smallest agent or tool loop required by the editing workflow.
-- [ ] Prefer direct prompt read, write, and patch operations when the application owns persistence.
-- [ ] Add workspace-scoped file operations only when users must work with existing local Markdown files.
-- [ ] Let users inspect prompt changes before continuing.
-- [ ] Add simple stacked prompt history and restore only when application-managed reversion is needed.
-- [ ] Invoke evaluation through the same backend rather than duplicating it inside the Operator.
-
-### Proof
-
-- [ ] The Operator can edit a prompt without knowing the Target runtime's framework configuration.
-- [ ] Filesystem access, if present, cannot escape the configured prompt workspace.
-- [ ] Prompt history, if present, supports inspection and restore without workflow-approval or branch-management concepts.
-- [ ] Evaluation remains independently callable without the Operator.
-
-## Minimal UI and Optional External Interfaces
-
-### Boundary
-
-- Nontechnical users receive a low-navigation prompt workflow while detailed observability remains in Langfuse.
-- Script, UI, and optional external-agent interfaces call the same backend.
-- MCP or another external-agent interface is added only when the headless command or backend API is insufficient.
-- External coding agents use their own editing tools rather than requiring a bundled coding-agent runtime.
-
-### Work
-
-- [ ] Provide a chat or form flow for entering prompt text and optional examples.
-- [ ] Let users select available models and start evaluation with clear cost implications.
-- [ ] Show concise judge findings, flagged examples, prompt changes, and comparison evidence.
-- [ ] Deep-link to corresponding Langfuse experiments and traces.
-- [ ] Add MCP or another external-agent interface only when the backend API is insufficient.
-
-### Non-goals
-
-- Rebuilding Langfuse dataset management, evaluator administration, traces, annotations, dashboards, or score analytics.
-- Duplicating evaluation or prompt-editing logic in the UI or MCP layer.
-- Bundling a full coding-agent runtime for external agents that already have one.
-
-### Proof
-
-- [ ] A nontechnical user can submit, evaluate, and revise a prompt without understanding Target runtime configuration.
-- [ ] Detailed evidence remains available in Langfuse.
-- [ ] UI, script, and external-agent runs remain comparable through the same backend.
-
-## Cross-Area Verification
-
-- [ ] Complete one manual prompt edit and standalone bench run without importing application code.
-- [ ] Smoke each configured client boundary independently.
-- [ ] Run one prompt and message sequence through each public Target adapter.
-- [ ] Prove each judge or workflow feature through a concrete comparison need.
-- [ ] Verify persisted Langfuse traces and scores rather than relying only on local formatted output.
-- [ ] Demonstrate one prompt edit and one history-preserving restore if application persistence is built.
-- [ ] Complete one nontechnical prompt-to-evidence workflow if the UI is built.
-- [ ] Complete one external-agent call only if an external interface is built.
-
-Do not add broad test suites that freeze private module shape. Verify observable Target behavior, judge evidence, Langfuse records, and user-visible outcomes.
+- [x] Keep `design-agent-prompt` responsible for prompt-design judgment and direct Markdown edits.
+- [x] Keep `agent-test-bench` responsible for standalone BuildingAI cases, runner operation, traces, and result review.
+- [x] Keep both skills independent from the Prompting backend.
+- [x] Keep the Prompting backend independent from the standalone bench and its profile format.
+
+## Configuration and Clients
+
+- [x] Load provider credentials and configurable endpoints from the environment.
+- [x] Load the private model catalogue from `.config.yaml` with `.config.yaml.example` as the committed template.
+- [x] Route requested models through configured OpenAI-compatible platforms with credential-presence fallback.
+- [x] Expose LangChain chat and embedding clients without putting provider routing in evaluator logic.
+- [x] Make Exa MCP tools available without attaching them to a Target or verifier by default.
+- [x] Require Langfuse credentials when constructing Langfuse clients and telemetry.
+- [ ] Re-run focused live chat, embedding, and external-tool smokes after client changes.
+
+## Target Adapters
+
+- [x] Accept any Target that exposes a configured model ID and an asynchronous `invoke` operation.
+- [x] Keep AI SDK and LangChain adapters optional and outside the evaluator graph's runtime contract.
+- [x] Accept a string or a supported message history as input.
+- [x] Preserve native AI SDK `ModelMessage[]` and native LangChain `BaseMessage` histories.
+- [x] Accept LangChain-compatible message tuples and message objects through LangChain coercion.
+- [x] Translate text LangChain histories into AI SDK messages when the AI SDK adapter receives them.
+- [x] Preserve assistant tool-call IDs, names, and arguments across the LangChain-to-AI-SDK boundary.
+- [x] Preserve matching `ToolMessage` results, including success or error status, across the LangChain-to-AI-SDK boundary.
+- [x] Preserve Gemini thought signatures in native LangChain serialization and LangChain-to-AI-SDK tool-call conversion.
+- [x] Keep structured output as `invokeStructured` on each adapter rather than another adapter family.
+- [x] Return each adapter runtime's message output plus the configured model ID without exposing provider runtime metadata.
+- [x] Reject unsupported rich cross-framework histories instead of guessing.
+- [ ] Prove one complete live AI SDK Target run through the structural evaluator boundary.
+- [ ] Prove one complete live LangChain Target run through the structural evaluator boundary.
+
+## Target Model Selection
+
+- [x] Accept one Target model or a unique list in the model-run planner.
+- [x] Support round-robin case assignment as the default list strategy.
+- [x] Support an `all` strategy that runs every case on every Target model.
+- [x] Keep Target-run allocation in a higher-level caller so the evaluator graph continues to receive one model-specific Target.
+- [ ] Integrate the model-run planner into that higher-level public caller.
+
+## Criteria and Judges
+
+- [x] Accept a non-empty invocation-supplied criterion list.
+- [x] Support Boolean, categorical, numeric, text, and correction result contracts.
+- [x] Validate unique criterion names, unique categories, numeric ranges, and exactly one matching result per criterion.
+- [x] Build the judge prompt only from the criterion types actually present.
+- [x] Evaluate all configured criteria in one structured-output call per judge model.
+- [x] Accept one judge model or a unique list without introducing a separate panel abstraction.
+- [x] Fan out judge models through LangGraph and retain one report per model.
+- [x] Keep criterion meaning in each invocation rather than semantic evaluator subclasses.
+- [x] Keep blocking, passing, aggregation, and weighting outside the judge class hierarchy.
+- [ ] Add aggregation or disagreement handling only after a real comparison needs a decision beyond per-model results.
+
+## Langfuse Experiments
+
+- [x] Treat Langfuse as a required backend dependency rather than an optional wrapper.
+- [x] Initialize the Langfuse client and OpenTelemetry span processor from required credentials.
+- [x] Run Target tasks and custom evaluators through the Langfuse Experiment SDK.
+- [x] Convert structured judge results into native Langfuse Boolean, categorical, numeric, and text evaluations.
+- [x] Persist judge model, criterion, evidence, and reasoning with each score.
+- [x] Flush experiment and telemetry data before returning and shut down both clients when the runner closes.
+- [x] Pass `maxConcurrency` through the evaluator graph to the Langfuse experiment runner.
+- [ ] Verify categorical, numeric, text, and correction records in the Langfuse UI or API.
+- [ ] Promote stable local examples into a Langfuse dataset when cross-run comparison becomes useful.
+
+## Evaluator Graphs
+
+- [x] Expose a simple evaluator graph that wraps one Langfuse experiment.
+- [x] Expose a judge graph that fans one case out to one or more judge models and collects their reports.
+- [x] Allow the evaluator graph to skip a judge model whose configured ID equals the Target model ID.
+- [x] Keep case concurrency as a public graph input passed to Langfuse.
+- [x] Reuse one process-lifetime Langfuse runner so repeated graph invocations retain the registered telemetry provider.
+- [x] Keep the initial evaluator flow straight rather than inventing unjustified stages or fixers.
+- [ ] Decide whether later quality improvements justify tiered judges, focused reruns, or human review.
+- [ ] Add a branch only after its routing decision and stopping condition are concrete.
+
+## Fixed-History N+1 Evaluation
+
+- [x] Define the first multi-turn shape as one complete prior message history plus one generated next response.
+- [x] Preserve tool calls and tool-result messages needed for a valid continuation.
+- [x] Avoid a custom replay-loop or conversation-simulator abstraction.
+- [ ] Add a minimal public caller that runs fixed-history N+1 cases through the evaluator graph.
+- [ ] Decide how long tool outputs are shortened while preserving `tool_call_id`, tool name, status, and enough evidence for continuation and evaluation.
+
+## Latest Verification Evidence
+
+- [x] Formatting, lint, typecheck, and deterministic adapter smokes passed after the current adapter simplification.
+- [x] A live fixed-output Target run through the structural evaluator boundary persisted its input, output, experiment observation, and attributed Boolean score in Langfuse without an expected output.
+- [x] A deterministic smoke preserved parallel LangChain tool calls, matching success and error `ToolMessage` results, native AI SDK messages, and native LangChain messages.
+- [x] Live Gemini 3.6 smokes proved native LangChain invoke and stream continuation, a native AI SDK tool loop, and LangChain-to-AI-SDK continuation with matching call and result IDs.
+- [x] A live Gemini 3.5 LangChain smoke produced a tool call, accepted its matching `ToolMessage`, and completed the continuation.
+
+## Later Product Areas
+
+- [ ] Add a neutral Operator only after users need application-managed prompt editing.
+- [ ] Add direct prompt persistence and simple restore only when the application owns prompt storage.
+- [ ] Add a minimal UI that starts evaluations and links to Langfuse rather than rebuilding Langfuse views.
+- [ ] Add MCP only when the backend API or headless caller is insufficient for external agents.
+
+## Next Work
+
+1. Add the higher-level caller that expands Target model runs before invoking the evaluator graph.
+2. Verify categorical, numeric, text, and correction score records through the Langfuse API.
+3. Add the smallest fixed-history N+1 caller after the public invocation shape is stable.
 
 ## Open Decisions
 
-- [ ] Choose repetitions, judge combinations, concurrency, aggregation, and spend limits from real run evidence.
-- [ ] Decide when local example strings should become reusable Langfuse datasets.
-- [ ] Choose Langfuse Cloud or self-hosting from access, cost, data, and operational requirements.
-- [ ] Decide whether the Operator needs application-owned prompt storage or scoped local Markdown tools.
-- [ ] Select the UI framework and hosting model.
-- [ ] Decide whether MCP is necessary after the headless command and backend API are used.
+- [x] Keep Target-run allocation in a higher-level caller.
+- [ ] Decide when judge disagreement needs aggregation, focused reruns, or human review.
+- [ ] Decide when local examples should become reusable Langfuse datasets.
+- [ ] Decide whether the later Operator needs application-owned storage, scoped Markdown tools, or only an external-agent interface.

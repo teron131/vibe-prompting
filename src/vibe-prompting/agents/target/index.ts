@@ -2,7 +2,7 @@
 
 export {
   AiSdkAdapter,
-  type AiSdkRunMetadata,
+  type AiSdkInput,
   type AiSdkRunOptions,
   type AiSdkRunResult,
   type AiSdkStructuredRunResult,
@@ -11,7 +11,14 @@ export {
   LangChainAdapter,
   type LangChainAgentInput,
   type LangChainAgentOutput,
-  type LangChainRunMetadata,
+  type LangChainInput,
   type LangChainRunResult,
   type LangChainStructuredRunResult,
 } from "./langchain-adapter.ts";
+export {
+  allocateTargetRuns,
+  type TargetModelMode,
+  type TargetModels,
+  targetModelModeSchema,
+  type TargetRun,
+} from "./model-runs.ts";

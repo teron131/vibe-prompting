@@ -1,39 +1,47 @@
 /** Owns the end-to-end evaluator workflow, including Langfuse experiment execution around Target tasks and criteria scoring. */
 
-import type { BaseMessage } from "@langchain/core/messages";
 import { END, START, StateGraph, StateSchema } from "@langchain/langgraph";
 import type { ExperimentItem, ExperimentResult } from "@langfuse/client";
-import type { ModelMessage } from "ai";
 import { z } from "zod";
 
 import { evaluationCriteriaSchema } from "../../evaluation/schemas.ts";
-import { AiSdkAdapter } from "../target/ai-sdk-adapter.ts";
-import { LangChainAdapter } from "../target/langchain-adapter.ts";
-import { evaluatorModelsSchema, LangfuseExperimentRunner } from "./experiments.ts";
+import { LangfuseExperimentRunner } from "./experiments.ts";
+import { getJudgeModels, judgesSchema } from "./judges.ts";
 
-type Target = AiSdkAdapter | LangChainAdapter;
+export type Target = {
+  readonly model: string;
+  invoke(input: unknown): PromiseLike<unknown>;
+};
 
 const experimentDataSchema = z.custom<ExperimentItem[]>(
   (value) => Array.isArray(value) && value.length > 0,
   "Experiment data must contain at least one item.",
 );
 const targetSchema = z.custom<Target>(
-  (value) => value instanceof AiSdkAdapter || value instanceof LangChainAdapter,
-  "Target must be a supported adapter.",
+  (value) =>
+    typeof value === "object" &&
+    value !== null &&
+    "model" in value &&
+    typeof value.model === "string" &&
+    value.model.length > 0 &&
+    value.model === value.model.trim() &&
+    "invoke" in value &&
+    typeof value.invoke === "function",
+  "Target must expose a non-empty model ID and an invoke function.",
 );
 const experimentResultSchema = z.custom<ExperimentResult>();
 
 const EvaluatorInput = new StateSchema({
-  criteria: evaluationCriteriaSchema,
+  name: z.string().trim().min(1),
+  target: targetSchema,
   data: experimentDataSchema,
-  description: z.string().optional(),
-  evaluatorModels: evaluatorModelsSchema,
+  criteria: evaluationCriteriaSchema,
+  judges: judgesSchema,
   skipTargetModel: z.boolean().default(false),
   maxConcurrency: z.number().int().positive().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-  name: z.string().trim().min(1),
   runName: z.string().trim().min(1).optional(),
-  target: targetSchema,
+  description: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const EvaluatorOutput = new StateSchema({
@@ -45,38 +53,30 @@ const EvaluatorState = new StateSchema({
   experiment: experimentResultSchema.optional(),
 });
 
+let defaultRunner: LangfuseExperimentRunner | undefined;
+
 const runExperiment: typeof EvaluatorState.Node = async (state) => {
-  const evaluatorModels = state.skipTargetModel
-    ? state.evaluatorModels.filter((model) => model !== state.target.model)
-    : state.evaluatorModels;
-  if (evaluatorModels.length === 0) {
-    throw new Error("No evaluator models remain after excluding the Target model.");
+  const judgeModels = state.skipTargetModel
+    ? getJudgeModels(state.judges).filter((model) => model !== state.target.model)
+    : getJudgeModels(state.judges);
+  if (judgeModels.length === 0) {
+    throw new Error("No judge models remain after skipping the Target model.");
   }
 
-  const runner = new LangfuseExperimentRunner();
-  try {
-    const experiment = await runner.run({
-      criteria: state.criteria,
-      data: state.data,
-      description: state.description,
-      evaluatorModels,
-      maxConcurrency: state.maxConcurrency,
-      metadata: state.metadata,
-      name: state.name,
-      runName: state.runName,
-      task: async (item) => runTarget(state.target, item.input),
-    });
-    return { experiment };
-  } finally {
-    await runner.close();
-  }
+  defaultRunner ??= new LangfuseExperimentRunner();
+  const experiment = await defaultRunner.run({
+    name: state.name,
+    data: state.data,
+    task: async (item) => state.target.invoke(item.input),
+    criteria: state.criteria,
+    judges: { model: judgeModels },
+    runName: state.runName,
+    description: state.description,
+    maxConcurrency: state.maxConcurrency,
+    metadata: { ...state.metadata, targetModel: state.target.model },
+  });
+  return { experiment };
 };
-
-async function runTarget(target: Target, input: unknown) {
-  return target instanceof AiSdkAdapter
-    ? target.invoke(input as ModelMessage[])
-    : target.invoke(input as BaseMessage[]);
-}
 
 export const evaluatorGraph = new StateGraph({
   input: EvaluatorInput,
