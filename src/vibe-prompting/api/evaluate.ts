@@ -1,8 +1,6 @@
-/** Delegates the compact API contract to the evaluator graph and projects its experiment into framework-neutral results. */
+/** Delegates the compact API contract to the evaluator graph and projects its evaluator-owned results. */
 
-import type { Evaluation as LangfuseEvaluation } from "@langfuse/client";
-
-import { evaluatorGraph } from "../agents/evaluator/graph.ts";
+import { evaluatorGraph, type EvaluatorScore } from "../agents/evaluator/graph.ts";
 import type {
   EvaluationCriteria as InternalCriteria,
   EvaluationCriterion as InternalCriterion,
@@ -13,14 +11,9 @@ import {
   type EvaluationRequest,
   type EvaluationRun,
   requestSchema,
-  scoreMetadataSchema,
   type Target,
   targetSchema,
 } from "./schemas.ts";
-
-type CaseMetadata = {
-  caseIndex: number;
-};
 
 /** Evaluates opaque input-output behavior and returns only public case results. */
 export async function evaluate<INPUT, OUTPUT>(
@@ -34,7 +27,7 @@ export async function evaluate<INPUT, OUTPUT>(
     internalCriteria: testCase.criteria.map(toInternalCriterion),
   }));
 
-  const { experiment } = await evaluatorGraph.invoke({
+  const { results } = await evaluatorGraph.invoke({
     target: {
       model: configuredTarget.model,
       invoke: (input: unknown) => configuredTarget.invoke(input as INPUT),
@@ -47,22 +40,17 @@ export async function evaluate<INPUT, OUTPUT>(
     judges: { model: configuredRequest.judges },
   });
 
-  const cases = experiment.itemResults
-    .map((item) => {
-      const caseIndex = requireCaseIndex(item.item.metadata as CaseMetadata | undefined);
-      const configuredCase = configuredCases[caseIndex];
-      if (!configuredCase) throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
-      return {
-        caseIndex,
-        input: configuredCase.input,
-        output: item.output as OUTPUT,
-        evaluations: item.evaluations.map((evaluation) =>
-          projectEvaluation(evaluation, configuredCase.criteria, configuredCase.internalCriteria),
-        ),
-      };
-    })
-    .sort((left, right) => left.caseIndex - right.caseIndex)
-    .map(({ caseIndex: _caseIndex, ...result }) => result);
+  const cases = results.map((item, caseIndex) => {
+    const configuredCase = configuredCases[caseIndex];
+    if (!configuredCase) throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
+    return {
+      input: configuredCase.input,
+      output: item.output as OUTPUT,
+      evaluations: item.evaluations.map((evaluation) =>
+        projectEvaluation(evaluation, configuredCase.criteria, configuredCase.internalCriteria),
+      ),
+    };
+  });
 
   return { cases };
 }
@@ -94,41 +82,33 @@ function toInternalCriterion(criterion: Criterion, index: number): InternalCrite
   }
 }
 
-function requireCaseIndex(metadata: CaseMetadata | undefined): number {
-  const caseIndex = metadata?.caseIndex;
-  if (typeof caseIndex !== "number" || !Number.isInteger(caseIndex) || caseIndex < 0) {
-    throw new Error("Evaluation case metadata is missing a valid case index.");
-  }
-  return caseIndex;
-}
-
 function projectEvaluation(
-  evaluation: LangfuseEvaluation,
+  evaluation: EvaluatorScore,
   criteria: Criterion[],
   internalCriteria: InternalCriteria,
 ): CriterionEvaluation {
-  const metadata = scoreMetadataSchema.parse(evaluation.metadata);
-  const criterionIndex = internalCriteria.findIndex(({ name }) => name === metadata.criterionName);
+  const criterionIndex = internalCriteria.findIndex(
+    ({ name }) => name === evaluation.criterionName,
+  );
   const criterion = criteria[criterionIndex];
-  if (!criterion) throw new Error(`Unknown evaluated criterion: ${metadata.criterionName}.`);
-  if (typeof evaluation.comment !== "string" || evaluation.comment.trim().length === 0) {
-    throw new Error(`Evaluation comment is missing for criterion: ${metadata.criterionName}.`);
-  }
+  if (!criterion) throw new Error(`Unknown evaluated criterion: ${evaluation.criterionName}.`);
   return {
     criterion,
     value: projectValue(criterion, evaluation.value),
-    judge: metadata.judgeModel,
+    judge: evaluation.judgeModel,
     comment: evaluation.comment,
-    evidence: metadata.evidence,
+    evidence: evaluation.evidence,
   };
 }
 
-function projectValue(criterion: Criterion, value: number | string): boolean | number | string {
+function projectValue(
+  criterion: Criterion,
+  value: boolean | number | string,
+): boolean | number | string {
   switch (criterion.type) {
     case "boolean":
-      if (value !== 0 && value !== 1)
-        throw new Error("Boolean evaluation must be stored as 0 or 1.");
-      return value === 1;
+      if (typeof value !== "boolean") throw new Error("Boolean evaluation must be Boolean.");
+      return value;
     case "categorical":
       if (typeof value !== "string" || !criterion.categories.includes(value)) {
         throw new Error("Categorical evaluation must use one of the configured categories.");

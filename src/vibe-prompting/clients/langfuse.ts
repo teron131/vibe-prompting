@@ -1,4 +1,4 @@
-/** Initializes the required Langfuse system-of-record clients without owning experiment execution or evaluator policy. */
+/** Initializes optional Langfuse persistence clients without owning evaluation execution or policy. */
 
 import { LangfuseClient } from "@langfuse/client";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
@@ -25,6 +25,16 @@ export function loadLangfuseConfig(environment: NodeJS.ProcessEnv = process.env)
     secretKey: config.LANGFUSE_SECRET_KEY,
     baseUrl: config.LANGFUSE_BASE_URL,
   };
+}
+
+/** Returns no persistence configuration when both credentials are absent while rejecting incomplete configuration. */
+export function loadOptionalLangfuseConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): LangfuseConfig | undefined {
+  const hasPublicKey = Boolean(environment.LANGFUSE_PUBLIC_KEY?.trim());
+  const hasSecretKey = Boolean(environment.LANGFUSE_SECRET_KEY?.trim());
+  if (!hasPublicKey && !hasSecretKey) return undefined;
+  return loadLangfuseConfig(environment);
 }
 
 export function createLangfuseClient(

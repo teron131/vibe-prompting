@@ -92,12 +92,6 @@ export const targetSchema = z.custom<Target>(
   "Target must expose a non-empty model ID and an invoke function.",
 );
 
-export const scoreMetadataSchema = z.object({
-  criterionName: z.string().trim().min(1),
-  judgeModel: judgeModelSchema,
-  evidence: z.array(z.string().trim().min(1)),
-});
-
 export type Criterion = z.infer<typeof criterionSchema>;
 
 export type EvaluationCase<INPUT = unknown> = {

@@ -12,6 +12,15 @@ export const evaluationSubjectSchema = z.object({
 export type EvaluationSubject = z.infer<typeof evaluationSubjectSchema>;
 export type JudgeScoreType = "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
 
+export type EvaluatorScore = {
+  criterionName: string;
+  dataType: JudgeScoreType;
+  value: boolean | number | string;
+  judgeModel: string;
+  comment: string;
+  evidence: string[];
+};
+
 export type JudgeOutput<VALUE> = {
   value: VALUE;
   comment: string;

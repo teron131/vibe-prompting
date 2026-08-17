@@ -14,6 +14,7 @@ export {
 export {
   type EvaluationCriterion,
   type EvaluationCriteria,
+  type EvaluatorScore,
   type EvaluationSubject,
   createEvaluationReportSchema,
   evaluationCriteriaSchema,
