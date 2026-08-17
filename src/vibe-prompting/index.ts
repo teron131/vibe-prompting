@@ -1,6 +1,15 @@
-/** Publishes the transport-neutral evaluation facade while keeping runtime adapters and workflow internals opt-in. */
+/** Publishes the evaluation facade without starting its HTTP or MCP runtimes. */
 
-export * from "./api/index.ts";
+export { evaluate } from "./app/api.ts";
+export {
+  type Criterion,
+  type CriterionEvaluation,
+  type EvaluatedCase,
+  type EvaluationCase,
+  type EvaluationRequest,
+  type EvaluationRun,
+  type Target,
+} from "./app/schemas.ts";
 export {
   allocateTargetRuns,
   type TargetModelMode,

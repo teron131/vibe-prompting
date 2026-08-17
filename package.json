@@ -1,14 +1,17 @@
 {
   "name": "vibe-prompting",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names api,mcp \"pnpm run server\" \"pnpm run mcp\"",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "graph:dev": "langgraphjs dev",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
+    "mcp": "node src/vibe-prompting/app/mcp.ts",
+    "server": "node src/vibe-prompting/app/api.ts",
     "test-agent": "node test_agent.ts",
     "test-agent:ui": "node test_agent.ts --ui",
     "typecheck": "tsc --noEmit"
@@ -19,6 +22,8 @@
     "@ai-sdk/mcp": "1.0.21",
     "@ai-sdk/openai": "3.0.33",
     "@ai-sdk/openai-compatible": "2.0.30",
+    "@fastify/swagger": "^9.8.1",
+    "@fastify/swagger-ui": "^6.1.1",
     "@langchain/core": "^1.2.5",
     "@langchain/langgraph": "^1.4.9",
     "@langchain/mcp-adapters": "^1.1.3",
@@ -27,14 +32,18 @@
     "@langfuse/otel": "5.10.0",
     "@langfuse/tracing": "5.10.0",
     "@opentelemetry/sdk-trace-node": "2.10.0",
+    "@prefecthq/fastmcp-ts": "1.5.1",
     "ai": "6.0.138",
     "dotenv": "17.3.1",
+    "fastify": "^5.12.0",
+    "fastify-type-provider-zod": "^7.0.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@langchain/langgraph-cli": "^1.4.4",
     "@types/node": "^26.2.0",
+    "concurrently": "^10.0.5",
     "oxfmt": "0.62.0",
     "oxlint": "1.77.0",
     "typescript": "^7.0.2"

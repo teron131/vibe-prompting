@@ -1,4 +1,4 @@
-/** Owns validation and static contracts for the transport-neutral evaluation API boundary. */
+/** Owns validation and static contracts shared by the evaluation API and its transport adapters. */
 
 import { z } from "zod";
 
