@@ -1,22 +1,13 @@
-/** Publishes the evaluation facade without starting its HTTP or MCP runtimes. */
+/** Publishes the application facade without starting its HTTP or MCP runtimes. */
 
-export { evaluate } from "./app/api.ts";
-export {
-  type Criterion,
-  type CriterionEvaluation,
-  type EvaluatedCase,
-  type EvaluationCase,
-  type EvaluationRequest,
-  type EvaluationRun,
-  type Target,
-} from "./app/schemas.ts";
 export {
   allocateTargetRuns,
   type TargetModelMode,
   type TargetModels,
   targetModelModeSchema,
   type TargetRun,
-} from "./agents/target/model-runs.ts";
+} from "./evaluation/targets/model-runs.ts";
+export * from "./agent/index.ts";
 export * from "./clients/index.ts";
 export {
   CONFIG_PATH,
@@ -30,4 +21,3 @@ export {
   type RuntimeConfig,
 } from "./config.ts";
 export * from "./evaluation/index.ts";
-export * from "./tools/index.ts";

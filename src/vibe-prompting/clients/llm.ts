@@ -29,7 +29,9 @@ export function createChatModel({
   if (!modelId) throw new Error("Model ID must not be empty.");
 
   const config = loadRuntimeConfig();
-  const configuredModel = config.models.find((candidate) => candidate.id === modelId);
+  const configuredModel =
+    config.models.find((candidate) => candidate.id === modelId) ??
+    (config.metadataModel.id === modelId ? config.metadataModel : undefined);
   if (!configuredModel) throw new Error(`Model is not configured: ${modelId}.`);
 
   const platform = resolveModelPlatform(configuredModel, config);

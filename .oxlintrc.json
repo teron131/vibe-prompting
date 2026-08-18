@@ -23,5 +23,6 @@
   },
   "options": {
     "reportUnusedDisableDirectives": "off"
-  }
+  },
+  "ignorePatterns": ["**/node_modules/**", "**/.next/**"]
 }

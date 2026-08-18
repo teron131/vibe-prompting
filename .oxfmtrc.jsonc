@@ -9,5 +9,5 @@
       }
     }
   ],
-  "ignorePatterns": ["*.md", "*.markdown", "*.mdx"]
+  "ignorePatterns": ["*.md", "*.markdown", "*.mdx", "**/node_modules/**", "**/.next/**"]
 }

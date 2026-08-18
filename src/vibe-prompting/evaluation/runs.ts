@@ -1,0 +1,687 @@
+/** Owns application-facing evaluation attempts, exact prompt-revision pinning, attributed score persistence, and detached execution. */
+
+import { createHash, randomUUID } from "node:crypto";
+
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import type postgres from "postgres";
+import { z } from "zod";
+
+import { createChatModel } from "../clients/llm.ts";
+import { loadRuntimeConfig } from "../config.ts";
+import { PromptConflictError, type PromptStore } from "../prompts/store.ts";
+import type { Database, DatabaseClient } from "../storage/database.ts";
+import {
+  type Criterion,
+  type CriterionEvaluation,
+  evaluate,
+  type EvaluationCase,
+  type EvaluationRun,
+  requestSchema,
+} from "./api.ts";
+
+export type EvaluationRunStatus = "completed" | "failed" | "interrupted" | "running";
+export type EvaluationRunSource = "browser" | "operator";
+
+export type EvaluationRunSummary = {
+  caseCount: number;
+  chatId: string | null;
+  completedAt: string | null;
+  configurationFingerprint: string;
+  createdAt: string;
+  errorMessage: string | null;
+  id: string;
+  judgeModelIds: string[];
+  promptId: string;
+  promptRevisionId: string;
+  promptTitle: string;
+  source: EvaluationRunSource;
+  status: EvaluationRunStatus;
+  targetModelId: string;
+};
+
+export type StoredEvaluationScore = {
+  comment: string;
+  criterion: Criterion;
+  criterionPosition: number;
+  dataType: "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
+  evidence: string[];
+  id: string;
+  judgeModelId: string;
+  value: boolean | number | string;
+};
+
+export type StoredEvaluationCase = {
+  criteria: Criterion[];
+  id: string;
+  input: unknown;
+  output: unknown | null;
+  position: number;
+  scores: StoredEvaluationScore[];
+};
+
+export type StoredEvaluationRun = EvaluationRunSummary & {
+  cases: StoredEvaluationCase[];
+  promptMarkdown: string;
+};
+
+export type BooleanTrendPoint = {
+  completedAt: string;
+  rates: Array<{ criterion: string; criterionPosition: number; passed: number; total: number }>;
+  revisionId: string;
+  runId: string;
+};
+
+export const browserEvaluationInputSchema = requestSchema.extend({
+  cases: requestSchema.shape.cases.element
+    .extend({ input: z.string().trim().min(1) })
+    .array()
+    .min(1),
+  judges: z
+    .array(z.string().trim().min(1))
+    .min(1)
+    .refine((judges) => new Set(judges).size === judges.length, "Judge model IDs must be unique."),
+  promptId: z.string().uuid(),
+  promptRevisionId: z.string().uuid(),
+  targetModelId: z.string().trim().min(1),
+});
+
+export type BrowserEvaluationInput = z.infer<typeof browserEvaluationInputSchema>;
+
+export type AgentEvaluationSnapshot = {
+  markdownHash: string;
+  report: {
+    cases: Array<{
+      evaluations: Array<{
+        comment: string;
+        criterion: string;
+        evidence: string[];
+        passed: boolean;
+      }>;
+      input: string;
+      output: unknown;
+    }>;
+    judgeModel: string;
+    targetModel: string;
+  };
+};
+
+type RunRow = {
+  caseCount: number;
+  chatId: string | null;
+  completedAt: Date | null;
+  configurationFingerprint: string;
+  createdAt: Date;
+  errorMessage: string | null;
+  id: string;
+  judgeModelIds: string[];
+  promptId: string;
+  promptMarkdown: string;
+  promptRevisionId: string;
+  promptTitle: string;
+  source: EvaluationRunSource;
+  status: EvaluationRunStatus;
+  targetModelId: string;
+};
+
+type CaseRow = {
+  criteria: Criterion[];
+  id: string;
+  input: unknown;
+  output: unknown | null;
+  position: number;
+};
+
+type ScoreRow = {
+  caseId: string;
+  comment: string;
+  criterion: Criterion;
+  criterionPosition: number;
+  dataType: StoredEvaluationScore["dataType"];
+  evidence: string[];
+  id: string;
+  judgeModelId: string;
+  value: boolean | number | string;
+};
+
+export class EvaluationRunNotFoundError extends Error {
+  readonly statusCode = 404;
+
+  constructor(runId: string) {
+    super(`Evaluation run ${runId} was not found.`);
+    this.name = "EvaluationRunNotFoundError";
+  }
+}
+
+export class EvaluationRequestError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "EvaluationRequestError";
+  }
+}
+
+export class EvaluationRuns {
+  readonly #database: Database;
+  readonly #prompts: PromptStore;
+
+  constructor(database: Database, prompts: PromptStore) {
+    this.#database = database;
+    this.#prompts = prompts;
+  }
+
+  async reconcileInterrupted(): Promise<number> {
+    return this.#database.run(async (sql) => {
+      const rows = await sql`
+        UPDATE evaluation_runs
+        SET
+          status = 'interrupted',
+          error_message = 'The server process ended before this evaluation completed.',
+          completed_at = now()
+        WHERE status = 'running'
+        RETURNING id
+      `;
+      return rows.length;
+    });
+  }
+
+  async startBrowserRun(rawInput: unknown): Promise<EvaluationRunSummary> {
+    return this.#startRun(rawInput, "browser", null);
+  }
+
+  async startAgentRun(rawInput: unknown, chatId: string): Promise<EvaluationRunSummary> {
+    return this.#startRun(rawInput, "operator", chatId);
+  }
+
+  async #startRun(
+    rawInput: unknown,
+    source: EvaluationRunSource,
+    chatId: string | null,
+  ): Promise<EvaluationRunSummary> {
+    const parsed = browserEvaluationInputSchema.safeParse(rawInput);
+    if (!parsed.success)
+      throw new EvaluationRequestError(
+        parsed.error.issues[0]?.message ?? "Invalid evaluation request.",
+      );
+    const input = parsed.data;
+    const request = requestSchema.parse({ cases: input.cases, judges: input.judges });
+    const judgeModelIds = Array.isArray(request.judges) ? request.judges : [request.judges];
+    requireConfiguredModels([input.targetModelId, ...judgeModelIds]);
+    const prompt = await this.#prompts.getPrompt(input.promptId);
+    if (prompt.revisionId !== input.promptRevisionId) throw new PromptConflictError();
+    const configurationFingerprint = createConfigurationFingerprint({
+      cases: request.cases,
+      judges: judgeModelIds,
+      targetModelId: input.targetModelId,
+    });
+    const runId = await this.#database.transaction((sql) =>
+      insertRun(sql, {
+        cases: request.cases,
+        chatId,
+        configurationFingerprint,
+        judgeModelIds,
+        promptId: prompt.id,
+        promptRevisionId: prompt.revisionId,
+        source,
+        status: "running",
+        targetModelId: input.targetModelId,
+      }),
+    );
+    void this.#executeBrowserRun(runId, prompt.markdown, input.targetModelId, {
+      cases: request.cases,
+      judges: judgeModelIds,
+    }).catch(() => undefined);
+    return this.getRunSummary(runId);
+  }
+
+  async getRun(runId: string): Promise<StoredEvaluationRun> {
+    return this.#database.run(async (sql) => {
+      const row = await requireRunRow(sql, runId);
+      const cases = await selectCases(sql, runId);
+      const scores = await selectScores(sql, runId);
+      const scoresByCase = groupScoresByCase(scores);
+      return {
+        ...projectRunSummary(row),
+        cases: cases.map((testCase) => ({
+          ...projectCase(testCase),
+          scores: (scoresByCase.get(testCase.id) ?? []).map(projectScore),
+        })),
+        promptMarkdown: row.promptMarkdown,
+      };
+    });
+  }
+
+  async getRunSummary(runId: string): Promise<EvaluationRunSummary> {
+    return this.#database.run(async (sql) => projectRunSummary(await requireRunRow(sql, runId)));
+  }
+
+  async listRuns(
+    input: { limit?: number; promptId?: string } = {},
+  ): Promise<EvaluationRunSummary[]> {
+    const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+    return this.#database.run(async (sql) => {
+      const rows = input.promptId
+        ? await selectRunRowsForPrompt(sql, input.promptId, limit)
+        : await selectRunRows(sql, limit);
+      return rows.map(projectRunSummary);
+    });
+  }
+
+  async getCompatibleBooleanTrend(runId: string): Promise<BooleanTrendPoint[]> {
+    const run = await this.getRun(runId);
+    if (
+      run.status !== "completed" ||
+      run.cases.some(({ criteria }) => criteria.some(({ type }) => type !== "boolean"))
+    )
+      return [];
+    const compatible = await this.#database.run(async (sql) => {
+      const rows = await sql<{ id: string }[]>`
+        SELECT id
+        FROM evaluation_runs
+        WHERE
+          prompt_id = ${run.promptId}
+          AND configuration_fingerprint = ${run.configurationFingerprint}
+          AND status = 'completed'
+        ORDER BY completed_at, id
+      `;
+      return rows.map(({ id }) => id);
+    });
+    if (compatible.length < 2) return [];
+    const runs = await Promise.all(compatible.map((id) => this.getRun(id)));
+    return runs.map(projectBooleanTrendPoint);
+  }
+
+  async #executeBrowserRun(
+    runId: string,
+    markdown: string,
+    targetModelId: string,
+    request: { cases: EvaluationCase<unknown>[]; judges: string[] },
+  ): Promise<void> {
+    try {
+      const model = createChatModel({ model: targetModelId });
+      const result = await evaluate(
+        {
+          model: targetModelId,
+          async invoke(input: unknown) {
+            const text = typeof input === "string" ? input : JSON.stringify(input);
+            return (await model.invoke([new SystemMessage(markdown), new HumanMessage(text)])).text;
+          },
+        },
+        request,
+      );
+      await this.#database.transaction((sql) => completeRun(sql, runId, request.cases, result));
+    } catch (error) {
+      await this.#database.run((sql) => failRun(sql, runId, safeExecutionError(error)));
+    }
+  }
+}
+
+export async function persistAgentEvaluationSnapshots(
+  sql: DatabaseClient,
+  input: {
+    chatId: string;
+    markdownHash: string;
+    promptId: string;
+    promptRevisionId: string;
+    snapshots: AgentEvaluationSnapshot[];
+  },
+): Promise<Array<string | null>> {
+  const runIds: Array<string | null> = [];
+  for (const snapshot of input.snapshots) {
+    if (snapshot.markdownHash !== input.markdownHash) {
+      runIds.push(null);
+      continue;
+    }
+    const cases = snapshot.report.cases.map((testCase) => ({
+      input: testCase.input,
+      criteria: testCase.evaluations.map(({ criterion }) => ({
+        type: "boolean" as const,
+        instruction: criterion,
+      })),
+    }));
+    const runId = await insertRun(sql, {
+      cases,
+      chatId: input.chatId,
+      configurationFingerprint: createConfigurationFingerprint({
+        cases,
+        judges: [snapshot.report.judgeModel],
+        targetModelId: snapshot.report.targetModel,
+      }),
+      judgeModelIds: [snapshot.report.judgeModel],
+      promptId: input.promptId,
+      promptRevisionId: input.promptRevisionId,
+      source: "operator",
+      status: "completed",
+      targetModelId: snapshot.report.targetModel,
+    });
+    await completeAgentRun(sql, runId, cases, snapshot);
+    runIds.push(runId);
+  }
+  return runIds;
+}
+
+async function insertRun(
+  sql: DatabaseClient,
+  input: {
+    cases: EvaluationCase<unknown>[];
+    chatId: string | null;
+    configurationFingerprint: string;
+    judgeModelIds: string[];
+    promptId: string;
+    promptRevisionId: string;
+    source: EvaluationRunSource;
+    status: EvaluationRunStatus;
+    targetModelId: string;
+  },
+): Promise<string> {
+  const runId = randomUUID();
+  await sql`
+    INSERT INTO evaluation_runs (
+      id, prompt_id, prompt_revision_id, chat_id, source, target_model_id,
+      judge_model_ids, status, configuration_fingerprint,
+      completed_at
+    )
+    VALUES (
+      ${runId}, ${input.promptId}, ${input.promptRevisionId}, ${input.chatId}, ${input.source},
+      ${input.targetModelId}, ${sql.array(input.judgeModelIds)}, ${input.status},
+      ${input.configurationFingerprint}, ${input.status === "completed" ? new Date() : null}
+    )
+  `;
+  for (const [position, testCase] of input.cases.entries()) {
+    await sql`
+      INSERT INTO evaluation_cases (id, run_id, position, input_json, criteria_json)
+      VALUES (
+        ${randomUUID()}, ${runId}, ${position},
+        ${sql.json(testCase.input as postgres.JSONValue)},
+        ${sql.json(testCase.criteria as postgres.JSONValue[])}
+      )
+    `;
+  }
+  return runId;
+}
+
+async function completeRun(
+  sql: DatabaseClient,
+  runId: string,
+  configuredCases: EvaluationCase<unknown>[],
+  result: EvaluationRun,
+): Promise<void> {
+  const cases = await selectCases(sql, runId);
+  for (const [caseIndex, evaluatedCase] of result.cases.entries()) {
+    const storedCase = cases[caseIndex];
+    const configuredCase = configuredCases[caseIndex];
+    if (!storedCase || !configuredCase)
+      throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
+    await sql`
+      UPDATE evaluation_cases
+      SET output_json = ${sql.json(evaluatedCase.output as postgres.JSONValue)}
+      WHERE id = ${storedCase.id}
+    `;
+    const judgeOffsets = new Map<string, number>();
+    for (const evaluation of evaluatedCase.evaluations) {
+      const criterionPosition = judgeOffsets.get(evaluation.judge) ?? 0;
+      judgeOffsets.set(evaluation.judge, criterionPosition + 1);
+      const criterion = configuredCase.criteria[criterionPosition];
+      if (!criterion) throw new Error(`Unknown criterion position: ${criterionPosition}.`);
+      await insertScore(sql, storedCase.id, criterionPosition, criterion, evaluation);
+    }
+  }
+  await sql`
+    UPDATE evaluation_runs
+    SET status = 'completed', completed_at = now(), error_message = NULL
+    WHERE id = ${runId}
+  `;
+}
+
+async function completeAgentRun(
+  sql: DatabaseClient,
+  runId: string,
+  configuredCases: EvaluationCase<string>[],
+  snapshot: AgentEvaluationSnapshot,
+): Promise<void> {
+  const cases = await selectCases(sql, runId);
+  for (const [caseIndex, evaluatedCase] of snapshot.report.cases.entries()) {
+    const storedCase = cases[caseIndex];
+    const configuredCase = configuredCases[caseIndex];
+    if (!storedCase || !configuredCase)
+      throw new Error(`Unknown agent evaluation case index: ${caseIndex}.`);
+    await sql`UPDATE evaluation_cases SET output_json = ${sql.json(evaluatedCase.output as postgres.JSONValue)} WHERE id = ${storedCase.id}`;
+    for (const [criterionPosition, evaluation] of evaluatedCase.evaluations.entries()) {
+      const criterion = configuredCase.criteria[criterionPosition];
+      if (!criterion) throw new Error(`Unknown agent criterion position: ${criterionPosition}.`);
+      await insertScore(sql, storedCase.id, criterionPosition, criterion, {
+        comment: evaluation.comment,
+        criterion,
+        evidence: evaluation.evidence,
+        judge: snapshot.report.judgeModel,
+        value: evaluation.passed,
+      });
+    }
+  }
+}
+
+async function insertScore(
+  sql: DatabaseClient,
+  caseId: string,
+  criterionPosition: number,
+  criterion: Criterion,
+  evaluation: CriterionEvaluation,
+): Promise<void> {
+  await sql`
+    INSERT INTO evaluation_scores (
+      id, case_id, criterion_position, data_type, criterion_json,
+      judge_model_id, value_json, comment, evidence_json
+    )
+    VALUES (
+      ${randomUUID()}, ${caseId}, ${criterionPosition}, ${scoreDataType(criterion)},
+      ${sql.json(criterion as postgres.JSONValue)}, ${evaluation.judge},
+      ${sql.json(evaluation.value as postgres.JSONValue)}, ${evaluation.comment},
+      ${sql.json(evaluation.evidence)}
+    )
+  `;
+}
+
+async function failRun(sql: DatabaseClient, runId: string, errorMessage: string): Promise<void> {
+  await sql`
+    UPDATE evaluation_runs
+    SET status = 'failed', error_message = ${errorMessage}, completed_at = now()
+    WHERE id = ${runId} AND status = 'running'
+  `;
+}
+
+async function requireRunRow(sql: DatabaseClient, runId: string): Promise<RunRow> {
+  const [row] = await selectRunRow(sql, runId);
+  if (!row) throw new EvaluationRunNotFoundError(runId);
+  return row;
+}
+
+function selectRunRow(sql: DatabaseClient, runId: string) {
+  return sql<RunRow[]>`
+    SELECT
+      evaluation_runs.id, evaluation_runs.prompt_id, evaluation_runs.prompt_revision_id,
+      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
+      evaluation_runs.judge_model_ids, evaluation_runs.status,
+      evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
+      evaluation_runs.created_at, evaluation_runs.completed_at,
+      prompts.title AS prompt_title, prompt_revisions.markdown AS prompt_markdown,
+      count(evaluation_cases.id)::integer AS case_count
+    FROM evaluation_runs
+    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
+    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
+    WHERE evaluation_runs.id = ${runId}
+    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.markdown
+  `;
+}
+
+function selectRunRows(sql: DatabaseClient, limit: number) {
+  return sql<RunRow[]>`
+    SELECT
+      evaluation_runs.id, evaluation_runs.prompt_id, evaluation_runs.prompt_revision_id,
+      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
+      evaluation_runs.judge_model_ids, evaluation_runs.status,
+      evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
+      evaluation_runs.created_at, evaluation_runs.completed_at,
+      prompts.title AS prompt_title, prompt_revisions.markdown AS prompt_markdown,
+      count(evaluation_cases.id)::integer AS case_count
+    FROM evaluation_runs
+    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
+    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
+    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.markdown
+    ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
+    LIMIT ${limit}
+  `;
+}
+
+function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, limit: number) {
+  return sql<RunRow[]>`
+    SELECT
+      evaluation_runs.id, evaluation_runs.prompt_id, evaluation_runs.prompt_revision_id,
+      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
+      evaluation_runs.judge_model_ids, evaluation_runs.status,
+      evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
+      evaluation_runs.created_at, evaluation_runs.completed_at,
+      prompts.title AS prompt_title, prompt_revisions.markdown AS prompt_markdown,
+      count(evaluation_cases.id)::integer AS case_count
+    FROM evaluation_runs
+    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
+    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
+    WHERE evaluation_runs.prompt_id = ${promptId}
+    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.markdown
+    ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
+    LIMIT ${limit}
+  `;
+}
+
+function selectCases(sql: DatabaseClient, runId: string) {
+  return sql<CaseRow[]>`
+    SELECT id, position, input_json AS input, criteria_json AS criteria, output_json AS output
+    FROM evaluation_cases
+    WHERE run_id = ${runId}
+    ORDER BY position
+  `;
+}
+
+function selectScores(sql: DatabaseClient, runId: string) {
+  return sql<ScoreRow[]>`
+    SELECT
+      evaluation_scores.id, evaluation_scores.case_id,
+      evaluation_scores.criterion_position, evaluation_scores.data_type,
+      evaluation_scores.criterion_json AS criterion,
+      evaluation_scores.judge_model_id, evaluation_scores.value_json AS value,
+      evaluation_scores.comment, evaluation_scores.evidence_json AS evidence
+    FROM evaluation_scores
+    JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
+    WHERE evaluation_cases.run_id = ${runId}
+    ORDER BY evaluation_cases.position, evaluation_scores.criterion_position, evaluation_scores.judge_model_id
+  `;
+}
+
+function projectRunSummary(row: RunRow): EvaluationRunSummary {
+  return {
+    caseCount: row.caseCount,
+    chatId: row.chatId,
+    completedAt: row.completedAt?.toISOString() ?? null,
+    configurationFingerprint: row.configurationFingerprint,
+    createdAt: row.createdAt.toISOString(),
+    errorMessage: row.errorMessage,
+    id: row.id,
+    judgeModelIds: row.judgeModelIds,
+    promptId: row.promptId,
+    promptRevisionId: row.promptRevisionId,
+    promptTitle: row.promptTitle,
+    source: row.source,
+    status: row.status,
+    targetModelId: row.targetModelId,
+  };
+}
+
+function projectCase(row: CaseRow): Omit<StoredEvaluationCase, "scores"> {
+  return {
+    criteria: row.criteria,
+    id: row.id,
+    input: row.input,
+    output: row.output,
+    position: row.position,
+  };
+}
+
+function projectScore(row: ScoreRow): StoredEvaluationScore {
+  return {
+    comment: row.comment,
+    criterion: row.criterion,
+    criterionPosition: row.criterionPosition,
+    dataType: row.dataType,
+    evidence: row.evidence,
+    id: row.id,
+    judgeModelId: row.judgeModelId,
+    value: row.value,
+  };
+}
+
+function groupScoresByCase(scores: ScoreRow[]): Map<string, ScoreRow[]> {
+  const grouped = new Map<string, ScoreRow[]>();
+  for (const score of scores) {
+    const existing = grouped.get(score.caseId) ?? [];
+    existing.push(score);
+    grouped.set(score.caseId, existing);
+  }
+  return grouped;
+}
+
+function scoreDataType(criterion: Criterion): StoredEvaluationScore["dataType"] {
+  return criterion.type.toUpperCase() as StoredEvaluationScore["dataType"];
+}
+
+function createConfigurationFingerprint(input: {
+  cases: EvaluationCase<unknown>[];
+  judges: string[];
+  targetModelId: string;
+}): string {
+  const canonical = JSON.stringify({
+    cases: input.cases,
+    judges: input.judges.toSorted(),
+    targetModelId: input.targetModelId,
+  });
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+function requireConfiguredModels(modelIds: string[]): void {
+  const configured = new Set(loadRuntimeConfig().models.map(({ id }) => id));
+  const unknown = modelIds.find((id) => !configured.has(id));
+  if (unknown) throw new EvaluationRequestError(`Model is not configured: ${unknown}.`);
+}
+
+function safeExecutionError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (/LANGFUSE_(PUBLIC|SECRET)_KEY|Langfuse/i.test(message)) return message.slice(0, 500);
+  return "Evaluation execution failed before a complete result was available. Check the configured model and telemetry services, then retry.";
+}
+
+function projectBooleanTrendPoint(run: StoredEvaluationRun): BooleanTrendPoint {
+  const positions = new Map<number, { criterion: string; passed: number; total: number }>();
+  for (const testCase of run.cases) {
+    for (const score of testCase.scores) {
+      if (score.dataType !== "BOOLEAN" || typeof score.value !== "boolean") continue;
+      const current = positions.get(score.criterionPosition) ?? {
+        criterion: score.criterion.instruction,
+        passed: 0,
+        total: 0,
+      };
+      current.total += 1;
+      if (score.value) current.passed += 1;
+      positions.set(score.criterionPosition, current);
+    }
+  }
+  return {
+    completedAt: run.completedAt ?? run.createdAt,
+    rates: [...positions.entries()].map(([criterionPosition, value]) => ({
+      criterionPosition,
+      ...value,
+    })),
+    revisionId: run.promptRevisionId,
+    runId: run.id,
+  };
+}

@@ -1,0 +1,9 @@
+<!-- Identifies the private prompt workspace in browser tabs and installed shortcuts. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    .prompt-mark { fill: #18181b; }
+    @media (prefers-color-scheme: dark) { .prompt-mark { fill: #fafafa; } }
+  </style>
+  <path class="prompt-mark" d="M9 9h14v3H9zm0 5.5h10v3H9zm0 5.5h7v3H9z" />
+  <circle cx="23" cy="22" r="3" fill="#a3e635" />
+</svg>

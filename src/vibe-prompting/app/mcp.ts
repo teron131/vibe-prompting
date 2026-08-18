@@ -2,7 +2,8 @@
 
 import { FastMCP } from "@prefecthq/fastmcp-ts/server";
 
-import { apiEvaluationSchema, evaluateRequest, getConfiguredModels } from "./api.ts";
+import { getConfiguredModels } from "../server.ts";
+import { apiEvaluationSchema, evaluateRequest } from "./api.ts";
 
 export function createMcpServer(): FastMCP {
   const server = new FastMCP({ name: "vibe-prompting" });
@@ -23,7 +24,7 @@ export function createMcpServer(): FastMCP {
       description: "Configured models available for evaluation.",
       mimeType: "application/json",
     },
-    () => JSON.stringify({ models: getConfiguredModels() }),
+    async () => JSON.stringify({ models: await getConfiguredModels() }),
   );
   return server;
 }

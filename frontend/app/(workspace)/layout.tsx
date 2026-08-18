@@ -1,0 +1,9 @@
+/** Wraps all operational pages in the shared responsive navigation shell. */
+
+import type { ReactNode } from "react";
+
+import { WorkspaceShell } from "@/components/shell/workspace-shell";
+
+export default function WorkspaceLayout({ children }: { children: ReactNode }) {
+  return <WorkspaceShell>{children}</WorkspaceShell>;
+}

@@ -1,0 +1,271 @@
+/** Owns cursor history, date grouping, text search, and optimistic stop-before-delete behavior for the sidebar. */
+
+"use client";
+
+import { LoaderCircle, Search, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+
+import { ChatHistoryIcon } from "@/components/chat/history-icon";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/components/ui/utils";
+import type {
+  ChatPage,
+  ChatSearchResponse,
+  ChatSummary,
+  DeleteChatResponse,
+} from "@/contracts/chat";
+
+export function ChatHistory({ onNavigate }: { onNavigate(): void }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ChatSummary[]>([]);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string>();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const page = await fetchJson<ChatPage>("/api/chats?limit=30");
+      setChats(page.chats);
+      setNextCursor(page.nextCursor);
+    } catch (error) {
+      toast.error(readError(error));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    window.addEventListener("vibe:history", load);
+    return () => window.removeEventListener("vibe:history", load);
+  }, [load]);
+
+  useEffect(() => {
+    if (!searching || !query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void fetchJson<ChatSearchResponse>(`/api/chat-search?q=${encodeURIComponent(query)}`, {
+        signal: controller.signal,
+      })
+        .then(({ chats: results }) => setSearchResults(results))
+        .catch((error) => {
+          if (!controller.signal.aborted) toast.error(readError(error));
+        });
+    }, 200);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [query, searching]);
+
+  useEffect(() => {
+    if (!confirmingDeleteId) return;
+    const timer = window.setTimeout(() => setConfirmingDeleteId(undefined), 4000);
+    return () => window.clearTimeout(timer);
+  }, [confirmingDeleteId]);
+
+  const visibleChats = searching && query.trim() ? searchResults : chats;
+  const groups = useMemo(() => groupChats(visibleChats), [visibleChats]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await fetchJson<ChatPage>(
+        `/api/chats?limit=30&cursor=${encodeURIComponent(nextCursor)}`,
+      );
+      setChats((current) => [...current, ...page.chats]);
+      setNextCursor(page.nextCursor);
+    } catch (error) {
+      toast.error(readError(error));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function deleteChat(chat: ChatSummary) {
+    setConfirmingDeleteId(undefined);
+    const previousChats = chats;
+    const previousResults = searchResults;
+    setChats((current) => current.filter(({ id }) => id !== chat.id));
+    setSearchResults((current) => current.filter(({ id }) => id !== chat.id));
+    if (pathname === `/chat/${chat.id}`) router.push("/");
+    try {
+      await fetchJson<DeleteChatResponse>(`/api/chat?id=${encodeURIComponent(chat.id)}`, {
+        method: "DELETE",
+      });
+      router.refresh();
+    } catch (error) {
+      setChats(previousChats);
+      setSearchResults(previousResults);
+      toast.error(readError(error));
+    }
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center justify-between px-2 py-2">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Recent chats
+        </span>
+        <button
+          aria-label={searching ? "Close chat search" : "Search chats"}
+          className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent"
+          onClick={() => {
+            setSearching((value) => !value);
+            setQuery("");
+          }}
+          type="button"
+        >
+          {searching ? (
+            <X aria-hidden="true" className="size-3.5" />
+          ) : (
+            <Search aria-hidden="true" className="size-3.5" />
+          )}
+        </button>
+      </div>
+      {searching ? (
+        <div className="px-2 pb-2">
+          <Input
+            aria-label="Search chat history"
+            autoFocus
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search history"
+            value={query}
+          />
+        </div>
+      ) : null}
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
+        {loading ? (
+          <HistorySkeleton />
+        ) : visibleChats.length === 0 ? (
+          <p className="px-3 py-4 text-sm text-muted-foreground">
+            {searching && query
+              ? "No matching chats."
+              : "Your completed and stopped Operator chats will appear here."}
+          </p>
+        ) : (
+          groups.map((group) => (
+            <section className="mb-3" key={group.label}>
+              <h2 className="px-3 py-1 text-[11px] font-medium text-muted-foreground">
+                {group.label}
+              </h2>
+              {group.chats.map((chat) => (
+                <div className="group relative" key={chat.id}>
+                  <Link
+                    className={cn(
+                      "flex min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent",
+                      pathname === `/chat/${chat.id}` && "bg-sidebar-accent",
+                    )}
+                    href={`/chat/${chat.id}`}
+                    onClick={onNavigate}
+                  >
+                    <ChatHistoryIcon name={chat.icon} />
+                    <span className="truncate">{chat.title}&nbsp;</span>
+                  </Link>
+                  <button
+                    aria-label={
+                      confirmingDeleteId === chat.id
+                        ? `Confirm delete ${chat.title}`
+                        : `Delete ${chat.title}`
+                    }
+                    className={cn(
+                      "absolute right-1 top-1/2 inline-flex h-7 -translate-y-1/2 items-center justify-center gap-1 rounded-md bg-sidebar-accent text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100",
+                      confirmingDeleteId === chat.id
+                        ? "w-auto px-2 text-destructive opacity-100"
+                        : "w-7",
+                    )}
+                    onClick={() => {
+                      if (confirmingDeleteId === chat.id) void deleteChat(chat);
+                      else setConfirmingDeleteId(chat.id);
+                    }}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" className="size-3.5" />
+                    {confirmingDeleteId === chat.id ? (
+                      <span className="text-[11px] font-medium">Confirm</span>
+                    ) : null}
+                  </button>
+                </div>
+              ))}
+            </section>
+          ))
+        )}
+        {!searching && nextCursor ? (
+          <Button
+            className="mx-2 w-[calc(100%-1rem)]"
+            disabled={loadingMore}
+            onClick={loadMore}
+            size="sm"
+            variant="ghost"
+          >
+            {loadingMore ? (
+              <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+            ) : null}
+            Load older
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function HistorySkeleton() {
+  return (
+    <div aria-label="Loading chat history" className="space-y-2 px-2 py-3">
+      {[0, 1, 2, 3].map((item) => (
+        <div className="h-8 animate-pulse rounded-md bg-sidebar-accent" key={item} />
+      ))}
+    </div>
+  );
+}
+
+function groupChats(chats: ChatSummary[]) {
+  const now = new Date();
+  const today = startOfDay(now);
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  const sevenDays = new Date(today.getTime() - 7 * 86_400_000);
+  const thirtyDays = new Date(today.getTime() - 30 * 86_400_000);
+  const groups = [
+    { label: "Today", chats: [] as ChatSummary[], test: (date: Date) => date >= today },
+    { label: "Yesterday", chats: [] as ChatSummary[], test: (date: Date) => date >= yesterday },
+    { label: "Last 7 days", chats: [] as ChatSummary[], test: (date: Date) => date >= sevenDays },
+    { label: "Last 30 days", chats: [] as ChatSummary[], test: (date: Date) => date >= thirtyDays },
+    { label: "Older", chats: [] as ChatSummary[], test: () => true },
+  ];
+  for (const chat of chats) {
+    const group = groups.find(({ test }) => test(new Date(chat.updatedAt)));
+    group?.chats.push(chat);
+  }
+  return groups.filter(({ chats: items }) => items.length > 0);
+}
+
+function startOfDay(value: Date): Date {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const response = await fetch(input, { cache: "no-store", ...init });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: unknown };
+    throw new Error(typeof body.error === "string" ? body.error : "Chat history request failed.");
+  }
+  return (await response.json()) as T;
+}
+
+function readError(error: unknown): string {
+  return error instanceof Error ? error.message : "Chat history request failed.";
+}

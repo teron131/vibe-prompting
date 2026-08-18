@@ -1,8 +1,9 @@
 /** Loads the private model catalogue and environment-owned provider credentials for backend clients. */
 
-import "dotenv/config";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
+import { config as loadDotenv } from "dotenv";
 import { parse } from "yaml";
 import { z } from "zod";
 
@@ -10,6 +11,8 @@ export const CONFIG_PATH = ".config.yaml";
 export const DEFAULT_CLIPROXYAPI_BASE_URL = "http://localhost:8317/v1";
 export const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
 export const GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+
+loadDotenv({ override: false, path: resolveRuntimeFile(".env"), quiet: true });
 
 const platformIds = ["cliproxy", "gemini", "llm"] as const;
 
@@ -26,13 +29,13 @@ export type ConfiguredPlatform = PlatformConfig & { apiKey: string };
 
 const modelConfigSchema = z.object({
   id: z.string().trim().min(1),
-  label: z.string().trim().min(1),
   platform: z.enum(platformIds),
 });
 
 const fileConfigSchema = z
   .object({
     embeddingModel: modelConfigSchema,
+    metadataModel: modelConfigSchema,
     models: z.array(modelConfigSchema).min(1),
   })
   .superRefine(({ models }, context) => {
@@ -56,6 +59,7 @@ export type RuntimeConfig = {
   exa: {
     apiKey: string | undefined;
   };
+  metadataModel: ModelConfig;
   models: ModelConfig[];
   platforms: Record<PlatformId, PlatformConfig>;
 };
@@ -78,7 +82,7 @@ const environmentSchema = z.object({
 /** Reads user-editable models separately from provider secrets and endpoints. */
 export function loadRuntimeConfig(
   environment: NodeJS.ProcessEnv = process.env,
-  configPath: string = CONFIG_PATH,
+  configPath: string = resolveRuntimeFile(CONFIG_PATH),
 ): RuntimeConfig {
   const fileConfig = loadFileConfig(configPath);
   const values = environmentSchema.parse(environment);
@@ -89,6 +93,7 @@ export function loadRuntimeConfig(
     exa: {
       apiKey: values.EXA_API_KEY,
     },
+    metadataModel: fileConfig.metadataModel,
     models: fileConfig.models,
     platforms: {
       cliproxy: {
@@ -179,4 +184,10 @@ function credentialHint(platformId: PlatformId): string {
     return "GEMINI_API_KEY or LLM_API_KEY and LLM_BASE_URL";
   }
   return "LLM_API_KEY and LLM_BASE_URL";
+}
+
+function resolveRuntimeFile(filename: string): string {
+  const local = resolve(/* turbopackIgnore: true */ process.cwd(), filename);
+  if (existsSync(/* turbopackIgnore: true */ local)) return local;
+  return resolve(/* turbopackIgnore: true */ process.cwd(), "..", filename);
 }
