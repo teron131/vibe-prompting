@@ -2,11 +2,12 @@
 
 "use client";
 
-import { LoaderCircle, Sparkles, TriangleAlert } from "lucide-react";
+import { LoaderCircle, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { AppIcon } from "@/components/app-icon";
 import { Conversation as ConversationView } from "@/components/chat/elements/conversation";
 import { FeaturePageHeader } from "@/components/shell/header";
 import type {
@@ -221,7 +222,7 @@ export function Chat({ chatId: initialChatId }: { chatId?: string }) {
             name={conversation?.chat.icon ?? "message-circle"}
           />
         }
-        title={conversation?.chat.title ?? "Operator"}
+        title={conversation?.chat.title ?? "New chat"}
       />
       {loading ? (
         <div className="grid flex-1 place-items-center">
@@ -280,22 +281,17 @@ export function Chat({ chatId: initialChatId }: { chatId?: string }) {
 }
 
 function EmptyState({ onSelect }: { onSelect(value: string): void }) {
-  const suggestions = [
-    "Explain a difficult idea",
-    "Draft a reusable prompt",
-    "Evaluate a saved prompt",
-  ];
+  const description =
+    "Brainstorm ideas, optimize prompts, or get surgical about what needs improvement.";
+  const suggestions = ["Brainstorm an idea", "Optimize a prompt", "Find the weak spot"];
   return (
     <div className="grid min-h-[46vh] place-items-center text-center">
       <div className="max-w-xl">
-        <div className="mx-auto mb-4 grid size-12 place-items-center rounded-2xl bg-secondary">
-          <Sparkles aria-hidden="true" className="size-5" />
+        <div className="mx-auto mb-4 grid size-12 place-items-center">
+          <AppIcon className="size-7" />
         </div>
-        <h2 className="text-xl font-semibold">What can the Operator help with?</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Chat normally, or let the Operator use prompt, evaluation, and web tools when the task
-          calls for them.
-        </p>
+        <h2 className="text-xl font-semibold">How can I help?</h2>
+        <p className="mt-2 text-balance text-sm leading-6 text-muted-foreground">{description}</p>
         <div className="mt-5 flex flex-wrap justify-center gap-2">
           {suggestions.map((suggestion) => (
             <button
@@ -352,7 +348,7 @@ async function consumeRunStream(
   response: Response,
   onEvent: (event: RunEvent) => void,
 ): Promise<void> {
-  if (!response.body) throw new Error("The Operator stream was unavailable.");
+  if (!response.body) throw new Error("The response stream was unavailable.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";

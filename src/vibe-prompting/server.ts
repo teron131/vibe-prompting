@@ -4,10 +4,10 @@ import { resolveModelIdentities } from "./clients/models-dev.ts";
 import { loadRuntimeConfig } from "./config.ts";
 import { ConversationRunRegistry } from "./conversations/runs.ts";
 import { ConversationStore } from "./conversations/store.ts";
+import { createDatabase } from "./database.ts";
 import { EvaluationRuns } from "./evaluation/runs.ts";
+import { configureModelSpendLimit } from "./model-spend-limit.ts";
 import { PromptStore } from "./prompts/store.ts";
-import { createDatabase } from "./storage/database.ts";
-import { configureModelCostBudget } from "./usage/model-cost-budget.ts";
 
 export type ConfiguredModel = {
   id: string;
@@ -42,7 +42,7 @@ export async function createApplicationServices(
 ): Promise<ApplicationServices> {
   const database = createDatabase(databaseUrl);
   await database.initialize();
-  configureModelCostBudget(database);
+  configureModelSpendLimit(database);
   const prompts = new PromptStore(database);
   const evaluations = new EvaluationRuns(database, prompts);
   return {

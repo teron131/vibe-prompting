@@ -19,7 +19,7 @@ import type {
   DeleteChatResponse,
 } from "@/contracts/chat";
 
-export function ChatHistory({ onNavigate }: { onNavigate(): void }) {
+export function ChatHistory() {
   const pathname = usePathname();
   const router = useRouter();
   const [chats, setChats] = useState<ChatSummary[]>([]);
@@ -117,7 +117,7 @@ export function ChatHistory({ onNavigate }: { onNavigate(): void }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between px-2 py-2">
+      <div className="flex items-center justify-between px-1.5 py-2">
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Recent chats
         </span>
@@ -152,26 +152,25 @@ export function ChatHistory({ onNavigate }: { onNavigate(): void }) {
         {loading ? (
           <HistorySkeleton />
         ) : visibleChats.length === 0 ? (
-          <p className="px-3 py-4 text-sm text-muted-foreground">
+          <p className="px-2 py-3 text-xs text-muted-foreground">
             {searching && query
               ? "No matching chats."
-              : "Your completed and stopped Operator chats will appear here."}
+              : "Your completed and stopped chats will appear here."}
           </p>
         ) : (
           groups.map((group) => (
             <section className="mb-3" key={group.label}>
-              <h2 className="px-3 py-1 text-[11px] font-medium text-muted-foreground">
+              <h2 className="px-2 py-1 text-[10px] font-medium text-muted-foreground">
                 {group.label}
               </h2>
               {group.chats.map((chat) => (
                 <div className="group relative" key={chat.id}>
                   <Link
                     className={cn(
-                      "flex min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent",
+                      "flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs hover:bg-sidebar-accent",
                       pathname === `/chat/${chat.id}` && "bg-sidebar-accent",
                     )}
                     href={`/chat/${chat.id}`}
-                    onClick={onNavigate}
                   >
                     <ChatHistoryIcon name={chat.icon} />
                     <span className="truncate">{chat.title}&nbsp;</span>

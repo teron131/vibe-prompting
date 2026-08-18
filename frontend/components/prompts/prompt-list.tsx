@@ -118,7 +118,7 @@ export function PromptList() {
           <FilePlus2 aria-hidden="true" className="mx-auto size-6 text-muted-foreground" />
           <h3 className="mt-3 font-medium">No saved prompts yet</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Create the first prompt artifact to begin an Operator chat or evaluation.
+            Create your first saved prompt, then use it in chats or evaluations.
           </p>
         </div>
       ) : (

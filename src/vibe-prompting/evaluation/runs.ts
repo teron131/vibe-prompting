@@ -8,8 +8,8 @@ import { z } from "zod";
 
 import { createChatModel } from "../clients/llm.ts";
 import { loadRuntimeConfig } from "../config.ts";
+import type { Database, DatabaseClient } from "../database.ts";
 import { PromptConflictError, type PromptStore } from "../prompts/store.ts";
-import type { Database, DatabaseClient } from "../storage/database.ts";
 import {
   type Criterion,
   type CriterionEvaluation,

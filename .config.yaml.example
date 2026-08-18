@@ -1,22 +1,16 @@
 # Copy this file to .config.yaml and edit the model catalogue for this installation.
 models:
+  - id: gpt-5.6-luna
+    platform: cliproxy
   - id: gemini-3.7-flash
-    inputPricePerMillionTokens: 0.148047
-    outputPricePerMillionTokens: 2.081225
     platform: gemini
   - id: deepseek/deepseek-v4-flash-0731
-    inputPricePerMillionTokens: 0.030547
-    outputPricePerMillionTokens: 0.202234
     platform: llm
 
 embeddingModel:
   id: gemini-embedding-2
-  inputPricePerMillionTokens: 0.2
-  outputPricePerMillionTokens: 0
   platform: gemini
 
 metadataModel:
   id: gemini-3.7-flash
-  inputPricePerMillionTokens: 0.148047
-  outputPricePerMillionTokens: 2.081225
   platform: gemini

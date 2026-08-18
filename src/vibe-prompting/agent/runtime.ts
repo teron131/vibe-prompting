@@ -14,8 +14,8 @@ import { connectExaSearch } from "../clients/exa.ts";
 import { preserveGeminiToolCallSignatures } from "../clients/gemini-tool-calls.ts";
 import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../config.ts";
 import type { EvaluationRuns } from "../evaluation/runs.ts";
+import { getModelSpendLimit } from "../model-spend-limit.ts";
 import type { PromptStore } from "../prompts/store.ts";
-import { getModelCostBudget } from "../usage/model-cost-budget.ts";
 import { createPromptWorkspace } from "./artifacts.ts";
 import { AGENT_INSTRUCTIONS } from "./instructions.ts";
 import { createPromptEvaluationTool, type PromptEvaluationSnapshot } from "./tools/evaluation.ts";
@@ -105,7 +105,7 @@ export function createAgentRuntime(
 ): AgentRuntime {
   const config = loadRuntimeConfig();
   const model = config.models.find(({ id }) => id === modelId);
-  if (!model) throw new Error(`Unknown configured Operator model: ${modelId}.`);
+  if (!model) throw new Error(`Unknown configured model: ${modelId}.`);
 
   const platform = resolveModelPlatform(model, config);
   const openAIProvider = new OpenAIProvider({
@@ -123,7 +123,7 @@ export function createAgentRuntime(
       mcpServers,
       model: model.id,
       modelSettings: { reasoning: { effort: reasoningEffort, summary: "auto" } },
-      name: "Operator",
+      name: "Vibe Prompting",
       tools,
     }),
     model,
@@ -155,8 +155,8 @@ export async function streamChatRun(
       exaServer ? [exaServer] : [],
       input.reasoningEffort,
     );
-    const budget = getModelCostBudget();
-    await budget?.assertCanSpend();
+    const spendLimit = getModelSpendLimit();
+    await spendLimit?.assertCanSpend(runtime.model);
     const run = await runtime.runner.run(runtime.agent, formatConversation(input), {
       signal: input.signal,
       stream: true,
@@ -171,10 +171,10 @@ export async function streamChatRun(
     try {
       await run.completed;
     } finally {
-      await budget?.record(runtime.model, run.state.usage);
+      await spendLimit?.record(runtime.model, run.state.usage);
     }
     if (run.error) throw run.error;
-    if (typeof run.finalOutput !== "string") throw new Error("The Operator did not return text.");
+    if (typeof run.finalOutput !== "string") throw new Error("The model did not return text.");
     return { message: run.finalOutput, model: runtime.model };
   } finally {
     await exaServer?.close();
@@ -213,8 +213,8 @@ export async function streamPromptEdit(
       ],
       [exaServer],
     );
-    const budget = getModelCostBudget();
-    await budget?.assertCanSpend();
+    const spendLimit = getModelSpendLimit();
+    await spendLimit?.assertCanSpend(runtime.model);
     const run = await runtime.runner.run(runtime.agent, input.instruction, {
       signal: input.signal,
       stream: true,
@@ -229,11 +229,11 @@ export async function streamPromptEdit(
     try {
       await run.completed;
     } finally {
-      await budget?.record(runtime.model, run.state.usage);
+      await spendLimit?.record(runtime.model, run.state.usage);
     }
     if (run.error) throw run.error;
     if (typeof run.finalOutput !== "string") {
-      throw new Error("The Operator did not return text.");
+      throw new Error("The model did not return text.");
     }
     return {
       evaluations,
@@ -368,7 +368,7 @@ function summarizeTool(name: string, output: unknown): string {
 
 function formatConversation(input: ChatRunInput): AgentInputItem[] {
   const transcript = input.history
-    .map(({ role, text }) => `${role === "user" ? "User" : "Operator"}: ${text}`)
+    .map(({ role, text }) => `${role === "user" ? "User" : "Assistant"}: ${text}`)
     .join("\n\n");
   const text = transcript
     ? `Conversation so far:\n\n${transcript}\n\nUser: ${input.instruction}`
@@ -418,5 +418,5 @@ async function closeRunResources(
 }
 
 function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException("The Operator run was stopped.", "AbortError");
+  return signal.reason ?? new DOMException("The run was stopped.", "AbortError");
 }

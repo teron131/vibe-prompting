@@ -1,4 +1,4 @@
-/** Ports Master UI's compact tool activity disclosure onto persisted Operator tool parts. */
+/** Ports Master UI's compact tool activity disclosure onto persisted assistant tool parts. */
 
 "use client";
 

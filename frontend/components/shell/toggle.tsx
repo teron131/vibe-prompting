@@ -1,8 +1,8 @@
-/** Opens the mobile navigation drawer and controls the persistent desktop sidebar width. */
+/** Opens the transient workspace drawer from the page header. */
 
 "use client";
 
-import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { PanelLeftOpen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
@@ -10,35 +10,19 @@ import { cn } from "@/components/ui/utils";
 import { useWorkspaceSidebar } from "./workspace-shell";
 
 export function SidebarToggle({ className }: { className?: string }) {
-  const { desktopCollapsed, toggleDesktop, toggleMobile } = useWorkspaceSidebar();
-  const desktopLabel = desktopCollapsed ? "Expand sidebar" : "Collapse sidebar";
+  const { openSidebar } = useWorkspaceSidebar();
 
   return (
-    <>
-      <Button
-        aria-label="Open navigation"
-        className={cn("md:hidden", className)}
-        onClick={toggleMobile}
-        size="icon"
-        title="Open navigation"
-        variant="ghost"
-      >
-        <Menu aria-hidden="true" />
-      </Button>
-      <Button
-        aria-label={desktopLabel}
-        className={cn("hidden size-8 text-muted-foreground md:inline-flex", className)}
-        onClick={toggleDesktop}
-        size="icon"
-        title={desktopLabel}
-        variant="ghost"
-      >
-        {desktopCollapsed ? (
-          <PanelLeftOpen aria-hidden="true" className="size-4" />
-        ) : (
-          <PanelLeftClose aria-hidden="true" className="size-4" />
-        )}
-      </Button>
-    </>
+    <Button
+      aria-label="Open sidebar"
+      className={cn("size-8 text-muted-foreground", className)}
+      data-sidebar-toggle
+      onClick={openSidebar}
+      size="icon"
+      title="Open sidebar"
+      variant="ghost"
+    >
+      <PanelLeftOpen aria-hidden="true" className="size-4" />
+    </Button>
   );
 }

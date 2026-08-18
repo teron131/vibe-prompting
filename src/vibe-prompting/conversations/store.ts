@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import type postgres from "postgres";
 
-import type { Database, DatabaseClient } from "../storage/database.ts";
+import type { Database, DatabaseClient } from "../database.ts";
 import { type ChatMetadata, validateChatMetadata } from "./metadata.ts";
 
 export type StoredMessagePart =

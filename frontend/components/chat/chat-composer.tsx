@@ -168,7 +168,7 @@ export function ChatComposer({
           </div>
           {running ? (
             <Button
-              aria-label="Stop Operator"
+              aria-label="Stop generating"
               className="size-10 shrink-0 rounded-full"
               onClick={onStop}
               size="icon"
@@ -177,7 +177,7 @@ export function ChatComposer({
             </Button>
           ) : (
             <Button
-              aria-label="Send to Operator"
+              aria-label="Send message"
               className="size-10 shrink-0 rounded-full"
               disabled={!canSubmit}
               size="icon"
@@ -262,13 +262,10 @@ function ReasoningSelector({
           className="size-3 shrink-0 text-muted-foreground transition-transform group-open/effort:rotate-180"
         />
       </summary>
-      <div className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-44 rounded-xl border bg-popover p-1.5 shadow-xl">
-        <div className="px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          Reasoning effort
-        </div>
+      <div className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-max rounded-xl border bg-popover p-1 shadow-xl">
         {REASONING_OPTIONS.map((option) => (
           <button
-            className="flex w-full items-center rounded-lg px-2.5 py-2 text-sm hover:bg-accent"
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-accent"
             key={option.value}
             onClick={() => {
               onChange(option.value);
@@ -276,8 +273,10 @@ function ReasoningSelector({
             }}
             type="button"
           >
-            <span className="flex-1 text-left">{option.label}</span>
-            {option.value === value ? <Check aria-label="Selected" className="size-4" /> : null}
+            <span className="whitespace-nowrap text-left">{option.label}</span>
+            <span className="ml-auto grid size-4 place-items-center">
+              {option.value === value ? <Check aria-label="Selected" className="size-3.5" /> : null}
+            </span>
           </button>
         ))}
       </div>

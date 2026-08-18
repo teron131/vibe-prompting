@@ -1,11 +1,13 @@
-/** Composes prompt-workspace navigation, chat entry, history region, and appearance controls. */
+/** Composes navigation, history, appearance controls, and the close affordance inside the workspace drawer. */
 
 "use client";
 
-import { FlaskConical, MessageSquareText, Plus, Sparkles } from "lucide-react";
+import { FlaskConical, MessageSquareText, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { RefObject } from "react";
 
+import { AppIcon } from "@/components/app-icon";
 import { cn } from "@/components/ui/utils";
 
 import { ChatHistory } from "./chat-history";
@@ -17,38 +19,36 @@ const links = [
   { href: "/evaluations", icon: FlaskConical, label: "Evaluations" },
 ];
 
-export function AppSidebar({ collapsed, onNavigate }: { collapsed: boolean; onNavigate(): void }) {
+export function AppSidebar({
+  closeButtonRef,
+  onClose,
+}: {
+  closeButtonRef: RefObject<HTMLButtonElement | null>;
+  onClose(): void;
+}) {
   const pathname = usePathname();
   return (
     <div className="flex h-full flex-col">
-      <div
-        className={cn(
-          "flex h-(--header-height) items-center justify-between border-b border-sidebar-border px-4",
-          collapsed && "md:justify-center md:px-2",
-        )}
-      >
+      <div className="flex h-(--header-height) items-center justify-between border-b border-sidebar-border px-2">
         <Link
-          className={cn(
-            "flex min-w-0 items-center gap-2 font-semibold tracking-tight",
-            collapsed && "md:hidden",
-          )}
+          className="flex min-w-0 items-center gap-1.5 text-sm font-semibold tracking-tight"
           href="/"
-          onClick={onNavigate}
         >
-          <BrandIcon />
+          <AppIcon className="size-5" />
           <span className="truncate">Vibe Prompting</span>
         </Link>
-        <Link
-          aria-label="New chat"
-          className="inline-flex size-8 items-center justify-center rounded-md transition-colors hover:bg-sidebar-accent"
-          href="/"
-          onClick={onNavigate}
-          title="New chat"
+        <button
+          aria-label="Close sidebar"
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-sidebar-accent"
+          onClick={onClose}
+          ref={closeButtonRef}
+          title="Close sidebar"
+          type="button"
         >
-          <Plus aria-hidden="true" className="size-4" />
-        </Link>
+          <X aria-hidden="true" className="size-3.5" />
+        </button>
       </div>
-      <nav aria-label="Primary" className="space-y-1 p-2">
+      <nav aria-label="Primary" className="space-y-1 p-1.5">
         {links.map(({ href, icon: Icon, label }) => {
           const active =
             href === "/"
@@ -59,43 +59,27 @@ export function AppSidebar({ collapsed, onNavigate }: { collapsed: boolean; onNa
               aria-current={active ? "page" : undefined}
               aria-label={label}
               className={cn(
-                "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors hover:bg-sidebar-accent",
+                "flex h-8 items-center gap-2 rounded-md px-2 text-xs font-medium transition-colors hover:bg-sidebar-accent",
                 active && "bg-foreground text-background hover:bg-foreground hover:text-background",
-                collapsed && "md:mx-auto md:size-8 md:justify-center md:rounded-full md:px-0",
               )}
               href={href}
               key={href}
-              onClick={onNavigate}
-              title={collapsed ? label : undefined}
             >
-              <Icon aria-hidden="true" className="size-4 shrink-0" />
-              <span className={cn(collapsed && "md:hidden")}>{label}</span>
+              <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+              <span>{label}</span>
             </Link>
           );
         })}
       </nav>
-      <div className={cn("mx-2 border-t border-sidebar-border", collapsed && "md:hidden")} />
-      <div className="flex min-h-0 flex-1 flex-col p-2">
-        <div className={cn("min-h-0 flex-1", collapsed && "md:hidden")}>
-          <ChatHistory onNavigate={onNavigate} />
+      <div className="mx-1.5 border-t border-sidebar-border" />
+      <div className="flex min-h-0 flex-1 flex-col p-1.5">
+        <div className="min-h-0 flex-1">
+          <ChatHistory />
         </div>
       </div>
-      <div className="border-t border-sidebar-border p-2">
-        <SidebarThemeToggle collapsed={collapsed} />
+      <div className="border-t border-sidebar-border p-1.5">
+        <SidebarThemeToggle />
       </div>
     </div>
-  );
-}
-
-function BrandIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="size-6 shrink-0 text-black dark:text-white"
-      viewBox="0 0 32 32"
-    >
-      <path d="M9 9h14v3H9zm0 5.5h10v3H9zm0 5.5h7v3H9z" fill="currentColor" />
-      <circle cx="23" cy="22" fill="#a3e635" r="3" />
-    </svg>
   );
 }

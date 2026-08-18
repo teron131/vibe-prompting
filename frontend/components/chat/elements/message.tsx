@@ -1,4 +1,4 @@
-/** Establishes distinct readable layouts for user requests and Operator outcomes. */
+/** Establishes distinct readable layouts for user requests and assistant outcomes. */
 
 import type { ReactNode } from "react";
 

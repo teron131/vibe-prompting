@@ -1,7 +1,8 @@
-/** Enforces the deployment-wide rolling model-spend circuit breaker from persisted token usage and configured prices. */
+/** Enforces the deployment-wide rolling model-spend circuit breaker from persisted token usage and resolved model pricing. */
 
-import type { ModelConfig } from "../config.ts";
-import type { Database } from "../storage/database.ts";
+import { resolveModelPrice } from "./clients/openrouter-pricing.ts";
+import type { ModelConfig } from "./config.ts";
+import type { Database } from "./database.ts";
 
 export const MODEL_SPEND_LIMIT_USD = 20;
 
@@ -32,14 +33,15 @@ export class ModelSpendLimitError extends Error {
   }
 }
 
-export class ModelCostBudget {
+export class ModelSpendLimit {
   readonly #database: Database;
 
   constructor(database: Database) {
     this.#database = database;
   }
 
-  async assertCanSpend(): Promise<void> {
+  async assertCanSpend(model: ModelConfig): Promise<void> {
+    await resolveModelPrice(model.id);
     await this.#database.transaction(async (sql) => {
       await sql`SELECT pg_advisory_xact_lock(${MODEL_SPEND_LOCK})`;
       await sql`
@@ -76,9 +78,10 @@ export class ModelCostBudget {
     const inputTokens = normalizeTokenCount(usage.inputTokens);
     const outputTokens = normalizeTokenCount(usage.outputTokens);
     if (inputTokens === 0 && outputTokens === 0) return;
+    const price = await resolveModelPrice(model.id);
     const estimatedCostUsd =
-      (inputTokens * model.inputPricePerMillionTokens +
-        outputTokens * model.outputPricePerMillionTokens) /
+      (inputTokens * price.inputPricePerMillionTokens +
+        outputTokens * price.outputPricePerMillionTokens) /
       TOKENS_PER_MILLION;
     await this.#database.run(
       (sql) => sql`
@@ -99,15 +102,15 @@ export class ModelCostBudget {
   }
 }
 
-let configuredBudget: ModelCostBudget | undefined;
+let configuredSpendLimit: ModelSpendLimit | undefined;
 
-export function configureModelCostBudget(database: Database): ModelCostBudget {
-  configuredBudget = new ModelCostBudget(database);
-  return configuredBudget;
+export function configureModelSpendLimit(database: Database): ModelSpendLimit {
+  configuredSpendLimit = new ModelSpendLimit(database);
+  return configuredSpendLimit;
 }
 
-export function getModelCostBudget(): ModelCostBudget | undefined {
-  return configuredBudget;
+export function getModelSpendLimit(): ModelSpendLimit | undefined {
+  return configuredSpendLimit;
 }
 
 function normalizeTokenCount(value: number): number {

@@ -1,79 +1,100 @@
-/** Owns responsive sidebar visibility and persisted desktop width while leaving route content and feature state to descendants. */
+/** Owns the transient workspace drawer while leaving route content and feature state to descendants. */
 
 "use client";
 
 import { usePathname } from "next/navigation";
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { cn } from "@/components/ui/utils";
 
 import { AppSidebar } from "./app-sidebar";
 
 type SidebarContextValue = {
-  closeMobile(): void;
-  desktopCollapsed: boolean;
-  toggleDesktop(): void;
-  toggleMobile(): void;
+  openSidebar(): void;
 };
-
-const DESKTOP_COLLAPSED_KEY = "vibe-prompting-sidebar-collapsed";
 
 const SidebarContext = createContext<SidebarContextValue | null>(null);
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previousPathnameRef = useRef(pathname);
+  const returnFocusRef = useRef<HTMLElement>(null);
+  const closeSidebar = useCallback(() => {
+    setSidebarOpen(false);
+    window.requestAnimationFrame(() => {
+      if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus();
+    });
+  }, []);
+  const openSidebar = useCallback(() => {
+    returnFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSidebarOpen(true);
+  }, []);
   const context = useMemo(
     () => ({
-      closeMobile: () => setMobileOpen(false),
-      desktopCollapsed,
-      toggleDesktop: () =>
-        setDesktopCollapsed((collapsed) => {
-          const nextCollapsed = !collapsed;
-          window.localStorage.setItem(DESKTOP_COLLAPSED_KEY, String(nextCollapsed));
-          return nextCollapsed;
-        }),
-      toggleMobile: () => setMobileOpen((open) => !open),
+      openSidebar,
     }),
-    [desktopCollapsed],
+    [openSidebar],
   );
 
   useEffect(() => {
-    setDesktopCollapsed(window.localStorage.getItem(DESKTOP_COLLAPSED_KEY) === "true");
-  }, []);
+    if (previousPathnameRef.current === pathname) return;
+    previousPathnameRef.current = pathname;
+    if (!sidebarOpen) return;
+    setSidebarOpen(false);
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>("[data-sidebar-toggle]")?.focus();
+    });
+  }, [pathname, sidebarOpen]);
 
   useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
+    if (!sidebarOpen) return;
+    closeButtonRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeSidebar();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [closeSidebar, sidebarOpen]);
 
   return (
     <SidebarContext.Provider value={context}>
       <div className="min-h-screen bg-background">
         <button
-          aria-label="Close navigation"
+          aria-hidden="true"
           className={cn(
-            "fixed inset-0 z-30 bg-black/35 transition-opacity md:hidden",
-            mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
+            "fixed inset-0 z-30 bg-black/20 transition-opacity",
+            sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0",
           )}
-          onClick={context.closeMobile}
+          onClick={closeSidebar}
+          tabIndex={-1}
           type="button"
         />
         <aside
+          aria-label="Workspace navigation"
+          aria-hidden={!sidebarOpen}
+          aria-modal="true"
           className={cn(
-            "fixed inset-y-0 left-0 z-40 w-72 border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[transform,width] md:translate-x-0",
-            mobileOpen ? "translate-x-0" : "-translate-x-full",
-            desktopCollapsed ? "md:w-14" : "md:w-56",
+            "fixed inset-y-0 left-0 z-40 w-45 border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform",
+            sidebarOpen ? "translate-x-0" : "-translate-x-full",
           )}
+          inert={!sidebarOpen}
+          role="dialog"
         >
-          <AppSidebar collapsed={desktopCollapsed} onNavigate={context.closeMobile} />
+          <AppSidebar closeButtonRef={closeButtonRef} onClose={closeSidebar} />
         </aside>
-        <div
-          className={cn(
-            "min-h-screen transition-[padding-left]",
-            desktopCollapsed ? "md:pl-14" : "md:pl-56",
-          )}
-        >
+        <div className="min-h-screen" inert={sidebarOpen}>
           {children}
         </div>
       </div>

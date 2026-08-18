@@ -1,4 +1,4 @@
-/** Resolves configured runtime model IDs to canonical Models.dev display identities without making the remote catalog a runtime execution dependency. */
+/** Resolves configured runtime model IDs to canonical Models.dev identities without making display metadata a runtime execution dependency. */
 
 import { z } from "zod";
 
@@ -6,12 +6,20 @@ const MODELS_DEV_URL = "https://models.dev/models.json";
 const modelsDevModelSchema = z.object({ id: z.string(), name: z.string().trim().min(1) });
 const modelsDevCatalogSchema = z.record(z.string(), modelsDevModelSchema);
 
+type ModelsDevCatalog = z.infer<typeof modelsDevCatalogSchema>;
+
 export type ModelIdentity = { label: string; provider: string };
 
-let catalogPromise: Promise<z.infer<typeof modelsDevCatalogSchema>> | undefined;
+let catalogPromise: Promise<ModelsDevCatalog> | undefined;
+
+export async function resolveModelCatalogId(id: string): Promise<string> {
+  const match = findCatalogModel(id, await loadModelsDevCatalog());
+  if (!match) throw new Error(`Models.dev does not contain configured model: ${id}.`);
+  return match.catalogId;
+}
 
 export async function resolveModelIdentities(ids: readonly string[]): Promise<ModelIdentity[]> {
-  let catalog: z.infer<typeof modelsDevCatalogSchema> | undefined;
+  let catalog: ModelsDevCatalog | undefined;
   try {
     catalog = await loadModelsDevCatalog();
   } catch (error) {
@@ -20,7 +28,7 @@ export async function resolveModelIdentities(ids: readonly string[]): Promise<Mo
   return ids.map((id) => resolveModelIdentity(id, catalog));
 }
 
-async function loadModelsDevCatalog(): Promise<z.infer<typeof modelsDevCatalogSchema>> {
+async function loadModelsDevCatalog(): Promise<ModelsDevCatalog> {
   catalogPromise ??= fetch(MODELS_DEV_URL, { signal: AbortSignal.timeout(5000) })
     .then(async (response) => {
       if (!response.ok) throw new Error(`Models.dev returned HTTP ${response.status}.`);
@@ -33,10 +41,7 @@ async function loadModelsDevCatalog(): Promise<z.infer<typeof modelsDevCatalogSc
   return catalogPromise;
 }
 
-function resolveModelIdentity(
-  id: string,
-  catalog: z.infer<typeof modelsDevCatalogSchema> | undefined,
-): ModelIdentity {
+function resolveModelIdentity(id: string, catalog: ModelsDevCatalog | undefined): ModelIdentity {
   const match = catalog ? findCatalogModel(id, catalog) : undefined;
   if (match) return { label: match.model.name, provider: match.catalogId.split("/", 1)[0] };
   return { label: humanizeModelId(id), provider: id.includes("/") ? id.split("/", 1)[0] : "model" };
@@ -44,7 +49,7 @@ function resolveModelIdentity(
 
 function findCatalogModel(
   id: string,
-  catalog: z.infer<typeof modelsDevCatalogSchema>,
+  catalog: ModelsDevCatalog,
 ): { catalogId: string; model: z.infer<typeof modelsDevModelSchema> } | undefined {
   const exact = catalog[id];
   if (exact) return { catalogId: id, model: exact };

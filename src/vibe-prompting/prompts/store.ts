@@ -2,7 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { Database, DatabaseClient } from "../storage/database.ts";
+import type { Database, DatabaseClient } from "../database.ts";
 
 export type PromptRevisionSource = "operator" | "user";
 
@@ -219,7 +219,7 @@ export async function appendAgentEdit(
         ${input.promptId},
         ${revisionId},
         ${input.visibleMarkdown},
-        'Manual edit before the Operator request.',
+        'Manual edit before the assistant request.',
         'user'
       )
     `;

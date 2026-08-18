@@ -15,13 +15,13 @@ import { z } from "zod";
 import { editPrompt } from "../agent/runtime.ts";
 import { createChatModel } from "../clients/llm.ts";
 import { evaluate, requestSchema } from "../evaluation/api.ts";
+import { getModelSpendLimit } from "../model-spend-limit.ts";
 import { PromptConflictError } from "../prompts/store.ts";
 import {
   createApplicationServices,
   getApplicationServices,
   getConfiguredModels,
 } from "../server.ts";
-import { getModelCostBudget } from "../usage/model-cost-budget.ts";
 
 const modelIdSchema = z.string().trim().min(1).describe("Configured model ID.");
 const promptIdSchema = z.string().uuid();
@@ -31,9 +31,9 @@ const createPromptRequestSchema = z.object({
   title: z.string().trim().min(1).describe("Human-readable prompt title."),
 });
 const editPromptRequestSchema = z.object({
-  instruction: z.string().trim().min(1).describe("Change requested from the Operator."),
+  instruction: z.string().trim().min(1).describe("Requested prompt change."),
   markdown: z.string().describe("Prompt Markdown currently visible to the user."),
-  modelId: modelIdSchema.describe("Configured model that runs the Operator."),
+  modelId: modelIdSchema.describe("Configured model used for the edit."),
   revisionId: promptIdSchema.describe("Revision the visible Markdown was loaded from."),
 });
 const apiCaseSchema = requestSchema.shape.cases.element.extend({
@@ -45,7 +45,7 @@ export const apiEvaluationSchema = requestSchema.extend({
 });
 
 export async function evaluateRequest(rawRequest: unknown) {
-  if (!getModelCostBudget()) await getApplicationServices();
+  if (!getModelSpendLimit()) await getApplicationServices();
   const { targetModel, ...request } = apiEvaluationSchema.parse(rawRequest);
   const model = createChatModel({ model: targetModel });
   return evaluate(
@@ -130,7 +130,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
         description:
           "Persist any visible manual change, edit a temporary prompt.md, and append the result.",
         params: promptParamsSchema,
-        summary: "Edit prompt with Operator",
+        summary: "Edit prompt with AI",
         tags: ["prompts"],
       },
     },

@@ -14,7 +14,7 @@ const options = [
   { icon: Moon, label: "Dark", value: "dark" },
 ] as const;
 
-export function SidebarThemeToggle({ collapsed = false }: { collapsed?: boolean }) {
+export function SidebarThemeToggle() {
   const [mounted, setMounted] = useState(false);
   const { theme, setTheme } = useTheme();
   const activeTheme = mounted ? theme : undefined;
@@ -24,10 +24,7 @@ export function SidebarThemeToggle({ collapsed = false }: { collapsed?: boolean 
   return (
     <div
       aria-label="Theme"
-      className={cn(
-        "flex w-fit gap-0.5 rounded-full border border-sidebar-border bg-sidebar-accent/50 p-1",
-        collapsed && "md:mx-auto md:flex-col",
-      )}
+      className="flex w-fit gap-0.5 rounded-full border border-sidebar-border bg-sidebar-accent/50 p-1"
       role="group"
     >
       {options.map(({ icon: Icon, label, value }) => {

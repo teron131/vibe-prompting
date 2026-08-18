@@ -1,7 +1,7 @@
 /** Prepares the configured workspace database for local development or deployment setup. */
 
 import "dotenv/config";
-import { setupDatabase } from "../storage/database.ts";
+import { setupDatabase } from "../database.ts";
 
 const created = await setupDatabase();
 process.stdout.write(

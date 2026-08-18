@@ -1,4 +1,4 @@
-/** Renders safe Operator Markdown blocks, including the tables and mixed structures used in tool-backed answers. */
+/** Renders safe assistant Markdown blocks, including the tables and mixed structures used in tool-backed answers. */
 
 import { Fragment, type ReactNode } from "react";
 

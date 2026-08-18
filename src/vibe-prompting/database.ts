@@ -8,32 +8,31 @@ const DEFAULT_DATABASE_URL = "postgresql://localhost/vibe_prompting";
 const SCHEMA_MIGRATION_LOCK = 1_450_701_647;
 const MIGRATIONS = [
   {
-    load: () => readFile(new URL("../../../migrations/001_prompts.sql", import.meta.url), "utf8"),
+    load: () => readFile(new URL("../../migrations/001_prompts.sql", import.meta.url), "utf8"),
     version: 1,
   },
   {
     load: () =>
-      readFile(new URL("../../../migrations/002_conversations.sql", import.meta.url), "utf8"),
+      readFile(new URL("../../migrations/002_conversations.sql", import.meta.url), "utf8"),
     version: 2,
   },
   {
     load: () =>
-      readFile(new URL("../../../migrations/003_evaluation_runs.sql", import.meta.url), "utf8"),
+      readFile(new URL("../../migrations/003_evaluation_runs.sql", import.meta.url), "utf8"),
     version: 3,
   },
   {
     load: () =>
-      readFile(new URL("../../../migrations/004_general_chats.sql", import.meta.url), "utf8"),
+      readFile(new URL("../../migrations/004_general_chats.sql", import.meta.url), "utf8"),
     version: 4,
   },
   {
     load: () =>
-      readFile(new URL("../../../migrations/005_chat_metadata.sql", import.meta.url), "utf8"),
+      readFile(new URL("../../migrations/005_chat_metadata.sql", import.meta.url), "utf8"),
     version: 5,
   },
   {
-    load: () =>
-      readFile(new URL("../../../migrations/006_usage_limits.sql", import.meta.url), "utf8"),
+    load: () => readFile(new URL("../../migrations/006_usage_limits.sql", import.meta.url), "utf8"),
     version: 6,
   },
 ];
