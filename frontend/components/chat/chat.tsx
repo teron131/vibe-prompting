@@ -282,8 +282,8 @@ export function Chat({ chatId: initialChatId }: { chatId?: string }) {
 
 function EmptyState({ onSelect }: { onSelect(value: string): void }) {
   const description =
-    "Brainstorm ideas, optimize prompts, or get surgical about what needs improvement.";
-  const suggestions = ["Brainstorm an idea", "Optimize a prompt", "Find the weak spot"];
+    "Brainstorm possibilities, sharpen a prompt, or diagnose exactly what is not working.";
+  const suggestions = ["Explore an idea", "Sharpen a prompt", "Diagnose a problem"];
   return (
     <div className="grid min-h-[46vh] place-items-center text-center">
       <div className="max-w-xl">
