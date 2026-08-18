@@ -7,6 +7,7 @@ import { ConversationStore } from "./conversations/store.ts";
 import { EvaluationRuns } from "./evaluation/runs.ts";
 import { PromptStore } from "./prompts/store.ts";
 import { createDatabase } from "./storage/database.ts";
+import { configureModelCostBudget } from "./usage/model-cost-budget.ts";
 
 export type ConfiguredModel = {
   id: string;
@@ -41,6 +42,7 @@ export async function createApplicationServices(
 ): Promise<ApplicationServices> {
   const database = createDatabase(databaseUrl);
   await database.initialize();
+  configureModelCostBudget(database);
   const prompts = new PromptStore(database);
   const evaluations = new EvaluationRuns(database, prompts);
   return {

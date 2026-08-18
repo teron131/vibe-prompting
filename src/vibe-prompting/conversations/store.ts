@@ -74,12 +74,36 @@ type Cursor = {
   updatedAt: string;
 };
 
+type UsageRow = {
+  dayCount: number;
+  dayRetryAfterSeconds: number | null;
+  hourCount: number;
+  hourRetryAfterSeconds: number | null;
+};
+
+const CHAT_MESSAGES_PER_HOUR = 300;
+const CHAT_MESSAGES_PER_DAY = 1_500;
+const CHAT_USAGE_LOCK = 1_450_701_648;
+
 export class ChatNotFoundError extends Error {
   readonly statusCode = 404;
 
   constructor(chatId: string) {
     super(`Chat ${chatId} was not found.`);
     this.name = "ChatNotFoundError";
+  }
+}
+
+export class ChatRateLimitError extends Error {
+  readonly retryAfterSeconds: number;
+  readonly statusCode = 429;
+
+  constructor(retryAfterSeconds: number) {
+    super(
+      `The shared deployment is limited to ${CHAT_MESSAGES_PER_HOUR} messages per hour and ${CHAT_MESSAGES_PER_DAY.toLocaleString()} messages per day.`,
+    );
+    this.name = "ChatRateLimitError";
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -99,6 +123,7 @@ export class ConversationStore {
     const chatId = input.chatId ?? randomUUID();
     const title = deriveTitle(input.instruction);
     return this.#database.transaction(async (sql) => {
+      await claimChatUsage(sql);
       await sql`
         INSERT INTO chats (id, title, model_id)
         VALUES (${chatId}, ${title}, ${input.modelId})
@@ -121,6 +146,7 @@ export class ConversationStore {
   }): Promise<Conversation> {
     return this.#database.transaction(async (sql) => {
       await requireChat(sql, input.chatId);
+      await claimChatUsage(sql);
       await insertMessage(sql, {
         chatId: input.chatId,
         metadata: {},
@@ -237,6 +263,39 @@ export class ConversationStore {
       if (rows.length === 0) throw new ChatNotFoundError(chatId);
     });
   }
+}
+
+async function claimChatUsage(sql: DatabaseClient): Promise<void> {
+  await sql`SELECT pg_advisory_xact_lock(${CHAT_USAGE_LOCK})`;
+  await sql`
+    DELETE FROM chat_usage_events
+    WHERE accepted_at < now() - interval '1 day'
+  `;
+  const [usage] = await sql<UsageRow[]>`
+    SELECT
+      (count(*) FILTER (WHERE accepted_at >= now() - interval '1 hour'))::integer AS hour_count,
+      count(*)::integer AS day_count,
+      GREATEST(
+        1,
+        CEIL(EXTRACT(EPOCH FROM (
+          (MIN(accepted_at) FILTER (WHERE accepted_at >= now() - interval '1 hour'))
+          + interval '1 hour' - now()
+        )))::integer
+      ) AS hour_retry_after_seconds,
+      GREATEST(
+        1,
+        CEIL(EXTRACT(EPOCH FROM (MIN(accepted_at) + interval '1 day' - now())))::integer
+      ) AS day_retry_after_seconds
+    FROM chat_usage_events
+  `;
+  const retryAfterSeconds = Math.max(
+    (usage?.hourCount ?? 0) >= CHAT_MESSAGES_PER_HOUR ? (usage?.hourRetryAfterSeconds ?? 1) : 0,
+    (usage?.dayCount ?? 0) >= CHAT_MESSAGES_PER_DAY ? (usage?.dayRetryAfterSeconds ?? 1) : 0,
+  );
+  if (retryAfterSeconds > 0) {
+    throw new ChatRateLimitError(retryAfterSeconds);
+  }
+  await sql`INSERT INTO chat_usage_events DEFAULT VALUES`;
 }
 
 async function requireConversation(sql: DatabaseClient, chatId: string): Promise<Conversation> {

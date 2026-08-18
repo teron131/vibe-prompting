@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 
 const DEFAULT_DATABASE_URL = "postgresql://localhost/vibe_prompting";
+const SCHEMA_MIGRATION_LOCK = 1_450_701_647;
 const MIGRATIONS = [
   {
     load: () => readFile(new URL("../../../migrations/001_prompts.sql", import.meta.url), "utf8"),
@@ -30,6 +31,11 @@ const MIGRATIONS = [
       readFile(new URL("../../../migrations/005_chat_metadata.sql", import.meta.url), "utf8"),
     version: 5,
   },
+  {
+    load: () =>
+      readFile(new URL("../../../migrations/006_usage_limits.sql", import.meta.url), "utf8"),
+    version: 6,
+  },
 ];
 
 export type DatabaseClient = postgres.Sql | postgres.TransactionSql;
@@ -50,7 +56,7 @@ export class Database {
 
   async initialize(): Promise<void> {
     await this.#sql.begin(async (sql) => {
-      await sql`SELECT pg_advisory_xact_lock(1450701647)`;
+      await sql`SELECT pg_advisory_xact_lock(${SCHEMA_MIGRATION_LOCK})`;
       await sql.unsafe(`
         DO $$
         BEGIN

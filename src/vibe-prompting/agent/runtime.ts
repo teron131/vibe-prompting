@@ -15,6 +15,7 @@ import { preserveGeminiToolCallSignatures } from "../clients/gemini-tool-calls.t
 import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../config.ts";
 import type { EvaluationRuns } from "../evaluation/runs.ts";
 import type { PromptStore } from "../prompts/store.ts";
+import { getModelCostBudget } from "../usage/model-cost-budget.ts";
 import { createPromptWorkspace } from "./artifacts.ts";
 import { AGENT_INSTRUCTIONS } from "./instructions.ts";
 import { createPromptEvaluationTool, type PromptEvaluationSnapshot } from "./tools/evaluation.ts";
@@ -154,6 +155,8 @@ export async function streamChatRun(
       exaServer ? [exaServer] : [],
       input.reasoningEffort,
     );
+    const budget = getModelCostBudget();
+    await budget?.assertCanSpend();
     const run = await runtime.runner.run(runtime.agent, formatConversation(input), {
       signal: input.signal,
       stream: true,
@@ -165,7 +168,11 @@ export async function streamChatRun(
       if (projected.reasoningStarted) reasoningStarted = true;
       for (const item of projected.events) onEvent(item);
     }
-    await run.completed;
+    try {
+      await run.completed;
+    } finally {
+      await budget?.record(runtime.model, run.state.usage);
+    }
     if (run.error) throw run.error;
     if (typeof run.finalOutput !== "string") throw new Error("The Operator did not return text.");
     return { message: run.finalOutput, model: runtime.model };
@@ -206,6 +213,8 @@ export async function streamPromptEdit(
       ],
       [exaServer],
     );
+    const budget = getModelCostBudget();
+    await budget?.assertCanSpend();
     const run = await runtime.runner.run(runtime.agent, input.instruction, {
       signal: input.signal,
       stream: true,
@@ -217,7 +226,11 @@ export async function streamPromptEdit(
       if (projected.reasoningStarted) reasoningStarted = true;
       for (const item of projected.events) onEvent(item);
     }
-    await run.completed;
+    try {
+      await run.completed;
+    } finally {
+      await budget?.record(runtime.model, run.state.usage);
+    }
     if (run.error) throw run.error;
     if (typeof run.finalOutput !== "string") {
       throw new Error("The Operator did not return text.");

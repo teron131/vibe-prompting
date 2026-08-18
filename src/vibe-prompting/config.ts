@@ -29,6 +29,8 @@ export type ConfiguredPlatform = PlatformConfig & { apiKey: string };
 
 const modelConfigSchema = z.object({
   id: z.string().trim().min(1),
+  inputPricePerMillionTokens: z.number().finite().nonnegative(),
+  outputPricePerMillionTokens: z.number().finite().nonnegative(),
   platform: z.enum(platformIds),
 });
 

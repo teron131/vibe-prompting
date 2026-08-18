@@ -24,6 +24,7 @@ env:
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     name: Build and deploy
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -57,4 +58,13 @@ jobs:
           --region "${REGION}"
           --platform managed
           --image "${IMAGE}:${GITHUB_SHA}"
+          --min 0
+          --min-instances 0
+          --max 1
+          --max-instances 1
+          --concurrency 20
+          --cpu 1
+          --memory 1Gi
+          --no-cpu-throttling
+          --cpu-boost
           --quiet

@@ -7,7 +7,8 @@ import {
   ChatOpenAICompletions as NativeChatOpenAICompletions,
 } from "@langchain/openai";
 
-import { loadRuntimeConfig, resolveModelPlatform } from "../config.ts";
+import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../config.ts";
+import { getModelCostBudget } from "../usage/model-cost-budget.ts";
 import { readGeminiThoughtSignature } from "./gemini-tool-calls.ts";
 
 type ClientConfiguration = NonNullable<ChatOpenAIFields["configuration"]>;
@@ -41,12 +42,38 @@ export function createChatModel({
     apiKey: platform.apiKey,
     configuration: { ...configuration, baseURL: platform.baseURL },
   };
-  return new NativeChatOpenAI({
+  return new BudgetedChatOpenAI({
     ...fields,
+    modelConfig: configuredModel,
     ...(platform.id === "gemini" && {
       completions: new GeminiChatOpenAICompletions(fields),
     }),
   });
+}
+
+class BudgetedChatOpenAI extends NativeChatOpenAI {
+  readonly #modelConfig: ModelConfig;
+
+  constructor(fields: ChatOpenAIFields & { modelConfig: ModelConfig }) {
+    const { modelConfig, ...modelFields } = fields;
+    super(modelFields);
+    this.#modelConfig = modelConfig;
+  }
+
+  override async _generate(...args: Parameters<NativeChatOpenAI["_generate"]>) {
+    const budget = getModelCostBudget();
+    await budget?.assertCanSpend();
+    const result = await super._generate(...args);
+    let inputTokens = 0;
+    let outputTokens = 0;
+    for (const generation of result.generations) {
+      if (!AIMessage.isInstance(generation.message)) continue;
+      inputTokens += generation.message.usage_metadata?.input_tokens ?? 0;
+      outputTokens += generation.message.usage_metadata?.output_tokens ?? 0;
+    }
+    await budget?.record(this.#modelConfig, { inputTokens, outputTokens });
+    return result;
+  }
 }
 
 class GeminiChatOpenAICompletions extends NativeChatOpenAICompletions {

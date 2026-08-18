@@ -16,7 +16,12 @@ import { editPrompt } from "../agent/runtime.ts";
 import { createChatModel } from "../clients/llm.ts";
 import { evaluate, requestSchema } from "../evaluation/api.ts";
 import { PromptConflictError } from "../prompts/store.ts";
-import { createApplicationServices, getConfiguredModels } from "../server.ts";
+import {
+  createApplicationServices,
+  getApplicationServices,
+  getConfiguredModels,
+} from "../server.ts";
+import { getModelCostBudget } from "../usage/model-cost-budget.ts";
 
 const modelIdSchema = z.string().trim().min(1).describe("Configured model ID.");
 const promptIdSchema = z.string().uuid();
@@ -40,6 +45,7 @@ export const apiEvaluationSchema = requestSchema.extend({
 });
 
 export async function evaluateRequest(rawRequest: unknown) {
+  if (!getModelCostBudget()) await getApplicationServices();
   const { targetModel, ...request } = apiEvaluationSchema.parse(rawRequest);
   const model = createChatModel({ model: targetModel });
   return evaluate(

@@ -334,5 +334,29 @@ function errorResponse(error: unknown): Response {
     status < 500 && error instanceof Error
       ? error.message
       : "The server could not complete the request.";
-  return Response.json({ error: message }, { headers: NO_STORE_HEADERS, status });
+  const retryAfter = readRetryAfter(error);
+  return Response.json(
+    { error: message },
+    {
+      headers: {
+        ...NO_STORE_HEADERS,
+        ...(retryAfter === null ? {} : { "retry-after": String(retryAfter) }),
+      },
+      status,
+    },
+  );
+}
+
+function readRetryAfter(error: unknown): number | null {
+  if (
+    !error ||
+    typeof error !== "object" ||
+    !("retryAfterSeconds" in error) ||
+    typeof error.retryAfterSeconds !== "number" ||
+    !Number.isInteger(error.retryAfterSeconds) ||
+    error.retryAfterSeconds < 1
+  ) {
+    return null;
+  }
+  return error.retryAfterSeconds;
 }

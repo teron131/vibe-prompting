@@ -20,6 +20,7 @@ export type ConversationRunEvent =
   | { type: "finish" };
 
 type RunListener = (event: ConversationRunEvent) => void;
+const MAX_ACTIVE_RUNS = 10;
 
 type ActiveRun = {
   controller: AbortController;
@@ -37,6 +38,15 @@ export class ActiveChatRunError extends Error {
   }
 }
 
+export class ChatRunCapacityError extends Error {
+  readonly statusCode = 429;
+
+  constructor() {
+    super(`At most ${MAX_ACTIVE_RUNS} chat runs may be active at once.`);
+    this.name = "ChatRunCapacityError";
+  }
+}
+
 export type ClaimedConversationRun = {
   fail(error: unknown): void;
   publish(event: ConversationRunEvent): void;
@@ -51,6 +61,7 @@ export class ConversationRunRegistry {
 
   claim(chatId: string): ClaimedConversationRun {
     if (this.#runs.has(chatId)) throw new ActiveChatRunError(chatId);
+    if (this.#runs.size >= MAX_ACTIVE_RUNS) throw new ChatRunCapacityError();
 
     const controller = new AbortController();
     let resolveDone: () => void = () => undefined;
