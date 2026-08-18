@@ -77,6 +77,7 @@ const environmentSchema = z.object({
   GOOGLE_API_KEY: optionalText,
   LLM_API_KEY: optionalText,
   LLM_BASE_URL: optionalText,
+  MODEL_CONFIG_YAML: optionalText,
 });
 
 /** Reads user-editable models separately from provider secrets and endpoints. */
@@ -84,8 +85,8 @@ export function loadRuntimeConfig(
   environment: NodeJS.ProcessEnv = process.env,
   configPath: string = resolveRuntimeFile(CONFIG_PATH),
 ): RuntimeConfig {
-  const fileConfig = loadFileConfig(configPath);
   const values = environmentSchema.parse(environment);
+  const fileConfig = loadFileConfig(configPath, values.MODEL_CONFIG_YAML);
   const geminiApiKey = values.GEMINI_API_KEY ?? values.GOOGLE_API_KEY;
 
   return {
@@ -141,15 +142,22 @@ export function resolveModelPlatform(
 }
 
 /** Loads and validates the private YAML catalogue with an actionable missing-file error. */
-function loadFileConfig(configPath: string): z.infer<typeof fileConfigSchema> {
+function loadFileConfig(
+  configPath: string,
+  configuredSource?: string,
+): z.infer<typeof fileConfigSchema> {
   let source: string;
-  try {
-    source = readFileSync(configPath, "utf8");
-  } catch (error) {
-    throw new Error(
-      `Unable to read ${configPath}. Copy .config.yaml.example to .config.yaml first.`,
-      { cause: error },
-    );
+  if (configuredSource) {
+    source = configuredSource;
+  } else {
+    try {
+      source = readFileSync(configPath, "utf8");
+    } catch (error) {
+      throw new Error(
+        `Unable to read ${configPath}. Copy .config.yaml.example to .config.yaml first.`,
+        { cause: error },
+      );
+    }
   }
 
   try {

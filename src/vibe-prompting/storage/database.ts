@@ -37,10 +37,11 @@ export type DatabaseClient = postgres.Sql | postgres.TransactionSql;
 export class Database {
   readonly #sql: postgres.Sql;
 
-  constructor(databaseUrl: string) {
+  constructor(databaseUrl: string, host: string | undefined = process.env.DATABASE_HOST) {
     if (!databaseUrl.trim()) throw new Error("DATABASE_URL is required for application storage.");
     this.#sql = postgres(databaseUrl, {
       connect_timeout: 10,
+      ...(host ? { host } : {}),
       max: 5,
       onnotice: () => undefined,
       transform: postgres.camel,
@@ -128,7 +129,10 @@ export async function setupDatabase(
   return true;
 }
 
-async function createMissingDatabase(databaseUrl: string): Promise<void> {
+async function createMissingDatabase(
+  databaseUrl: string,
+  host: string | undefined = process.env.DATABASE_HOST,
+): Promise<void> {
   const targetUrl = new URL(databaseUrl);
   const databaseName = decodeURIComponent(targetUrl.pathname.slice(1));
   if (!databaseName) throw new Error("DATABASE_URL must name a PostgreSQL database.");
@@ -137,6 +141,7 @@ async function createMissingDatabase(databaseUrl: string): Promise<void> {
   maintenanceUrl.pathname = "/postgres";
   const sql = postgres(maintenanceUrl.toString(), {
     connect_timeout: 10,
+    ...(host ? { host } : {}),
     max: 1,
     onnotice: () => undefined,
   });

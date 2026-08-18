@@ -1,0 +1,13 @@
+.agents
+.cache
+.config.yaml
+.DS_Store
+.env
+.git
+.langgraph_api
+.playwright-cli
+.pnpm-store
+**/.next
+**/node_modules
+test_*.html
+test_*.ts

@@ -1,0 +1,14 @@
+.gcloudignore
+.git
+.cache
+.config.yaml
+.DS_Store
+.env
+.langgraph_api
+.playwright-cli
+.pnpm-store
+**/.next
+**/node_modules
+agent-test-bench
+test_*.html
+test_*.ts
