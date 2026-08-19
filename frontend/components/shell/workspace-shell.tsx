@@ -86,7 +86,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           aria-hidden={!sidebarOpen}
           aria-modal="true"
           className={cn(
-            "fixed inset-y-0 left-0 z-40 w-45 border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform",
+            "fixed inset-y-0 left-0 z-40 w-54 border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform",
             sidebarOpen ? "translate-x-0" : "-translate-x-full",
           )}
           inert={!sidebarOpen}
