@@ -666,6 +666,40 @@ function addLiveEvent(
     else parts.push({ type: "text", text: event.delta });
     return { ...message, parts };
   }
+  if (event.type === "reasoning-start") {
+    if (message.parts.some((part) => part.type === "reasoning" && part.streaming)) return message;
+    return {
+      ...message,
+      parts: [...message.parts, { streaming: true, summary: "", type: "reasoning" }],
+    };
+  }
+  if (event.type === "reasoning-delta") {
+    const parts = [...message.parts];
+    const streamingIndex = parts.findLastIndex(
+      (part) => part.type === "reasoning" && part.streaming,
+    );
+    if (streamingIndex >= 0) {
+      const existing = parts[streamingIndex];
+      if (existing.type === "reasoning") {
+        parts[streamingIndex] = { ...existing, summary: existing.summary + event.delta };
+      }
+    } else {
+      parts.push({ streaming: true, summary: event.delta, type: "reasoning" });
+    }
+    return { ...message, parts };
+  }
+  if (event.type === "reasoning") {
+    const parts = [...message.parts];
+    const streamingIndex = parts.findLastIndex(
+      (part) => part.type === "reasoning" && part.streaming,
+    );
+    if (streamingIndex >= 0) parts[streamingIndex] = event;
+    else {
+      const textIndex = parts.findIndex((part) => part.type === "text");
+      parts.splice(textIndex >= 0 ? textIndex : parts.length, 0, event);
+    }
+    return { ...message, parts };
+  }
   if (event.type === "tool") {
     const existingIndex = message.parts.findIndex(
       (part) => part.type === "tool" && part.callId === event.callId,

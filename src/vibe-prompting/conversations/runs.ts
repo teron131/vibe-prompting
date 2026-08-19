@@ -2,6 +2,8 @@
 
 export type ConversationRunEvent =
   | { delta: string; type: "text-delta" }
+  | { type: "reasoning-start" }
+  | { delta: string; type: "reasoning-delta" }
   | { chatId: string; icon: string; title: string; type: "chat-metadata" }
   | {
       callId: string;
@@ -54,7 +56,6 @@ export class ChatRunCapacityError extends Error {
 }
 
 export type ClaimedConversationRun = {
-  fail(error: unknown): void;
   publish(event: ConversationRunEvent): void;
   release(): void;
   signal: AbortSignal;
@@ -90,6 +91,11 @@ export class ConversationRunRegistry {
           ...lastEvent,
           delta: lastEvent.delta + event.delta,
         };
+      } else if (event.type === "reasoning-delta" && lastEvent?.type === "reasoning-delta") {
+        run.events[run.events.length - 1] = {
+          ...lastEvent,
+          delta: lastEvent.delta + event.delta,
+        };
       } else {
         run.events.push(event);
       }
@@ -104,10 +110,6 @@ export class ConversationRunRegistry {
     };
 
     return {
-      fail(error) {
-        publish({ type: "error", message: safeErrorMessage(error) });
-        release();
-      },
       publish,
       release,
       signal: controller.signal,
@@ -124,10 +126,6 @@ export class ConversationRunRegistry {
         return () => run.listeners.delete(listener);
       },
     };
-  }
-
-  isActive(chatId: string): boolean {
-    return this.#runs.has(chatId);
   }
 
   snapshot(chatId: string): ConversationRunSnapshot {

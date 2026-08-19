@@ -32,7 +32,7 @@ export type ChatRequest = {
 export type MessagePart =
   | { text: string; type: "text" }
   | (Attachment & { type: "file" })
-  | { summary: string; type: "reasoning" }
+  | { streaming?: boolean; summary: string; type: "reasoning" }
   | {
       callId: string;
       input?: unknown;
@@ -72,6 +72,8 @@ export type Conversation = {
 
 export type RunEvent =
   | { delta: string; type: "text-delta" }
+  | { type: "reasoning-start" }
+  | { delta: string; type: "reasoning-delta" }
   | { chatId: string; icon: string; title: string; type: "chat-metadata" }
   | Extract<MessagePart, { type: "reasoning" | "tool" | "evaluation" | "prompt-revision" }>
   | { message: string; type: "error" }

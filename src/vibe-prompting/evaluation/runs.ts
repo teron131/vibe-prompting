@@ -85,26 +85,6 @@ export const browserEvaluationInputSchema = requestSchema.extend({
   targetModelId: z.string().trim().min(1),
 });
 
-export type BrowserEvaluationInput = z.infer<typeof browserEvaluationInputSchema>;
-
-export type AgentEvaluationSnapshot = {
-  markdownHash: string;
-  report: {
-    cases: Array<{
-      evaluations: Array<{
-        comment: string;
-        criterion: string;
-        evidence: string[];
-        passed: boolean;
-      }>;
-      input: string;
-      output: unknown;
-    }>;
-    judgeModel: string;
-    targetModel: string;
-  };
-};
-
 type RunRow = {
   caseCount: number;
   chatId: string | null;
@@ -316,50 +296,6 @@ export class EvaluationRuns {
   }
 }
 
-export async function persistAgentEvaluationSnapshots(
-  sql: DatabaseClient,
-  input: {
-    chatId: string;
-    markdownHash: string;
-    promptId: string;
-    promptRevisionId: string;
-    snapshots: AgentEvaluationSnapshot[];
-  },
-): Promise<Array<string | null>> {
-  const runIds: Array<string | null> = [];
-  for (const snapshot of input.snapshots) {
-    if (snapshot.markdownHash !== input.markdownHash) {
-      runIds.push(null);
-      continue;
-    }
-    const cases = snapshot.report.cases.map((testCase) => ({
-      input: testCase.input,
-      criteria: testCase.evaluations.map(({ criterion }) => ({
-        type: "boolean" as const,
-        instruction: criterion,
-      })),
-    }));
-    const runId = await insertRun(sql, {
-      cases,
-      chatId: input.chatId,
-      configurationFingerprint: createConfigurationFingerprint({
-        cases,
-        judges: [snapshot.report.judgeModel],
-        targetModelId: snapshot.report.targetModel,
-      }),
-      judgeModelIds: [snapshot.report.judgeModel],
-      promptId: input.promptId,
-      promptRevisionId: input.promptRevisionId,
-      source: "operator",
-      status: "completed",
-      targetModelId: snapshot.report.targetModel,
-    });
-    await completeAgentRun(sql, runId, cases, snapshot);
-    runIds.push(runId);
-  }
-  return runIds;
-}
-
 async function insertRun(
   sql: DatabaseClient,
   input: {
@@ -431,33 +367,6 @@ async function completeRun(
     SET status = 'completed', completed_at = now(), error_message = NULL
     WHERE id = ${runId}
   `;
-}
-
-async function completeAgentRun(
-  sql: DatabaseClient,
-  runId: string,
-  configuredCases: EvaluationCase<string>[],
-  snapshot: AgentEvaluationSnapshot,
-): Promise<void> {
-  const cases = await selectCases(sql, runId);
-  for (const [caseIndex, evaluatedCase] of snapshot.report.cases.entries()) {
-    const storedCase = cases[caseIndex];
-    const configuredCase = configuredCases[caseIndex];
-    if (!storedCase || !configuredCase)
-      throw new Error(`Unknown agent evaluation case index: ${caseIndex}.`);
-    await sql`UPDATE evaluation_cases SET output_json = ${sql.json(evaluatedCase.output as postgres.JSONValue)} WHERE id = ${storedCase.id}`;
-    for (const [criterionPosition, evaluation] of evaluatedCase.evaluations.entries()) {
-      const criterion = configuredCase.criteria[criterionPosition];
-      if (!criterion) throw new Error(`Unknown agent criterion position: ${criterionPosition}.`);
-      await insertScore(sql, storedCase.id, criterionPosition, criterion, {
-        comment: evaluation.comment,
-        criterion,
-        evidence: evaluation.evidence,
-        judge: snapshot.report.judgeModel,
-        value: evaluation.passed,
-      });
-    }
-  }
 }
 
 async function insertScore(

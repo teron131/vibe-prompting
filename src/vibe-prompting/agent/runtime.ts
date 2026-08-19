@@ -10,7 +10,10 @@ import {
   type Tool,
 } from "@openai/agents";
 
-import { normalizeChatCompletionsReasoning } from "../clients/chat-completions-reasoning.ts";
+import {
+  normalizeChatCompletionsReasoning,
+  readChatCompletionsReasoning,
+} from "../clients/chat-completions-reasoning.ts";
 import { connectExaSearch } from "../clients/exa.ts";
 import { preserveGeminiToolCallSignatures } from "../clients/gemini-tool-calls.ts";
 import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../config.ts";
@@ -31,6 +34,8 @@ export type AgentRuntime = {
 
 export type AgentStreamEvent =
   | { delta: string; type: "text-delta" }
+  | { type: "reasoning-start" }
+  | { delta: string; type: "reasoning-delta" }
   | {
       callId: string;
       input?: unknown;
@@ -187,6 +192,7 @@ export async function streamChatRun(
       signal: input.signal,
       stream: true,
     });
+    onEvent({ type: "reasoning-start" });
     const calledTools = new Map<string, string>();
     for await (const event of run) {
       for (const item of projectEvent(event, calledTools)) onEvent(item);
@@ -267,8 +273,17 @@ export async function streamPromptEdit(
 }
 
 function projectEvent(event: RunStreamEvent, tools: Map<string, string>): AgentStreamEvent[] {
-  if (event.type === "raw_model_stream_event" && event.data.type === "output_text_delta") {
-    return event.data.delta ? [{ type: "text-delta", delta: event.data.delta }] : [];
+  if (event.type === "raw_model_stream_event") {
+    if (event.data.type === "output_text_delta") {
+      return event.data.delta ? [{ type: "text-delta", delta: event.data.delta }] : [];
+    }
+    if (event.data.type !== "model" || !isRecord(event.data.event)) return [];
+    const reasoningDelta =
+      event.data.event.type === "response.reasoning_summary_text.delta" &&
+      typeof event.data.event.delta === "string"
+        ? event.data.event.delta
+        : readChatCompletionsReasoning(event.data.event)?.text;
+    return reasoningDelta ? [{ type: "reasoning-delta", delta: reasoningDelta }] : [];
   }
   if (event.type !== "run_item_stream_event") {
     return [];

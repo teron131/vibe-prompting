@@ -23,8 +23,6 @@ import type { EvaluationRunsResponse, EvaluationRunSummary } from "@/contracts/e
 import type { PromptDetail, PromptRevision, PromptSummary } from "@/contracts/prompts";
 import { usePromptSearch } from "@/hooks/use-prompt-search";
 
-export type { PromptQuote } from "@/contracts/chat";
-
 export function PromptWorkspace({
   activePrompt,
   highlightedQuote,

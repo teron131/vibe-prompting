@@ -10,6 +10,7 @@ import type {
 } from "@openai/agents";
 
 type ResponseOutput = Extract<StreamEvent, { type: "response_done" }>["response"]["output"];
+type ChatCompletionsReasoning = { emittedAsText: boolean; text: string };
 
 /** Normalizes reasoning variants used by Chat Completions providers into the Agents model contract. */
 export function normalizeChatCompletionsReasoning(provider: ModelProvider): ModelProvider {
@@ -41,7 +42,8 @@ class ChatCompletionsReasoningModel implements Model {
     let visibleText = "";
 
     for await (const event of this.model.getStreamedResponse(request)) {
-      const reasoning = readReasoningContent(event);
+      const reasoning =
+        event.type === "model" ? readChatCompletionsReasoning(event.event) : undefined;
       if (reasoning) {
         summary += reasoning.text;
         if (reasoning.emittedAsText) pendingThoughtText += reasoning.text;
@@ -96,18 +98,17 @@ class ChatCompletionsReasoningModel implements Model {
   }
 }
 
-function readReasoningContent(
-  event: StreamEvent,
-): { emittedAsText: boolean; text: string } | undefined {
-  if (event.type !== "model" || !isRecord(event.event)) return undefined;
-  const choices = event.event.choices;
+/** Reads the reasoning variants exposed by OpenAI-compatible Chat Completions streams. */
+export function readChatCompletionsReasoning(event: unknown): ChatCompletionsReasoning | undefined {
+  if (!isRecord(event)) return undefined;
+  const choices = event.choices;
   if (!Array.isArray(choices)) return undefined;
   const choice = choices.find(
     (candidate) => isRecord(candidate) && (candidate.index === 0 || candidate.index === undefined),
   );
   if (!isRecord(choice) || !isRecord(choice.delta)) return undefined;
 
-  const reasoningContent = choice.delta.reasoning_content;
+  const reasoningContent = choice.delta.reasoning_content ?? choice.delta.reasoning;
   if (typeof reasoningContent === "string" && reasoningContent) {
     return { emittedAsText: false, text: reasoningContent };
   }
