@@ -1,10 +1,12 @@
 /** Loads the private model catalogue and environment-owned provider credentials for backend clients. */
 
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { rename, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { config as loadDotenv } from "dotenv";
-import { parse } from "yaml";
+import { parse, parseDocument } from "yaml";
 import { z } from "zod";
 
 export const CONFIG_PATH = ".config.yaml";
@@ -34,27 +36,34 @@ const modelConfigSchema = z
   })
   .strict();
 
-const fileConfigSchema = z
-  .object({
-    embeddingModel: modelConfigSchema,
-    metadataModel: modelConfigSchema,
-    models: z.array(modelConfigSchema).min(1),
-  })
-  .superRefine(({ models }, context) => {
+const modelCatalogSchema = z
+  .array(modelConfigSchema)
+  .min(1)
+  .superRefine((models, context) => {
     const seen = new Set<string>();
     for (const [index, model] of models.entries()) {
       if (seen.has(model.id)) {
         context.addIssue({
           code: "custom",
           message: `Duplicate model ID: ${model.id}.`,
-          path: ["models", index, "id"],
+          path: [index, "id"],
         });
       }
       seen.add(model.id);
     }
   });
 
+const fileConfigSchema = z
+  .object({
+    embeddingModel: modelConfigSchema,
+    metadataModel: modelConfigSchema,
+    models: modelCatalogSchema,
+  })
+  .strict();
+
 export type ModelConfig = z.infer<typeof modelConfigSchema>;
+
+export type ModelStorage = "database" | "yaml";
 
 export type RuntimeConfig = {
   embeddingModel: ModelConfig;
@@ -65,6 +74,13 @@ export type RuntimeConfig = {
   models: ModelConfig[];
   platforms: Record<PlatformId, PlatformConfig>;
 };
+
+export type RuntimeConfigOverrides = {
+  models?: ModelConfig[];
+  platforms?: Partial<Record<PlatformId, Partial<Pick<PlatformConfig, "apiKey" | "baseURL">>>>;
+};
+
+let runtimeOverrides: RuntimeConfigOverrides = {};
 
 const optionalText = z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
@@ -87,11 +103,19 @@ export function loadRuntimeConfig(
   environment: NodeJS.ProcessEnv = process.env,
   configPath: string = resolveRuntimeFile(CONFIG_PATH),
 ): RuntimeConfig {
+  return applyRuntimeOverrides(loadBaseRuntimeConfig(environment, configPath));
+}
+
+/** Loads environment and YAML defaults without applying database-owned settings. */
+export function loadBaseRuntimeConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+  configPath: string = resolveRuntimeFile(CONFIG_PATH),
+): RuntimeConfig {
   const values = environmentSchema.parse(environment);
   const fileConfig = loadFileConfig(configPath, values.MODEL_CONFIG_YAML);
   const geminiApiKey = values.GEMINI_API_KEY ?? values.GOOGLE_API_KEY;
 
-  return {
+  const config: RuntimeConfig = {
     embeddingModel: fileConfig.embeddingModel,
     exa: {
       apiKey: values.EXA_API_KEY,
@@ -122,6 +146,43 @@ export function loadRuntimeConfig(
       },
     },
   };
+  return config;
+}
+
+/** Replaces the database-owned runtime overlay after application settings have initialized or changed. */
+export function setRuntimeConfigOverrides(overrides: RuntimeConfigOverrides): void {
+  runtimeOverrides = structuredClone(overrides);
+}
+
+/** Returns the durable owner used for model edits in the current runtime. */
+export function getModelStorage(environment: NodeJS.ProcessEnv = process.env): ModelStorage {
+  return environmentSchema.parse(environment).MODEL_CONFIG_YAML ? "database" : "yaml";
+}
+
+/** Validates a complete user-managed model catalogue. */
+export function parseModelCatalog(value: unknown): ModelConfig[] {
+  return modelCatalogSchema.parse(value);
+}
+
+/** Atomically replaces only the local YAML model catalogue while retaining its specialized models and comments. */
+export async function saveLocalModelCatalog(
+  models: ModelConfig[],
+  configPath: string = resolveRuntimeFile(CONFIG_PATH),
+): Promise<void> {
+  const source = readFileSync(configPath, "utf8");
+  const document = parseDocument(source);
+  document.set("models", parseModelCatalog(models));
+  fileConfigSchema.parse(document.toJS());
+  const temporaryPath = join(dirname(configPath), `.${basename(configPath)}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporaryPath, document.toString(), { encoding: "utf8", mode: 0o600 });
+    await rename(temporaryPath, configPath);
+  } catch (error) {
+    try {
+      await unlink(temporaryPath);
+    } catch {}
+    throw error;
+  }
 }
 
 /** Selects a model's preferred configured platform or the generic credential fallback. */
@@ -184,6 +245,19 @@ function parseHttpUrl(value: string, name: string): string {
 
 function isPlatformConfigured(platform: PlatformConfig): boolean {
   return Boolean(platform.apiKey && platform.baseURL);
+}
+
+function applyRuntimeOverrides(config: RuntimeConfig): RuntimeConfig {
+  const platforms = { ...config.platforms };
+  for (const id of platformIds) {
+    const override = runtimeOverrides.platforms?.[id];
+    if (override) platforms[id] = { ...platforms[id], ...override };
+  }
+  return {
+    ...config,
+    models: runtimeOverrides.models ?? config.models,
+    platforms,
+  };
 }
 
 function credentialHint(platformId: PlatformId): string {

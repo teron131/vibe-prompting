@@ -3,7 +3,7 @@
 "use client";
 
 import { Check, ChevronDown } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/components/ui/utils";
 import type { ConfiguredModel } from "@/contracts/chat";
@@ -13,6 +13,8 @@ const PROVIDER_COLORS: Partial<Record<string, string>> = {
   deepseek: "#5c75ef",
   openai: "currentColor",
 };
+
+const modelIdentityRequests = new Map<string, Promise<ConfiguredModel>>();
 
 export function ModelSelector({
   disabled,
@@ -71,12 +73,22 @@ export function ModelSelector({
   );
 }
 
-export function ModelIcon({ className, model }: { className?: string; model?: ConfiguredModel }) {
-  const provider = model?.provider.trim().toLowerCase();
+export function ModelIcon({
+  className,
+  model,
+  modelId,
+}: {
+  className?: string;
+  model?: ConfiguredModel;
+  modelId?: string;
+}) {
+  const identity = useModelIdentity(model, modelId);
+  const provider = identity?.provider.trim().toLowerCase();
   const src = provider ? `https://models.dev/logos/${encodeURIComponent(provider)}.svg` : undefined;
   const [failedSrc, setFailedSrc] = useState<string>();
 
-  if (!model) return <span aria-hidden="true" className="size-4 shrink-0 rounded-full bg-muted" />;
+  if (!identity)
+    return <span aria-hidden="true" className="size-4 shrink-0 rounded-full bg-muted" />;
   if (provider === "google") return <GoogleLogo className={className} />;
   const color = provider ? PROVIDER_COLORS[provider] : undefined;
   if (src && color) {
@@ -103,14 +115,14 @@ export function ModelIcon({ className, model }: { className?: string; model?: Co
   if (!src || failedSrc === src) {
     return (
       <span
-        aria-label={`${model.provider} logo unavailable`}
+        aria-label={`${identity.provider} logo unavailable`}
         className={cn(
           "inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-foreground/10 font-mono text-[9px] font-semibold uppercase",
           className,
         )}
         role="img"
       >
-        {model.provider.slice(0, 1)}
+        {identity.provider.slice(0, 1)}
       </span>
     );
   }
@@ -124,6 +136,43 @@ export function ModelIcon({ className, model }: { className?: string; model?: Co
       width={16}
     />
   );
+}
+
+export function useModelIdentity(
+  model?: ConfiguredModel,
+  modelId?: string,
+): ConfiguredModel | undefined {
+  const [resolvedModel, setResolvedModel] = useState<ConfiguredModel>();
+
+  useEffect(() => {
+    if (model || !modelId) return;
+    let active = true;
+    void loadModelIdentity(modelId)
+      .then((resolved) => {
+        if (active) setResolvedModel(resolved);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [model, modelId]);
+
+  return model ?? (resolvedModel?.id === modelId ? resolvedModel : undefined);
+}
+
+async function loadModelIdentity(modelId: string): Promise<ConfiguredModel> {
+  let request = modelIdentityRequests.get(modelId);
+  if (!request) {
+    request = fetch(`/api/model-identity?modelId=${encodeURIComponent(modelId)}`, {
+      cache: "no-store",
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`Model identity request failed with ${response.status}.`);
+      return (await response.json()) as ConfiguredModel;
+    });
+    modelIdentityRequests.set(modelId, request);
+    void request.catch(() => modelIdentityRequests.delete(modelId));
+  }
+  return request;
 }
 
 function GoogleLogo({ className }: { className?: string }) {

@@ -52,7 +52,7 @@ export async function POST(request: Request) {
   let claim: ClaimedConversationRun | undefined;
   try {
     const input = parseChatRequest(await request.json());
-    if (!isConfiguredModelId(input.modelId)) {
+    if (!(await isConfiguredModelId(input.modelId))) {
       throw new RequestError(`Unknown configured model: ${input.modelId}.`, 400);
     }
     const services = await getApplicationServices();

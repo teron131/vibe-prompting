@@ -1,6 +1,6 @@
 /** Owns browser-safe chat request, response, persistence, and streaming shapes shared by routes and components. */
 
-export type ConfiguredModel = { id: string; label: string; provider: string };
+export type ConfiguredModel = { id: string; known: boolean; label: string; provider: string };
 
 export type ChatToolId = "evaluations" | "prompt-library" | "web-search";
 export type ChatReasoningEffort = "high" | "low" | "medium" | "xhigh";

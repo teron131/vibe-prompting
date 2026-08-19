@@ -48,6 +48,11 @@ const MIGRATIONS = [
       ),
     version: 8,
   },
+  {
+    load: () =>
+      readFile(new URL("../../migrations/009_application_settings.sql", import.meta.url), "utf8"),
+    version: 9,
+  },
 ];
 
 export type DatabaseClient = postgres.Sql | postgres.TransactionSql;

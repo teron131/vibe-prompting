@@ -157,11 +157,9 @@ export function Chat({
         setPanelOpen(requestedPrompt ? true : (stored?.panelOpen ?? context?.panelOpen ?? false));
         setQuotes(stored?.quotes ?? []);
         setReasoningEffort(stored?.reasoningEffort ?? context?.reasoningEffort ?? "medium");
+        const restoredModelId = stored?.selectedModelId ?? chatData?.conversation.chat.modelId;
         setSelectedModelId(
-          stored?.selectedModelId ??
-            chatData?.conversation.chat.modelId ??
-            config.models[0]?.id ??
-            "",
+          config.models.find(({ id }) => id === restoredModelId)?.id ?? config.models[0]?.id ?? "",
         );
         if (initialPromptId && !requestedPrompt) setError("The requested prompt was not found.");
         setWorkspaceReady(true);
@@ -297,14 +295,14 @@ export function Chat({
                   const modelId =
                     typeof message.metadata.modelId === "string"
                       ? message.metadata.modelId
-                      : undefined;
+                      : conversation?.chat.modelId;
                   const rerunSource = rerunSources.get(message.id);
                   return (
                     <AssistantMessage
                       disabled={running}
                       key={message.id}
                       message={message}
-                      model={models.find((model) => model.id === modelId)}
+                      modelId={modelId}
                       onEdit={message.role === "user" ? editUserMessage : undefined}
                       onPromptReference={openPromptReference}
                       onRerun={rerunSource ? () => rerunFromUserMessage(rerunSource) : undefined}

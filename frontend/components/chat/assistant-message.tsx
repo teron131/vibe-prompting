@@ -22,7 +22,7 @@ import { Reasoning } from "@/components/chat/elements/reasoning";
 import { ResponseText } from "@/components/chat/elements/response";
 import { Tool } from "@/components/chat/elements/tool";
 import { cn } from "@/components/ui/utils";
-import type { ChatMessage, ConfiguredModel, MessagePart } from "@/contracts/chat";
+import type { ChatMessage, MessagePart } from "@/contracts/chat";
 
 import { ModelIcon } from "./model-selector";
 
@@ -34,14 +34,14 @@ type PromptReference = {
 export function AssistantMessage({
   disabled,
   message,
-  model,
+  modelId,
   onEdit,
   onPromptReference,
   onRerun,
 }: {
   disabled: boolean;
   message: ChatMessage;
-  model?: ConfiguredModel;
+  modelId?: string;
   onEdit?(message: ChatMessage, text: string): void;
   onPromptReference(reference: PromptReference): void;
   onRerun?(): void;
@@ -63,7 +63,9 @@ export function AssistantMessage({
           />
         ) : null
       }
-      avatar={message.role === "assistant" ? <ModelIcon className="size-6" model={model} /> : null}
+      avatar={
+        message.role === "assistant" ? <ModelIcon className="size-6" modelId={modelId} /> : null
+      }
       role={message.role}
     >
       {editing ? (

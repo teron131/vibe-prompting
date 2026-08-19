@@ -9,9 +9,11 @@ import { EvaluationRuns } from "./evaluation/runs.ts";
 import { configureModelSpendLimit } from "./model-spend-limit.ts";
 import { PromptSearch } from "./prompts/search.ts";
 import { PromptStore } from "./prompts/store.ts";
+import { ApplicationSettingsStore } from "./settings/index.ts";
 
 export type ConfiguredModel = {
   id: string;
+  known: boolean;
   label: string;
   provider: string;
 };
@@ -23,21 +25,29 @@ export type ApplicationServices = {
   promptSearch: PromptSearch;
   prompts: PromptStore;
   runs: ConversationRunRegistry;
+  settings: ApplicationSettingsStore;
 };
 
 const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 3;
+const APPLICATION_SERVICES_VERSION = 4;
 
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
+  await getApplicationServices();
   const { models } = loadRuntimeConfig();
   const identities = await resolveModelIdentities(models.map(({ id }) => id));
   return models.map(({ id }, index) => ({ id, ...identities[index] }));
 }
 
-export function isConfiguredModelId(id: string): boolean {
+export async function getModelIdentity(id: string): Promise<ConfiguredModel> {
+  const [identity] = await resolveModelIdentities([id]);
+  return { id, ...identity };
+}
+
+export async function isConfiguredModelId(id: string): Promise<boolean> {
+  await getApplicationServices();
   return loadRuntimeConfig().models.some((model) => model.id === id);
 }
 
@@ -46,6 +56,8 @@ export async function createApplicationServices(
 ): Promise<ApplicationServices> {
   const database = createDatabase(databaseUrl);
   await database.initialize();
+  const settings = new ApplicationSettingsStore(database);
+  await settings.initialize();
   configureModelSpendLimit(database);
   const prompts = new PromptStore(database);
   const evaluations = new EvaluationRuns(database, prompts);
@@ -56,6 +68,7 @@ export async function createApplicationServices(
     promptSearch: new PromptSearch(database, prompts),
     prompts,
     runs: new ConversationRunRegistry(),
+    settings,
   };
 }
 
@@ -86,3 +99,4 @@ export { EmbeddingError } from "./clients/embedding.ts";
 export * from "./conversations/index.ts";
 export * from "./evaluation/runs.ts";
 export * from "./prompts/store.ts";
+export * from "./settings/index.ts";

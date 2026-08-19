@@ -2,7 +2,7 @@
 
 "use client";
 
-import { FlaskConical, MessageSquareText, Sparkles, X } from "lucide-react";
+import { FlaskConical, MessageSquareText, Settings, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { RefObject } from "react";
@@ -77,8 +77,21 @@ export function AppSidebar({
           <ChatHistory />
         </div>
       </div>
-      <div className="border-t border-sidebar-border p-1.5">
+      <div className="flex items-center justify-between gap-2 border-t border-sidebar-border p-1.5">
         <SidebarThemeToggle />
+        <Link
+          aria-current={pathname.startsWith("/settings") ? "page" : undefined}
+          aria-label="Settings"
+          className={cn(
+            "inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+            pathname.startsWith("/settings") &&
+              "bg-foreground text-background hover:bg-foreground hover:text-background",
+          )}
+          href="/settings"
+          title="Settings"
+        >
+          <Settings aria-hidden="true" className="size-3.5" />
+        </Link>
       </div>
     </div>
   );
