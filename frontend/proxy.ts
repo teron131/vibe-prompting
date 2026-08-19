@@ -1,4 +1,4 @@
-/** Protects every deployed browser and API route with one small-team shared credential. */
+/** Protects deployed browser and API routes with one shared credential while keeping local Next.js development secret-free. */
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -7,6 +7,7 @@ export function proxy(request: NextRequest) {
   const username = process.env.APP_USERNAME?.trim();
   const password = process.env.APP_PASSWORD;
   if (!username || !password) {
+    if (process.env.NODE_ENV === "development") return NextResponse.next();
     return new Response("Deployment authentication is not configured.", { status: 503 });
   }
 

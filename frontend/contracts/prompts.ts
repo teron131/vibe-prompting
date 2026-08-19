@@ -21,4 +21,6 @@ export type PromptRevision = {
 };
 
 export type PromptDetail = { prompt: PromptSummary; revisions: PromptRevision[] };
+export type PromptSearchResult = PromptSummary & { snippet: string };
+export type PromptSearchResponse = { prompts: PromptSearchResult[] };
 export type PromptsResponse = { prompts: PromptSummary[] };

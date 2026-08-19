@@ -21,7 +21,21 @@ export type StoredMessagePart =
       type: "tool";
     }
   | { promptId: string; revisionId: string; type: "prompt-revision" }
+  | {
+      promptId: string;
+      revisionId: string;
+      text: string;
+      title: string;
+      type: "prompt-quote";
+    }
   | { report: unknown; runId?: string; type: "evaluation" };
+
+export type ChatWorkspaceContext = {
+  activePromptId: string | null;
+  enabledTools: Array<"evaluations" | "prompt-library" | "web-search">;
+  panelOpen: boolean;
+  reasoningEffort: "high" | "low" | "medium" | "xhigh";
+};
 
 export type ChatMessage = {
   chatId: string;
@@ -43,6 +57,7 @@ export type ChatSummary = {
 
 export type Conversation = {
   chat: ChatSummary;
+  context: ChatWorkspaceContext;
   messages: ChatMessage[];
 };
 
@@ -69,6 +84,8 @@ type MessageRow = {
   role: "assistant" | "user";
 };
 
+type ConversationRow = ChatRow & { context: unknown };
+
 type Cursor = {
   id: string;
   updatedAt: string;
@@ -81,9 +98,20 @@ type UsageRow = {
   hourRetryAfterSeconds: number | null;
 };
 
+type UserMessageInput = {
+  attachments?: Array<Extract<StoredMessagePart, { type: "file" }>>;
+  chatId: string;
+  context: ChatWorkspaceContext;
+  instruction: string;
+  messageId: string;
+  modelId: string;
+  quotes?: Array<Extract<StoredMessagePart, { type: "prompt-quote" }>>;
+};
+
 const CHAT_MESSAGES_PER_HOUR = 300;
 const CHAT_MESSAGES_PER_DAY = 1_500;
 const CHAT_USAGE_LOCK = 1_450_701_648;
+const WORKSPACE_TOOL_IDS = new Set(["evaluations", "prompt-library", "web-search"]);
 
 export class ChatNotFoundError extends Error {
   readonly statusCode = 404;
@@ -91,6 +119,24 @@ export class ChatNotFoundError extends Error {
   constructor(chatId: string) {
     super(`Chat ${chatId} was not found.`);
     this.name = "ChatNotFoundError";
+  }
+}
+
+export class ChatMessageNotFoundError extends Error {
+  readonly statusCode = 404;
+
+  constructor(chatId: string, messageId: string) {
+    super(`User message ${messageId} was not found in chat ${chatId}.`);
+    this.name = "ChatMessageNotFoundError";
+  }
+}
+
+export class ChatMessageReplacementError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "ChatMessageReplacementError";
   }
 }
 
@@ -114,50 +160,86 @@ export class ConversationStore {
     this.#database = database;
   }
 
-  async createWithUserMessage(input: {
-    attachments?: Array<Extract<StoredMessagePart, { type: "file" }>>;
-    chatId?: string;
-    instruction: string;
-    modelId: string;
-  }): Promise<Conversation> {
+  async createWithUserMessage(
+    input: Omit<UserMessageInput, "chatId"> & { chatId?: string },
+  ): Promise<Conversation> {
     const chatId = input.chatId ?? randomUUID();
     const title = deriveTitle(input.instruction);
     return this.#database.transaction(async (sql) => {
       await claimChatUsage(sql);
       await sql`
-        INSERT INTO chats (id, title, model_id)
-        VALUES (${chatId}, ${title}, ${input.modelId})
+        INSERT INTO chats (id, title, model_id, workspace_context_json)
+        VALUES (
+          ${chatId},
+          ${title},
+          ${input.modelId},
+          ${sql.json(input.context as unknown as postgres.JSONValue)}
+        )
       `;
       await insertMessage(sql, {
         chatId,
+        id: input.messageId,
         metadata: {},
-        parts: [...(input.attachments ?? []), { type: "text", text: input.instruction }],
+        parts: projectUserMessageParts(input),
         role: "user",
       });
       return requireConversation(sql, chatId);
     });
   }
 
-  async appendUserMessage(input: {
-    attachments?: Array<Extract<StoredMessagePart, { type: "file" }>>;
-    chatId: string;
-    instruction: string;
-    modelId: string;
-  }): Promise<Conversation> {
+  async appendUserMessage(input: UserMessageInput): Promise<Conversation> {
     return this.#database.transaction(async (sql) => {
       await requireChat(sql, input.chatId);
       await claimChatUsage(sql);
       await insertMessage(sql, {
         chatId: input.chatId,
+        id: input.messageId,
         metadata: {},
-        parts: [...(input.attachments ?? []), { type: "text", text: input.instruction }],
+        parts: projectUserMessageParts(input),
         role: "user",
       });
-      await sql`
-        UPDATE chats
-        SET model_id = ${input.modelId}, updated_at = NOW()
-        WHERE id = ${input.chatId}
+      await updateChatForUserMessage(sql, input);
+      return requireConversation(sql, input.chatId);
+    });
+  }
+
+  async replaceUserMessage(
+    input: UserMessageInput & { replaceFromMessageId: string },
+  ): Promise<Conversation> {
+    return this.#database.transaction(async (sql) => {
+      if (input.messageId !== input.replaceFromMessageId) {
+        throw new ChatMessageReplacementError(
+          "A replacement must reuse the selected user message ID.",
+        );
+      }
+      await requireChat(sql, input.chatId);
+      const [target] = await sql<Array<{ createdAt: Date; id: string; role: string }>>`
+        SELECT id, role, created_at
+        FROM chat_messages
+        WHERE chat_id = ${input.chatId} AND id = ${input.replaceFromMessageId}
+        FOR UPDATE
       `;
+      if (!target) throw new ChatMessageNotFoundError(input.chatId, input.replaceFromMessageId);
+      if (target.role !== "user") {
+        throw new ChatMessageReplacementError(
+          `Message ${input.replaceFromMessageId} is not a user message and cannot be replaced.`,
+        );
+      }
+      await claimChatUsage(sql);
+      await sql`
+        DELETE FROM chat_messages
+        WHERE
+          chat_id = ${input.chatId}
+          AND (created_at, id) >= (${target.createdAt}, ${target.id}::uuid)
+      `;
+      await insertMessage(sql, {
+        chatId: input.chatId,
+        id: input.messageId,
+        metadata: {},
+        parts: projectUserMessageParts(input),
+        role: "user",
+      });
+      await updateChatForUserMessage(sql, input);
       return requireConversation(sql, input.chatId);
     });
   }
@@ -299,7 +381,7 @@ async function claimChatUsage(sql: DatabaseClient): Promise<void> {
 }
 
 async function requireConversation(sql: DatabaseClient, chatId: string): Promise<Conversation> {
-  const chat = await requireChat(sql, chatId);
+  const row = await requireChatRow(sql, chatId);
   const rows = await sql<MessageRow[]>`
     SELECT
       id,
@@ -312,23 +394,39 @@ async function requireConversation(sql: DatabaseClient, chatId: string): Promise
     WHERE chat_id = ${chatId}
     ORDER BY created_at, id
   `;
-  return { chat, messages: rows.map(projectMessage) };
+  return {
+    chat: projectChat(row),
+    context: projectWorkspaceContext(row.context),
+    messages: rows.map(projectMessage),
+  };
 }
 
 async function requireChat(sql: DatabaseClient, chatId: string): Promise<ChatSummary> {
-  const [row] = await sql<ChatRow[]>`
-    SELECT id, title, icon, model_id, created_at, updated_at
+  return projectChat(await requireChatRow(sql, chatId));
+}
+
+async function requireChatRow(sql: DatabaseClient, chatId: string): Promise<ConversationRow> {
+  const [row] = await sql<ConversationRow[]>`
+    SELECT
+      id,
+      title,
+      icon,
+      model_id,
+      workspace_context_json AS context,
+      created_at,
+      updated_at
     FROM chats
     WHERE id = ${chatId}
   `;
   if (!row) throw new ChatNotFoundError(chatId);
-  return projectChat(row);
+  return row;
 }
 
 async function insertMessage(
   sql: DatabaseClient,
   input: {
     chatId: string;
+    id?: string;
     metadata: Record<string, unknown>;
     parts: StoredMessagePart[];
     role: "assistant" | "user";
@@ -348,13 +446,37 @@ async function insertMessage(
       text_content
     )
     VALUES (
-      ${randomUUID()},
+      ${input.id ?? randomUUID()},
       ${input.chatId},
       ${input.role},
       ${sql.json(input.parts as postgres.JSONValue[])},
       ${sql.json(input.metadata as postgres.JSONValue)},
       ${textContent}
     )
+  `;
+}
+
+function projectUserMessageParts(
+  input: Pick<UserMessageInput, "attachments" | "instruction" | "quotes">,
+): StoredMessagePart[] {
+  return [
+    ...(input.attachments ?? []),
+    ...(input.quotes ?? []),
+    { type: "text", text: input.instruction },
+  ];
+}
+
+async function updateChatForUserMessage(
+  sql: DatabaseClient,
+  input: Pick<UserMessageInput, "chatId" | "context" | "modelId">,
+): Promise<void> {
+  await sql`
+    UPDATE chats
+    SET
+      model_id = ${input.modelId},
+      workspace_context_json = ${sql.json(input.context as unknown as postgres.JSONValue)},
+      updated_at = NOW()
+    WHERE id = ${input.chatId}
   `;
 }
 
@@ -385,6 +507,40 @@ function projectMessage(row: MessageRow): ChatMessage {
     metadata: row.metadata,
     parts: row.parts,
     role: row.role,
+  };
+}
+
+function projectWorkspaceContext(value: unknown): ChatWorkspaceContext {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return defaultWorkspaceContext();
+  const context = value as Record<string, unknown>;
+  const activePromptId = typeof context.activePromptId === "string" ? context.activePromptId : null;
+  const enabledTools = Array.isArray(context.enabledTools)
+    ? context.enabledTools.filter(
+        (tool): tool is ChatWorkspaceContext["enabledTools"][number] =>
+          typeof tool === "string" && WORKSPACE_TOOL_IDS.has(tool),
+      )
+    : defaultWorkspaceContext().enabledTools;
+  const reasoningEffort =
+    context.reasoningEffort === "low" ||
+    context.reasoningEffort === "medium" ||
+    context.reasoningEffort === "high" ||
+    context.reasoningEffort === "xhigh"
+      ? context.reasoningEffort
+      : "medium";
+  return {
+    activePromptId,
+    enabledTools,
+    panelOpen: context.panelOpen === true,
+    reasoningEffort,
+  };
+}
+
+function defaultWorkspaceContext(): ChatWorkspaceContext {
+  return {
+    activePromptId: null,
+    enabledTools: ["prompt-library", "evaluations", "web-search"],
+    panelOpen: false,
+    reasoningEffort: "medium",
   };
 }
 

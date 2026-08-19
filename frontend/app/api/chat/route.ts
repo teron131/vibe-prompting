@@ -7,7 +7,9 @@ import {
   generateChatMetadata,
   getApplicationServices,
   isConfiguredModelId,
+  type PromptStore,
   type StoredMessagePart,
+  type StoredPrompt,
   streamChatRun,
 } from "vibe-prompting/server";
 
@@ -17,7 +19,9 @@ import type {
   ChatRequest,
   ChatResponse,
   ChatToolId,
+  ChatWorkspaceContext,
   DeleteChatResponse,
+  PromptQuote,
   RunEvent,
   StopChatResponse,
 } from "@/contracts/chat";
@@ -32,9 +36,11 @@ export async function GET(request: Request) {
   try {
     const chatId = requireUuid(new URL(request.url).searchParams.get("id"), "Chat ID");
     const services = await getApplicationServices();
+    const run = services.runs.snapshot(chatId);
     const payload = {
-      active: services.runs.isActive(chatId),
+      active: run.active,
       conversation: await services.conversations.getConversation(chatId),
+      events: run.events,
     } satisfies ChatResponse;
     return Response.json(payload, { headers: NO_STORE_HEADERS });
   } catch (error) {
@@ -50,45 +56,66 @@ export async function POST(request: Request) {
       throw new RequestError(`Unknown configured model: ${input.modelId}.`, 400);
     }
     const services = await getApplicationServices();
+    const [activePrompt, quotes] = await Promise.all([
+      input.workspace.activePromptId
+        ? services.prompts.getPrompt(input.workspace.activePromptId)
+        : undefined,
+      validatePromptQuotes(services.prompts, input.quotes),
+    ]);
 
     claim = services.runs.claim(input.chatId);
-    let history: Array<{ role: "assistant" | "user"; text: string }> = [];
     let conversation;
     let existing = true;
     try {
       conversation = await services.conversations.getConversation(input.chatId);
-      history = conversation.messages.flatMap((message) => {
-        const text = message.parts
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join("\n");
-        return text ? [{ role: message.role, text }] : [];
-      });
     } catch (error) {
       if (!isChatNotFoundError(error)) throw error;
+      if (input.replaceFromMessageId) throw error;
       existing = false;
     }
     const attachments = input.attachments.map((attachment) => ({
       ...attachment,
       type: "file" as const,
     }));
-    if (existing) {
+    const storedQuotes = quotes.map((quote) => ({ ...quote, type: "prompt-quote" as const }));
+    if (input.replaceFromMessageId) {
+      conversation = await services.conversations.replaceUserMessage({
+        attachments,
+        chatId: input.chatId,
+        context: input.workspace,
+        instruction: input.instruction,
+        messageId: input.messageId,
+        modelId: input.modelId,
+        quotes: storedQuotes,
+        replaceFromMessageId: input.replaceFromMessageId,
+      });
+    } else if (existing) {
       conversation = await services.conversations.appendUserMessage({
         attachments,
         chatId: input.chatId,
+        context: input.workspace,
         instruction: input.instruction,
+        messageId: input.messageId,
         modelId: input.modelId,
+        quotes: storedQuotes,
       });
     } else {
       conversation = await services.conversations.createWithUserMessage({
         attachments,
         chatId: input.chatId,
+        context: input.workspace,
         instruction: input.instruction,
+        messageId: input.messageId,
         modelId: input.modelId,
+        quotes: storedQuotes,
       });
     }
+    const history = projectRunHistory(conversation.messages, input.messageId);
     const userMessageCount = conversation.messages.filter(({ role }) => role === "user").length;
-    const shouldUpdateMetadata = !existing || userMessageCount % METADATA_EVERY_MESSAGES === 0;
+    const shouldUpdateMetadata =
+      Boolean(input.replaceFromMessageId) ||
+      !existing ||
+      userMessageCount % METADATA_EVERY_MESSAGES === 0;
     const metadataPromise = shouldUpdateMetadata
       ? generateChatMetadata({
           currentIcon: conversation.chat.icon,
@@ -113,13 +140,13 @@ export async function POST(request: Request) {
         {
           attachments: input.attachments,
           chatId: input.chatId,
-          enabledTools: input.enabledTools,
+          enabledTools: input.workspace.enabledTools,
           evaluations: services.evaluations,
           history,
-          instruction: input.instruction,
+          instruction: formatWorkspaceInstruction(input.instruction, activePrompt, quotes),
           modelId: input.modelId,
           prompts: services.prompts,
-          reasoningEffort: input.reasoningEffort,
+          reasoningEffort: input.workspace.reasoningEffort,
           signal: claim?.signal,
         },
         (event) => {
@@ -132,9 +159,11 @@ export async function POST(request: Request) {
         chatId: input.chatId,
         metadata: {
           completedAt: new Date().toISOString(),
-          enabledTools: input.enabledTools,
+          activePromptId: activePrompt?.id ?? null,
+          activePromptRevisionId: activePrompt?.revisionId ?? null,
+          enabledTools: input.workspace.enabledTools,
           modelId: result.model.id,
-          reasoningEffort: input.reasoningEffort,
+          reasoningEffort: input.workspace.reasoningEffort,
         },
         parts: collected.finish(result.message),
       });
@@ -233,14 +262,109 @@ function createNdjsonStream(claim: ClaimedConversationRun) {
 
 function parseChatRequest(value: unknown): ChatRequest {
   const record = readRecord(value);
-  return {
+  const input: ChatRequest = {
     attachments: requireAttachments(record.attachments),
     chatId: requireUuid(record.chatId, "Chat ID"),
-    enabledTools: requireToolIds(record.enabledTools),
     instruction: requireText(record.instruction, "Message"),
+    messageId: requireUuid(record.messageId, "Message ID"),
     modelId: requireText(record.modelId, "Model"),
+    quotes: requirePromptQuotes(record.quotes),
+    replaceFromMessageId:
+      record.replaceFromMessageId === undefined
+        ? undefined
+        : requireUuid(record.replaceFromMessageId, "Replacement message ID"),
+    workspace: requireWorkspaceContext(record.workspace),
+  };
+  if (input.replaceFromMessageId && input.messageId !== input.replaceFromMessageId) {
+    throw new RequestError("A replacement must reuse the selected user message ID.", 400);
+  }
+  return input;
+}
+
+function projectRunHistory(
+  messages: ChatResponse["conversation"]["messages"],
+  currentMessageId: string,
+): Array<{ role: "assistant" | "user"; text: string }> {
+  return messages.flatMap((message) => {
+    if (message.id === currentMessageId) return [];
+    const text = message.parts
+      .filter((part) => part.type === "text" || part.type === "prompt-quote")
+      .map((part) =>
+        part.type === "prompt-quote"
+          ? `Quoted from ${part.title} revision ${part.revisionId.slice(0, 8)}:\n${part.text}`
+          : part.text,
+      )
+      .join("\n");
+    return text ? [{ role: message.role, text }] : [];
+  });
+}
+
+function requireWorkspaceContext(value: unknown): ChatWorkspaceContext {
+  const record = readRecord(value);
+  return {
+    activePromptId:
+      record.activePromptId === null
+        ? null
+        : requireUuid(record.activePromptId, "Active prompt ID"),
+    enabledTools: requireToolIds(record.enabledTools),
+    panelOpen: record.panelOpen !== false,
     reasoningEffort: requireReasoningEffort(record.reasoningEffort),
   };
+}
+
+function requirePromptQuotes(value: unknown): PromptQuote[] {
+  if (!Array.isArray(value) || value.length > 6)
+    throw new RequestError("Prompt quotes must contain at most six passages.", 400);
+  return value.map((item) => {
+    const record = readRecord(item);
+    const text = requireText(record.text, "Quoted prompt text");
+    if (text.length > 4_000)
+      throw new RequestError("Each prompt quote must be no longer than 4,000 characters.", 400);
+    return {
+      promptId: requireUuid(record.promptId, "Quoted prompt ID"),
+      revisionId: requireUuid(record.revisionId, "Quoted revision ID"),
+      text,
+      title: requireText(record.title, "Quoted prompt title"),
+    };
+  });
+}
+
+async function validatePromptQuotes(
+  prompts: PromptStore,
+  quotes: PromptQuote[],
+): Promise<PromptQuote[]> {
+  return Promise.all(
+    quotes.map(async (quote) => {
+      const [prompt, revisions] = await Promise.all([
+        prompts.getPrompt(quote.promptId),
+        prompts.listRevisions(quote.promptId),
+      ]);
+      const revision = revisions.find(({ id }) => id === quote.revisionId);
+      if (!revision) throw new RequestError("A quoted prompt revision was not found.", 400);
+      if (!revision.markdown.includes(quote.text))
+        throw new RequestError("Quoted prompt text no longer matches its revision.", 400);
+      return { ...quote, title: prompt.title };
+    }),
+  );
+}
+
+function formatWorkspaceInstruction(
+  instruction: string,
+  activePrompt: StoredPrompt | undefined,
+  quotes: PromptQuote[],
+): string {
+  const context: string[] = [];
+  if (activePrompt) {
+    context.push(
+      `Current prompt artifact: ${activePrompt.title} (prompt ${activePrompt.id}, revision ${activePrompt.revisionId}).\n<prompt_markdown>\n${activePrompt.markdown}\n</prompt_markdown>`,
+    );
+  }
+  for (const quote of quotes) {
+    context.push(
+      `Quoted passage from ${quote.title} (prompt ${quote.promptId}, revision ${quote.revisionId}):\n<prompt_quote>\n${quote.text}\n</prompt_quote>`,
+    );
+  }
+  return context.length ? `${context.join("\n\n")}\n\nUser request:\n${instruction}` : instruction;
 }
 
 function requireAttachments(value: unknown): Attachment[] {

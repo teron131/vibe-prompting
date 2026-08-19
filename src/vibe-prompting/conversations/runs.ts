@@ -25,8 +25,14 @@ const MAX_ACTIVE_RUNS = 10;
 type ActiveRun = {
   controller: AbortController;
   done: Promise<void>;
+  events: ConversationRunEvent[];
   listeners: Set<RunListener>;
   settled: boolean;
+};
+
+export type ConversationRunSnapshot = {
+  active: boolean;
+  events: ConversationRunEvent[];
 };
 
 export class ActiveChatRunError extends Error {
@@ -70,6 +76,7 @@ export class ConversationRunRegistry {
       done: new Promise<void>((resolve) => {
         resolveDone = resolve;
       }),
+      events: [],
       listeners: new Set(),
       settled: false,
     };
@@ -77,6 +84,15 @@ export class ConversationRunRegistry {
 
     const publish = (event: ConversationRunEvent) => {
       if (run.settled) return;
+      const lastEvent = run.events.at(-1);
+      if (event.type === "text-delta" && lastEvent?.type === "text-delta") {
+        run.events[run.events.length - 1] = {
+          ...lastEvent,
+          delta: lastEvent.delta + event.delta,
+        };
+      } else {
+        run.events.push(event);
+      }
       for (const listener of run.listeners) listener(event);
     };
     const release = () => {
@@ -112,6 +128,11 @@ export class ConversationRunRegistry {
 
   isActive(chatId: string): boolean {
     return this.#runs.has(chatId);
+  }
+
+  snapshot(chatId: string): ConversationRunSnapshot {
+    const run = this.#runs.get(chatId);
+    return run ? { active: true, events: [...run.events] } : { active: false, events: [] };
   }
 
   stop(chatId: string): boolean {

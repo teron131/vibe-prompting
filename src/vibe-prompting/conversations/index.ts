@@ -7,6 +7,7 @@ export {
   type ChatMessage,
   type ChatPage,
   type ChatSummary,
+  type ChatWorkspaceContext,
   type Conversation,
   type StoredMessagePart,
 } from "./store.ts";

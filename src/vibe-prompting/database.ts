@@ -35,6 +35,19 @@ const MIGRATIONS = [
     load: () => readFile(new URL("../../migrations/006_usage_limits.sql", import.meta.url), "utf8"),
     version: 6,
   },
+  {
+    load: () =>
+      readFile(new URL("../../migrations/007_chat_workspace_context.sql", import.meta.url), "utf8"),
+    version: 7,
+  },
+  {
+    load: () =>
+      readFile(
+        new URL("../../migrations/008_prompt_search_embeddings.sql", import.meta.url),
+        "utf8",
+      ),
+    version: 8,
+  },
 ];
 
 export type DatabaseClient = postgres.Sql | postgres.TransactionSql;

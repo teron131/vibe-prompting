@@ -1,6 +1,8 @@
 /* Carries the donor-aligned neutral design tokens and global interaction floor for the prompt workspace. */
 
 @import "tailwindcss";
+@import "../node_modules/katex/dist/katex.min.css";
+@source "../node_modules/streamdown/dist/index.js";
 @custom-variant dark (&:is(.dark, .dark *));
 
 :root {

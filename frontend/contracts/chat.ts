@@ -5,14 +5,28 @@ export type ConfiguredModel = { id: string; label: string; provider: string };
 export type ChatToolId = "evaluations" | "prompt-library" | "web-search";
 export type ChatReasoningEffort = "high" | "low" | "medium" | "xhigh";
 export type Attachment = { dataUrl: string; mediaType: string; name: string; size: number };
+export type PromptQuote = {
+  promptId: string;
+  revisionId: string;
+  text: string;
+  title: string;
+};
+export type ChatWorkspaceContext = {
+  activePromptId: string | null;
+  enabledTools: ChatToolId[];
+  panelOpen: boolean;
+  reasoningEffort: ChatReasoningEffort;
+};
 
 export type ChatRequest = {
   attachments: Attachment[];
   chatId: string;
-  enabledTools: ChatToolId[];
   instruction: string;
+  messageId: string;
   modelId: string;
-  reasoningEffort: ChatReasoningEffort;
+  quotes: PromptQuote[];
+  replaceFromMessageId?: string;
+  workspace: ChatWorkspaceContext;
 };
 
 export type MessagePart =
@@ -29,6 +43,7 @@ export type MessagePart =
       type: "tool";
     }
   | { promptId: string; revisionId: string; type: "prompt-revision" }
+  | (PromptQuote & { type: "prompt-quote" })
   | { report: unknown; runId?: string; type: "evaluation" };
 
 export type ChatMessage = {
@@ -49,7 +64,11 @@ export type ChatSummary = {
   updatedAt: string;
 };
 
-export type Conversation = { chat: ChatSummary; messages: ChatMessage[] };
+export type Conversation = {
+  chat: ChatSummary;
+  context: ChatWorkspaceContext;
+  messages: ChatMessage[];
+};
 
 export type RunEvent =
   | { delta: string; type: "text-delta" }
@@ -59,7 +78,7 @@ export type RunEvent =
   | { type: "stopped" }
   | { type: "finish" };
 
-export type ChatResponse = { active: boolean; conversation: Conversation };
+export type ChatResponse = { active: boolean; conversation: Conversation; events: RunEvent[] };
 export type ChatPage = { chats: ChatSummary[]; nextCursor: string | null };
 export type ChatSearchResponse = { chats: ChatSummary[] };
 export type ConfiguredModelsResponse = { models: ConfiguredModel[] };

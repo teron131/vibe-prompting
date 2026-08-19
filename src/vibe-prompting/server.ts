@@ -7,6 +7,7 @@ import { ConversationStore } from "./conversations/store.ts";
 import { createDatabase } from "./database.ts";
 import { EvaluationRuns } from "./evaluation/runs.ts";
 import { configureModelSpendLimit } from "./model-spend-limit.ts";
+import { PromptSearch } from "./prompts/search.ts";
 import { PromptStore } from "./prompts/store.ts";
 
 export type ConfiguredModel = {
@@ -19,13 +20,16 @@ export type ApplicationServices = {
   close(): Promise<void>;
   conversations: ConversationStore;
   evaluations: EvaluationRuns;
+  promptSearch: PromptSearch;
   prompts: PromptStore;
   runs: ConversationRunRegistry;
 };
 
 const sharedState = globalThis as typeof globalThis & {
+  vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
+const APPLICATION_SERVICES_VERSION = 3;
 
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
   const { models } = loadRuntimeConfig();
@@ -49,16 +53,23 @@ export async function createApplicationServices(
     close: () => database.close(),
     conversations: new ConversationStore(database),
     evaluations,
+    promptSearch: new PromptSearch(database, prompts),
     prompts,
     runs: new ConversationRunRegistry(),
   };
 }
 
 export function getApplicationServices(): Promise<ApplicationServices> {
-  sharedState.vibePromptingServices ??= createApplicationServices().then(async (services) => {
-    await services.evaluations.reconcileInterrupted();
-    return services;
-  });
+  if (
+    !sharedState.vibePromptingServices ||
+    sharedState.vibePromptingServicesVersion !== APPLICATION_SERVICES_VERSION
+  ) {
+    sharedState.vibePromptingServicesVersion = APPLICATION_SERVICES_VERSION;
+    sharedState.vibePromptingServices = createApplicationServices().then(async (services) => {
+      await services.evaluations.reconcileInterrupted();
+      return services;
+    });
+  }
   return sharedState.vibePromptingServices;
 }
 
@@ -71,6 +82,7 @@ export type {
   ChatToolId,
   PromptEdit,
 } from "./agent/runtime.ts";
+export { EmbeddingError } from "./clients/embedding.ts";
 export * from "./conversations/index.ts";
 export * from "./evaluation/runs.ts";
 export * from "./prompts/store.ts";

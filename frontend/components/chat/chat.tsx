@@ -2,9 +2,9 @@
 
 "use client";
 
-import { LoaderCircle, TriangleAlert } from "lucide-react";
+import { FileText, LoaderCircle, PanelRightOpen, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppIcon } from "@/components/app-icon";
@@ -19,94 +19,427 @@ import type {
   ConfiguredModel,
   ConfiguredModelsResponse,
   Conversation,
+  PromptQuote,
   RunEvent,
   StopChatResponse,
 } from "@/contracts/chat";
+import type { PromptsResponse, PromptSummary } from "@/contracts/prompts";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 
 import { AssistantMessage } from "./assistant-message";
 import { ChatComposer } from "./chat-composer";
 import { ChatHistoryIcon } from "./history-icon";
+import { PromptWorkspace } from "./prompt-workspace";
 
 const DEFAULT_TOOLS: ChatToolId[] = ["prompt-library", "evaluations", "web-search"];
 
-export function Chat({ chatId: initialChatId }: { chatId?: string }) {
-  const router = useRouter();
-  const [chatId, setChatId] = useState(initialChatId);
+type WorkspaceDraft = {
+  activePromptId: string | null;
+  enabledTools: ChatToolId[];
+  instruction: string;
+  panelOpen: boolean;
+  quotes: PromptQuote[];
+  reasoningEffort: ChatReasoningEffort;
+  selectedModelId: string;
+};
+
+type ReplacementSubmission = {
+  attachments: Attachment[];
+  instruction: string;
+  messageId: string;
+  quotes: PromptQuote[];
+};
+
+type UseChatRunInput = {
+  activePromptId: string | null;
+  attachments: Attachment[];
+  enabledTools: ChatToolId[];
+  initialChatId?: string;
+  instruction: string;
+  onAttachmentsChange(value: Attachment[]): void;
+  onInstructionChange(value: string): void;
+  onPromptsRefresh(): Promise<unknown>;
+  onQuotesChange(value: PromptQuote[]): void;
+  panelOpen: boolean;
+  quotes: PromptQuote[];
+  reasoningEffort: ChatReasoningEffort;
+  selectedModelId: string;
+};
+
+export function Chat({
+  chatId: initialChatId,
+  initialPromptId,
+}: {
+  chatId?: string;
+  initialPromptId?: string;
+}) {
   const [models, setModels] = useState<ConfiguredModel[]>([]);
-  const [conversation, setConversation] = useState<Conversation>();
+  const [prompts, setPrompts] = useState<PromptSummary[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [enabledTools, setEnabledTools] = useState<ChatToolId[]>(DEFAULT_TOOLS);
   const [reasoningEffort, setReasoningEffort] = useState<ChatReasoningEffort>("medium");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [activePromptId, setActivePromptId] = useState<string | null>(initialPromptId ?? null);
+  const [quotes, setQuotes] = useState<PromptQuote[]>([]);
+  const [highlightedQuote, setHighlightedQuote] = useState<PromptQuote>();
+  const [panelOpen, setPanelOpen] = useState(Boolean(initialPromptId));
   const [instruction, setInstruction] = useState("");
-  const [liveMessage, setLiveMessage] = useState<ChatMessage>();
-  const [running, setRunning] = useState(false);
-  const [detached, setDetached] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>();
-  const messages = useMemo(
-    () => [...(conversation?.messages ?? []), ...(liveMessage ? [liveMessage] : [])],
-    [conversation, liveMessage],
-  );
-  const { containerRef, onScroll } = useScrollToBottom(messages);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
 
-  const loadConversation = useCallback(async (id: string) => {
-    const data = await fetchJson<ChatResponse>(`/api/chat?id=${encodeURIComponent(id)}`);
-    setConversation(data.conversation);
-    setSelectedModelId(data.conversation.chat.modelId);
-    setRunning(data.active);
-    setDetached(data.active);
-    return data.active;
+  const loadPrompts = useCallback(async () => {
+    const data = await fetchJson<PromptsResponse>("/api/prompts");
+    setPrompts(data.prompts);
+    return data.prompts;
   }, []);
+
+  const {
+    chatId,
+    conversation,
+    editUserMessage,
+    error,
+    loadConversation,
+    messages,
+    rerunFromUserMessage,
+    running,
+    setError,
+    stop,
+    submit,
+  } = useChatRun({
+    activePromptId,
+    attachments,
+    enabledTools,
+    initialChatId,
+    instruction,
+    onAttachmentsChange: setAttachments,
+    onInstructionChange: setInstruction,
+    onPromptsRefresh: loadPrompts,
+    onQuotesChange: setQuotes,
+    panelOpen,
+    quotes,
+    reasoningEffort,
+    selectedModelId,
+  });
+  const rerunSources = useMemo(() => {
+    const sources = new Map<string, ChatMessage>();
+    let latestUser: ChatMessage | undefined;
+    for (const message of messages) {
+      if (message.role === "user") latestUser = message;
+      else if (latestUser) sources.set(message.id, latestUser);
+    }
+    return sources;
+  }, [messages]);
+  const { containerRef, onScroll } = useScrollToBottom(messages);
+  const activePrompt = prompts.find(({ id }) => id === activePromptId);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     Promise.all([
       fetchJson<ConfiguredModelsResponse>("/api/config"),
-      chatId ? loadConversation(chatId) : Promise.resolve(false),
+      loadPrompts(),
+      chatId ? loadConversation(chatId) : Promise.resolve(undefined),
     ])
-      .then(([config]) => {
+      .then(([config, promptList, chatData]) => {
         if (!active) return;
         setModels(config.models);
-        if (!chatId) setSelectedModelId((current) => current || config.models[0]?.id || "");
+        const stored = readWorkspaceDraft(workspaceStorageKey(chatId));
+        const context = chatData?.conversation.context;
+        const requestedPrompt = initialPromptId
+          ? promptList.find(({ id }) => id === initialPromptId)
+          : undefined;
+        const restoredPrompt = promptList.find(
+          ({ id }) => id === (stored?.activePromptId ?? context?.activePromptId),
+        );
+        setActivePromptId(requestedPrompt?.id ?? restoredPrompt?.id ?? null);
+        setEnabledTools(stored?.enabledTools ?? context?.enabledTools ?? DEFAULT_TOOLS);
+        setInstruction(stored?.instruction ?? "");
+        setPanelOpen(requestedPrompt ? true : (stored?.panelOpen ?? context?.panelOpen ?? false));
+        setQuotes(stored?.quotes ?? []);
+        setReasoningEffort(stored?.reasoningEffort ?? context?.reasoningEffort ?? "medium");
+        setSelectedModelId(
+          stored?.selectedModelId ??
+            chatData?.conversation.chat.modelId ??
+            config.models[0]?.id ??
+            "",
+        );
+        if (initialPromptId && !requestedPrompt) setError("The requested prompt was not found.");
+        setWorkspaceReady(true);
       })
       .catch((cause) => active && setError(readError(cause)))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [chatId, loadConversation]);
+  }, [chatId, initialPromptId, loadConversation, loadPrompts]);
+
+  useEffect(() => {
+    if (!workspaceReady) return;
+    const draft: WorkspaceDraft = {
+      activePromptId,
+      enabledTools,
+      instruction,
+      panelOpen,
+      quotes,
+      reasoningEffort,
+      selectedModelId,
+    };
+    window.localStorage.setItem(workspaceStorageKey(chatId), JSON.stringify(draft));
+  }, [
+    activePromptId,
+    chatId,
+    enabledTools,
+    instruction,
+    panelOpen,
+    quotes,
+    reasoningEffort,
+    selectedModelId,
+    workspaceReady,
+  ]);
+
+  function activatePrompt(prompt: PromptSummary, showPanel: boolean) {
+    setActivePromptId(prompt.id);
+    setHighlightedQuote(undefined);
+    window.history.replaceState(
+      null,
+      "",
+      chatId ? `/chat/${chatId}` : showPanel ? `/?prompt=${encodeURIComponent(prompt.id)}` : "/",
+    );
+    if (showPanel) setPanelOpen(true);
+    setEnabledTools((current) =>
+      current.includes("prompt-library") ? current : ["prompt-library", ...current],
+    );
+  }
+
+  function detachPrompt() {
+    setActivePromptId(null);
+    setHighlightedQuote(undefined);
+    window.history.replaceState(null, "", chatId ? `/chat/${chatId}` : "/");
+  }
+
+  function addQuote(quote: PromptQuote) {
+    setActivePromptId(quote.promptId);
+    setHighlightedQuote(quote);
+    setQuotes((current) => {
+      if (
+        current.some(
+          (candidate) =>
+            candidate.promptId === quote.promptId &&
+            candidate.revisionId === quote.revisionId &&
+            candidate.text === quote.text,
+        )
+      ) {
+        return current;
+      }
+      if (current.length >= 6) {
+        toast.error("A message can include at most six prompt quotes.");
+        return current;
+      }
+      return [...current, quote];
+    });
+  }
+
+  function openPromptReference(reference: { promptId: string; quote?: PromptQuote }) {
+    const prompt = prompts.find(({ id }) => id === reference.promptId);
+    if (!prompt) {
+      toast.error("The referenced prompt is no longer available.");
+      return;
+    }
+    setActivePromptId(prompt.id);
+    setHighlightedQuote(undefined);
+    if (reference.quote) {
+      window.requestAnimationFrame(() => setHighlightedQuote(reference.quote));
+    }
+    setPanelOpen(true);
+  }
+
+  return (
+    <main className="flex h-screen min-h-0 flex-col">
+      <FeaturePageHeader
+        icon={
+          <ChatHistoryIcon
+            className="size-[18px]"
+            name={conversation?.chat.icon ?? "message-circle"}
+          />
+        }
+        rightContent={
+          <button
+            aria-label={activePrompt ? `Open ${activePrompt.title}` : "Open prompt workspace"}
+            className="inline-flex h-8 max-w-[min(18rem,45vw)] items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-accent"
+            onClick={() => setPanelOpen(true)}
+            type="button"
+          >
+            <FileText aria-hidden="true" className="size-3.5 shrink-0" />
+            <span className="truncate">{activePrompt?.title ?? "Prompt"}</span>
+            <PanelRightOpen
+              aria-hidden="true"
+              className="size-3.5 shrink-0 text-muted-foreground"
+            />
+          </button>
+        }
+        title={conversation?.chat.title ?? "New chat"}
+      />
+      {loading ? (
+        <div className="grid flex-1 place-items-center">
+          <LoaderCircle
+            aria-label="Loading chat"
+            className="size-5 animate-spin text-muted-foreground"
+          />
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1">
+          <section className="flex min-w-0 flex-1 flex-col" aria-label="Agent conversation">
+            <ConversationView containerRef={containerRef} onScroll={onScroll}>
+              {messages.length === 0 ? (
+                <EmptyState onSelect={setInstruction} />
+              ) : (
+                messages.map((message) => {
+                  const modelId =
+                    typeof message.metadata.modelId === "string"
+                      ? message.metadata.modelId
+                      : undefined;
+                  const rerunSource = rerunSources.get(message.id);
+                  return (
+                    <AssistantMessage
+                      disabled={running}
+                      key={message.id}
+                      message={message}
+                      model={models.find((model) => model.id === modelId)}
+                      onEdit={message.role === "user" ? editUserMessage : undefined}
+                      onPromptReference={openPromptReference}
+                      onRerun={rerunSource ? () => rerunFromUserMessage(rerunSource) : undefined}
+                    />
+                  );
+                })
+              )}
+              {error ? (
+                <div className="mb-5 flex gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                  <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                  {error}
+                </div>
+              ) : null}
+            </ConversationView>
+            <ChatComposer
+              activePrompt={activePrompt}
+              attachments={attachments}
+              enabledTools={enabledTools}
+              instruction={instruction}
+              models={models}
+              onAttachmentsChange={setAttachments}
+              onInstructionChange={setInstruction}
+              onModelChange={setSelectedModelId}
+              onOpenPrompt={() => setPanelOpen(true)}
+              onPromptChange={(prompt) => (prompt ? activatePrompt(prompt, false) : detachPrompt())}
+              onQuoteRemove={(quote) =>
+                setQuotes((current) => current.filter((candidate) => candidate !== quote))
+              }
+              onReasoningEffortChange={setReasoningEffort}
+              onStop={stop}
+              onSubmit={() => void submit()}
+              onToolsChange={setEnabledTools}
+              prompts={prompts}
+              quotes={quotes}
+              reasoningEffort={reasoningEffort}
+              running={running}
+              selectedModelId={selectedModelId}
+            />
+          </section>
+          <PromptWorkspace
+            activePrompt={activePrompt}
+            highlightedQuote={highlightedQuote}
+            onClose={() => setPanelOpen(false)}
+            onQuote={addQuote}
+            onSelectPrompt={(prompt) => activatePrompt(prompt, true)}
+            open={panelOpen}
+            prompts={prompts}
+          />
+        </div>
+      )}
+    </main>
+  );
+}
+
+function useChatRun({
+  activePromptId,
+  attachments,
+  enabledTools,
+  initialChatId,
+  instruction,
+  onAttachmentsChange,
+  onInstructionChange,
+  onPromptsRefresh,
+  onQuotesChange,
+  panelOpen,
+  quotes,
+  reasoningEffort,
+  selectedModelId,
+}: UseChatRunInput) {
+  const router = useRouter();
+  const [chatId, setChatId] = useState(initialChatId);
+  const [conversation, setConversation] = useState<Conversation>();
+  const [liveMessage, setLiveMessage] = useState<ChatMessage>();
+  const [running, setRunning] = useState(false);
+  const [detached, setDetached] = useState(false);
+  const [error, setError] = useState<string>();
+  const ownedRunIdRef = useRef<string | undefined>(undefined);
+  const messages = useMemo(
+    () => [...(conversation?.messages ?? []), ...(liveMessage ? [liveMessage] : [])],
+    [conversation, liveMessage],
+  );
+
+  const loadConversation = useCallback(async (id: string) => {
+    const data = await fetchJson<ChatResponse>(`/api/chat?id=${encodeURIComponent(id)}`);
+    setConversation(data.conversation);
+    setRunning(data.active);
+    if (!data.active) {
+      setDetached(false);
+      setLiveMessage(undefined);
+    } else if (ownedRunIdRef.current !== id) {
+      setDetached(true);
+      setLiveMessage(replayLiveMessage(id, data.conversation.chat.modelId, data.events));
+    }
+    return data;
+  }, []);
 
   useEffect(() => {
     if (!chatId || !detached) return;
     const timer = window.setInterval(() => {
       void loadConversation(chatId)
-        .then((active) => {
-          if (!active) {
-            setDetached(false);
-            setLiveMessage(undefined);
+        .then((data) => {
+          if (!data.active) {
             window.clearInterval(timer);
+            void onPromptsRefresh().catch((cause) => setError(readError(cause)));
           }
         })
         .catch((cause) => setError(readError(cause)));
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [chatId, detached, loadConversation]);
+  }, [chatId, detached, loadConversation, onPromptsRefresh]);
 
-  async function submit() {
-    if (running || (!instruction.trim() && !attachments.length) || !selectedModelId) return;
-    const requestInstruction = instruction.trim() || "Please review the attached files.";
-    const requestAttachments = attachments;
+  async function submit(replacement?: ReplacementSubmission) {
+    const requestAttachments = replacement?.attachments ?? attachments;
+    const requestQuotes = replacement?.quotes ?? quotes;
+    const draftInstruction = replacement?.instruction ?? instruction;
+    if (
+      running ||
+      (!draftInstruction.trim() && !requestAttachments.length && !requestQuotes.length) ||
+      !selectedModelId
+    )
+      return;
+    const requestInstruction =
+      draftInstruction.trim() ||
+      (requestQuotes.length
+        ? "Please review the quoted prompt passage."
+        : "Please review the attached files.");
     const runChatId = chatId ?? crypto.randomUUID();
     const optimisticUser: ChatMessage = {
       chatId: runChatId,
       createdAt: new Date().toISOString(),
-      id: crypto.randomUUID(),
+      id: replacement?.messageId ?? crypto.randomUUID(),
       metadata: {},
       parts: [
         ...requestAttachments.map((attachment) => ({ ...attachment, type: "file" as const })),
+        ...requestQuotes.map((quote) => ({ ...quote, type: "prompt-quote" as const })),
         { type: "text", text: requestInstruction },
       ],
       role: "user",
@@ -120,40 +453,61 @@ export function Chat({ chatId: initialChatId }: { chatId?: string }) {
         title: requestInstruction.slice(0, 72),
         updatedAt: optimisticUser.createdAt,
       },
+      context: { activePromptId, enabledTools, panelOpen, reasoningEffort },
       messages: [],
     };
-    setConversation({
-      ...baseConversation,
-      messages: [...baseConversation.messages, optimisticUser],
-    });
-    setInstruction("");
-    setAttachments([]);
+    const replacementIndex = replacement
+      ? baseConversation.messages.findIndex(({ id }) => id === replacement.messageId)
+      : -1;
+    if (replacement && replacementIndex < 0) {
+      toast.error("That message is no longer available to replace.");
+      return;
+    }
+    const retainedMessages = replacement
+      ? baseConversation.messages.slice(0, replacementIndex)
+      : baseConversation.messages;
+    setConversation({ ...baseConversation, messages: [...retainedMessages, optimisticUser] });
+    if (!replacement) {
+      onInstructionChange("");
+      onAttachmentsChange([]);
+      onQuotesChange([]);
+    }
     setError(undefined);
     setRunning(true);
     setDetached(false);
     setLiveMessage(createLiveMessage(runChatId, selectedModelId));
+    ownedRunIdRef.current = runChatId;
 
     try {
       const response = await fetch("/api/chat", {
         body: JSON.stringify({
           attachments: requestAttachments,
           chatId: runChatId,
-          enabledTools,
           instruction: requestInstruction,
+          messageId: optimisticUser.id,
           modelId: selectedModelId,
-          reasoningEffort,
+          quotes: requestQuotes,
+          replaceFromMessageId: replacement?.messageId,
+          workspace: { activePromptId, enabledTools, panelOpen, reasoningEffort },
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
       if (!response.ok) throw new Error(await readResponseError(response));
       if (!chatId) {
+        window.localStorage.removeItem(workspaceStorageKey(undefined));
         setChatId(runChatId);
         window.history.replaceState(null, "", `/chat/${runChatId}`);
       }
       window.dispatchEvent(new Event("vibe:history"));
       await consumeRunStream(response, applyRunEvent);
+      ownedRunIdRef.current = undefined;
       await loadConversation(runChatId);
+      try {
+        await onPromptsRefresh();
+      } catch (cause) {
+        toast.error(`The prompt workspace could not refresh: ${readError(cause)}`);
+      }
       setLiveMessage(undefined);
       setRunning(false);
       setDetached(false);
@@ -161,11 +515,17 @@ export function Chat({ chatId: initialChatId }: { chatId?: string }) {
       router.refresh();
       window.dispatchEvent(new Event("vibe:history"));
     } catch (cause) {
+      ownedRunIdRef.current = undefined;
       const message = readError(cause);
       setError(message);
       setRunning(false);
       setDetached(false);
       setLiveMessage(undefined);
+      if (!replacement) {
+        onInstructionChange(draftInstruction);
+        onAttachmentsChange(requestAttachments);
+        onQuotesChange(requestQuotes);
+      }
       toast.error(message);
       try {
         await loadConversation(runChatId);
@@ -185,10 +545,7 @@ export function Chat({ chatId: initialChatId }: { chatId?: string }) {
     if (event.type === "chat-metadata") {
       setConversation((current) =>
         current && current.chat.id === event.chatId
-          ? {
-              ...current,
-              chat: { ...current.chat, icon: event.icon, title: event.title },
-            }
+          ? { ...current, chat: { ...current.chat, icon: event.icon, title: event.title } }
           : current,
       );
       window.dispatchEvent(new Event("vibe:history"));
@@ -207,77 +564,30 @@ export function Chat({ chatId: initialChatId }: { chatId?: string }) {
         headers: { "content-type": "application/json" },
         method: "PATCH",
       });
+      ownedRunIdRef.current = undefined;
       setDetached(true);
     } catch (cause) {
       toast.error(readError(cause));
     }
   }
 
-  return (
-    <main className="flex h-screen min-h-0 flex-col">
-      <FeaturePageHeader
-        icon={
-          <ChatHistoryIcon
-            className="size-[18px]"
-            name={conversation?.chat.icon ?? "message-circle"}
-          />
-        }
-        title={conversation?.chat.title ?? "New chat"}
-      />
-      {loading ? (
-        <div className="grid flex-1 place-items-center">
-          <LoaderCircle
-            aria-label="Loading chat"
-            className="size-5 animate-spin text-muted-foreground"
-          />
-        </div>
-      ) : (
-        <>
-          <ConversationView containerRef={containerRef} onScroll={onScroll}>
-            {messages.length === 0 ? (
-              <EmptyState onSelect={setInstruction} />
-            ) : (
-              messages.map((message) => {
-                const modelId =
-                  typeof message.metadata.modelId === "string"
-                    ? message.metadata.modelId
-                    : undefined;
-                return (
-                  <AssistantMessage
-                    key={message.id}
-                    message={message}
-                    model={models.find((model) => model.id === modelId)}
-                  />
-                );
-              })
-            )}
-            {error ? (
-              <div className="mb-5 flex gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-                {error}
-              </div>
-            ) : null}
-          </ConversationView>
-          <ChatComposer
-            attachments={attachments}
-            enabledTools={enabledTools}
-            instruction={instruction}
-            models={models}
-            onAttachmentsChange={setAttachments}
-            onInstructionChange={setInstruction}
-            onModelChange={setSelectedModelId}
-            onReasoningEffortChange={setReasoningEffort}
-            onStop={stop}
-            onSubmit={submit}
-            onToolsChange={setEnabledTools}
-            reasoningEffort={reasoningEffort}
-            running={running}
-            selectedModelId={selectedModelId}
-          />
-        </>
-      )}
-    </main>
-  );
+  return {
+    chatId,
+    conversation,
+    editUserMessage(message: ChatMessage, text: string) {
+      void submit(createReplacementSubmission(message, text));
+    },
+    error,
+    loadConversation,
+    messages,
+    rerunFromUserMessage(message: ChatMessage) {
+      void submit(createReplacementSubmission(message));
+    },
+    running,
+    setError,
+    stop,
+    submit,
+  };
 }
 
 function EmptyState({ onSelect }: { onSelect(value: string): void }) {
@@ -307,6 +617,30 @@ function EmptyState({ onSelect }: { onSelect(value: string): void }) {
       </div>
     </div>
   );
+}
+
+function createReplacementSubmission(
+  message: ChatMessage,
+  editedText?: string,
+): ReplacementSubmission {
+  const attachments = message.parts
+    .filter((part) => part.type === "file")
+    .map(({ dataUrl, mediaType, name, size }) => ({ dataUrl, mediaType, name, size }));
+  const quotes = message.parts
+    .filter((part) => part.type === "prompt-quote")
+    .map(({ promptId, revisionId, text, title }) => ({ promptId, revisionId, text, title }));
+  const instruction =
+    editedText ??
+    message.parts
+      .filter((part) => part.type === "text")
+      .map(({ text }) => text)
+      .join("\n");
+  return {
+    attachments,
+    instruction,
+    messageId: message.id,
+    quotes,
+  };
 }
 
 function createLiveMessage(chatId: string, modelId?: string): ChatMessage {
@@ -344,6 +678,23 @@ function addLiveEvent(
   return { ...message, parts: [...message.parts, event] };
 }
 
+function replayLiveMessage(chatId: string, modelId: string, events: RunEvent[]): ChatMessage {
+  return events.reduce(
+    (message, event) => {
+      if (
+        event.type === "chat-metadata" ||
+        event.type === "error" ||
+        event.type === "finish" ||
+        event.type === "stopped"
+      ) {
+        return message;
+      }
+      return addLiveEvent(message, event);
+    },
+    createLiveMessage(chatId, modelId),
+  );
+}
+
 async function consumeRunStream(
   response: Response,
   onEvent: (event: RunEvent) => void,
@@ -373,12 +724,56 @@ async function readResponseError(response: Response): Promise<string> {
   try {
     const value = (await response.json()) as { error?: unknown };
     if (typeof value.error === "string") return value.error;
-  } catch {
-    return `Request failed with status ${response.status}.`;
-  }
+  } catch {}
   return `Request failed with status ${response.status}.`;
 }
 
 function readError(error: unknown): string {
   return error instanceof Error ? error.message : "The request failed.";
+}
+
+function workspaceStorageKey(chatId: string | undefined): string {
+  return `vibe-prompting:workspace:${chatId ?? "new"}`;
+}
+
+function readWorkspaceDraft(key: string): WorkspaceDraft | undefined {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return undefined;
+    const value = JSON.parse(raw) as Partial<WorkspaceDraft>;
+    const tools = Array.isArray(value.enabledTools)
+      ? value.enabledTools.filter(isChatToolId)
+      : DEFAULT_TOOLS;
+    const quotes = Array.isArray(value.quotes) ? value.quotes.filter(isPromptQuote) : [];
+    return {
+      activePromptId: typeof value.activePromptId === "string" ? value.activePromptId : null,
+      enabledTools: tools,
+      instruction: typeof value.instruction === "string" ? value.instruction : "",
+      panelOpen: value.panelOpen === true,
+      quotes,
+      reasoningEffort: isReasoningEffort(value.reasoningEffort) ? value.reasoningEffort : "medium",
+      selectedModelId: typeof value.selectedModelId === "string" ? value.selectedModelId : "",
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function isChatToolId(value: unknown): value is ChatToolId {
+  return value === "evaluations" || value === "prompt-library" || value === "web-search";
+}
+
+function isReasoningEffort(value: unknown): value is ChatReasoningEffort {
+  return value === "low" || value === "medium" || value === "high" || value === "xhigh";
+}
+
+function isPromptQuote(value: unknown): value is PromptQuote {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const quote = value as Partial<PromptQuote>;
+  return (
+    typeof quote.promptId === "string" &&
+    typeof quote.revisionId === "string" &&
+    typeof quote.text === "string" &&
+    typeof quote.title === "string"
+  );
 }

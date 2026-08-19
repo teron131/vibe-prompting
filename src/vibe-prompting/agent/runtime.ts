@@ -10,6 +10,7 @@ import {
   type Tool,
 } from "@openai/agents";
 
+import { normalizeChatCompletionsReasoning } from "../clients/chat-completions-reasoning.ts";
 import { connectExaSearch } from "../clients/exa.ts";
 import { preserveGeminiToolCallSignatures } from "../clients/gemini-tool-calls.ts";
 import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../config.ts";
@@ -108,21 +109,46 @@ export function createAgentRuntime(
   if (!model) throw new Error(`Unknown configured model: ${modelId}.`);
 
   const platform = resolveModelPlatform(model, config);
+  const usesResponses = platform.id === "cliproxy";
   const openAIProvider = new OpenAIProvider({
     apiKey: platform.apiKey,
     baseURL: platform.baseURL,
     strictFeatureValidation: true,
-    useResponses: false,
+    useResponses: usesResponses,
   });
+  const reasoningProvider = usesResponses
+    ? openAIProvider
+    : normalizeChatCompletionsReasoning(openAIProvider);
   const modelProvider =
-    platform.id === "gemini" ? preserveGeminiToolCallSignatures(openAIProvider) : openAIProvider;
+    platform.id === "gemini"
+      ? preserveGeminiToolCallSignatures(reasoningProvider)
+      : reasoningProvider;
 
   return {
     agent: new OpenAIAgent({
       instructions: AGENT_INSTRUCTIONS,
       mcpServers,
       model: model.id,
-      modelSettings: { reasoning: { effort: reasoningEffort, summary: "auto" } },
+      modelSettings:
+        platform.id === "gemini"
+          ? {
+              providerData: {
+                extra_body: {
+                  google: {
+                    thinking_config: {
+                      include_thoughts: true,
+                      thinking_level: reasoningEffort === "xhigh" ? "high" : reasoningEffort,
+                    },
+                  },
+                },
+              },
+            }
+          : {
+              reasoning: {
+                effort: reasoningEffort,
+                summary: platform.id === "cliproxy" ? "detailed" : "auto",
+              },
+            },
       name: "Vibe Prompting",
       tools,
     }),
@@ -162,11 +188,8 @@ export async function streamChatRun(
       stream: true,
     });
     const calledTools = new Map<string, string>();
-    let reasoningStarted = false;
     for await (const event of run) {
-      const projected = projectEvent(event, calledTools, reasoningStarted);
-      if (projected.reasoningStarted) reasoningStarted = true;
-      for (const item of projected.events) onEvent(item);
+      for (const item of projectEvent(event, calledTools)) onEvent(item);
     }
     try {
       await run.completed;
@@ -220,11 +243,8 @@ export async function streamPromptEdit(
       stream: true,
     });
     const tools = new Map<string, string>();
-    let reasoningStarted = false;
     for await (const event of run) {
-      const projected = projectEvent(event, tools, reasoningStarted);
-      if (projected.reasoningStarted) reasoningStarted = true;
-      for (const item of projected.events) onEvent(item);
+      for (const item of projectEvent(event, tools)) onEvent(item);
     }
     try {
       await run.completed;
@@ -246,63 +266,72 @@ export async function streamPromptEdit(
   }
 }
 
-function projectEvent(
-  event: RunStreamEvent,
-  tools: Map<string, string>,
-  reasoningStarted: boolean,
-): { events: AgentStreamEvent[]; reasoningStarted: boolean } {
+function projectEvent(event: RunStreamEvent, tools: Map<string, string>): AgentStreamEvent[] {
   if (event.type === "raw_model_stream_event" && event.data.type === "output_text_delta") {
-    return {
-      events: event.data.delta ? [{ type: "text-delta", delta: event.data.delta }] : [],
-      reasoningStarted,
-    };
+    return event.data.delta ? [{ type: "text-delta", delta: event.data.delta }] : [];
   }
   if (event.type !== "run_item_stream_event") {
-    return { events: [], reasoningStarted };
+    return [];
   }
-  if (event.name === "reasoning_item_created" && !reasoningStarted) {
-    return {
-      events: [{ type: "reasoning", summary: "Thinking through the request." }],
-      reasoningStarted: true,
-    };
+  if (event.name === "reasoning_item_created") {
+    return [
+      {
+        type: "reasoning",
+        summary: getReasoningSummary(event.item.rawItem) ?? "Thinking through the request.",
+      },
+    ];
   }
   if (event.name === "tool_called") {
     const identity = getToolIdentity(event.item.rawItem);
-    if (!identity) return { events: [], reasoningStarted };
+    if (!identity) return [];
     tools.set(identity.callId, identity.name);
-    return {
-      events: [
-        {
-          type: "tool",
-          callId: identity.callId,
-          input: getToolInput(event.item.rawItem),
-          name: identity.name,
-          state: "running",
-        },
-      ],
-      reasoningStarted,
-    };
+    return [
+      {
+        type: "tool",
+        callId: identity.callId,
+        input: getToolInput(event.item.rawItem),
+        name: identity.name,
+        state: "running",
+      },
+    ];
   }
   if (event.name === "tool_output") {
     const identity = getToolIdentity(event.item.rawItem);
     const callId = identity?.callId ?? getItemCallId(event.item);
-    if (!callId) return { events: [], reasoningStarted };
+    if (!callId) return [];
     const name = identity?.name ?? tools.get(callId) ?? "tool";
-    return {
-      events: [
-        {
-          type: "tool",
-          callId,
-          name,
-          output: normalizeEventValue("output" in event.item ? event.item.output : undefined),
-          state: "completed",
-          summary: summarizeTool(name, "output" in event.item ? event.item.output : undefined),
-        },
-      ],
-      reasoningStarted,
-    };
+    return [
+      {
+        type: "tool",
+        callId,
+        name,
+        output: normalizeEventValue("output" in event.item ? event.item.output : undefined),
+        state: "completed",
+        summary: summarizeTool(name, "output" in event.item ? event.item.output : undefined),
+      },
+    ];
   }
-  return { events: [], reasoningStarted };
+  return [];
+}
+
+function getReasoningSummary(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const content =
+    Array.isArray(value.rawContent) && value.rawContent.length > 0
+      ? value.rawContent
+      : Array.isArray(value.content)
+        ? value.content
+        : [];
+  const summary = content
+    .map((entry) => {
+      if (!isRecord(entry) || (entry.type !== "reasoning_text" && entry.type !== "input_text"))
+        return "";
+      return typeof entry.text === "string" ? entry.text : "";
+    })
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+  return summary || undefined;
 }
 
 function getToolInput(value: unknown): unknown {
@@ -336,6 +365,10 @@ function normalizeEventValue(value: unknown): unknown {
   } catch {
     return String(value);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function getToolIdentity(value: unknown): { callId: string; name: string } | undefined {

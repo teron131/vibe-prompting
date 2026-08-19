@@ -39,7 +39,7 @@ const NEW_CRITERION: CriterionDraft = {
   type: "boolean",
 };
 
-export function EvaluationWorkbench() {
+export function EvaluationWorkbench({ initialPromptId }: { initialPromptId?: string }) {
   const router = useRouter();
   const [prompts, setPrompts] = useState<PromptSummary[]>([]);
   const [models, setModels] = useState<ConfiguredModel[]>([]);
@@ -63,7 +63,13 @@ export function EvaluationWorkbench() {
       setModels(config.models);
       setPrompts(promptData.prompts);
       setRuns(runData.runs);
-      setPromptId((current) => current || promptData.prompts[0]?.id || "");
+      setPromptId(
+        (current) =>
+          current ||
+          promptData.prompts.find(({ id }) => id === initialPromptId)?.id ||
+          promptData.prompts[0]?.id ||
+          "",
+      );
       setTargetModelId((current) => current || config.models[0]?.id || "");
       setJudges((current) =>
         current.length ? current : config.models.slice(0, 1).map(({ id }) => id),
@@ -72,7 +78,7 @@ export function EvaluationWorkbench() {
     load()
       .catch((error) => toast.error(readError(error)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [initialPromptId]);
 
   function updateCase(caseIndex: number, update: (draft: CaseDraft) => CaseDraft) {
     setCases((current) =>

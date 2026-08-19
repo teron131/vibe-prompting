@@ -1,6 +1,12 @@
 /** Publishes configured client factories while keeping provider routing inside each client owner. */
 
-export { createEmbeddingModel, type EmbeddingModelOptions } from "./embedding.ts";
+export {
+  embedSearchDocuments,
+  embedSearchQuery,
+  EmbeddingError,
+  PROMPT_SEARCH_EMBEDDING_DIMENSIONS,
+  PROMPT_SEARCH_EMBEDDING_MODEL,
+} from "./embedding.ts";
 export { connectExaSearch, EXA_WEB_SEARCH_TOOL, loadExaTools, type ExaTools } from "./exa.ts";
 export {
   createLangfuseClient,

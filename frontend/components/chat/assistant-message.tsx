@@ -2,9 +2,20 @@
 
 "use client";
 
-import { BarChart3, Check, Copy, FileText, GitCommitHorizontal } from "lucide-react";
+import {
+  BarChart3,
+  Check,
+  Copy,
+  FileText,
+  GitCommitHorizontal,
+  LoaderCircle,
+  Pencil,
+  Quote,
+  RefreshCcw,
+} from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Message } from "@/components/chat/elements/message";
 import { Reasoning } from "@/components/chat/elements/reasoning";
@@ -15,31 +26,101 @@ import type { ChatMessage, ConfiguredModel, MessagePart } from "@/contracts/chat
 
 import { ModelIcon } from "./model-selector";
 
+type PromptReference = {
+  promptId: string;
+  quote?: Extract<MessagePart, { type: "prompt-quote" }>;
+};
+
 export function AssistantMessage({
+  disabled,
   message,
   model,
+  onEdit,
+  onPromptReference,
+  onRerun,
 }: {
+  disabled: boolean;
   message: ChatMessage;
   model?: ConfiguredModel;
+  onEdit?(message: ChatMessage, text: string): void;
+  onPromptReference(reference: PromptReference): void;
+  onRerun?(): void;
 }) {
+  const [editing, setEditing] = useState(false);
   const text = message.parts
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n");
   return (
     <Message
-      actions={text ? <CopyAction role={message.role} text={text} /> : null}
+      actions={
+        !disabled && !editing && (text || onRerun) ? (
+          <MessageActions
+            onCopy={text ? () => copyMessage(text) : undefined}
+            onEdit={message.role === "user" && text ? () => setEditing(true) : undefined}
+            onRerun={message.role === "assistant" ? onRerun : undefined}
+            role={message.role}
+          />
+        ) : null
+      }
       avatar={message.role === "assistant" ? <ModelIcon className="size-6" model={model} /> : null}
       role={message.role}
     >
-      {message.parts.map((part, index) => (
-        <MessagePartView key={`${part.type}-${index}`} part={part} role={message.role} />
-      ))}
+      {editing ? (
+        <>
+          {message.parts
+            .filter((part) => part.type !== "text")
+            .map((part, index) => (
+              <MessagePartView
+                key={`${part.type}-${index}`}
+                onPromptReference={onPromptReference}
+                part={part}
+                role={message.role}
+              />
+            ))}
+          <UserMessageEditor
+            initialText={text}
+            onCancel={() => setEditing(false)}
+            onSubmit={(draft) => {
+              setEditing(false);
+              onEdit?.(message, draft);
+            }}
+          />
+        </>
+      ) : (
+        <>
+          {message.parts.map((part, index) => (
+            <MessagePartView
+              key={`${part.type}-${index}`}
+              onPromptReference={onPromptReference}
+              part={part}
+              role={message.role}
+            />
+          ))}
+          {disabled && message.role === "assistant" && message.parts.length === 0 ? (
+            <div
+              className="flex items-center gap-2 py-1 text-xs text-muted-foreground"
+              role="status"
+            >
+              <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+              Thinking
+            </div>
+          ) : null}
+        </>
+      )}
     </Message>
   );
 }
 
-function MessagePartView({ part, role }: { part: MessagePart; role: ChatMessage["role"] }) {
+function MessagePartView({
+  onPromptReference,
+  part,
+  role,
+}: {
+  onPromptReference(reference: PromptReference): void;
+  part: MessagePart;
+  role: ChatMessage["role"];
+}) {
   if (part.type === "text")
     return role === "assistant" ? (
       <ResponseText text={part.text} />
@@ -67,15 +148,32 @@ function MessagePartView({ part, role }: { part: MessagePart; role: ChatMessage[
     );
   if (part.type === "reasoning") return <Reasoning summary={part.summary} />;
   if (part.type === "tool") return <Tool part={part} />;
+  if (part.type === "prompt-quote")
+    return (
+      <button
+        className="mb-2 block max-w-xl rounded-xl border bg-background/10 px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground"
+        onClick={() => onPromptReference({ promptId: part.promptId, quote: part })}
+        type="button"
+      >
+        <span className="flex items-center gap-1.5 text-xs font-medium">
+          <Quote aria-hidden="true" className="size-3.5" /> Quoted from {part.title}
+          <span className="font-mono text-[10px] opacity-70">{part.revisionId.slice(0, 8)}</span>
+        </span>
+        <span className="mt-1 line-clamp-3 block whitespace-pre-wrap text-xs leading-5 opacity-80">
+          {part.text}
+        </span>
+      </button>
+    );
   if (part.type === "prompt-revision")
     return (
-      <Link
+      <button
         className="mt-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium hover:bg-accent"
-        href={`/prompts/${part.promptId}`}
+        onClick={() => onPromptReference({ promptId: part.promptId })}
+        type="button"
       >
         <GitCommitHorizontal aria-hidden="true" className="size-3.5" /> Revision{" "}
         {part.revisionId.slice(0, 8)}
-      </Link>
+      </button>
     );
   return (
     <details className="my-3 rounded-xl border bg-card px-3 py-2 text-xs">
@@ -97,28 +195,147 @@ function MessagePartView({ part, role }: { part: MessagePart; role: ChatMessage[
   );
 }
 
-function CopyAction({ role, text }: { role: ChatMessage["role"]; text: string }) {
+function MessageActions({
+  onCopy,
+  onEdit,
+  onRerun,
+  role,
+}: {
+  onCopy?(): Promise<boolean>;
+  onEdit?(): void;
+  onRerun?(): void;
+  role: ChatMessage["role"];
+}) {
   const [copied, setCopied] = useState(false);
   return (
-    <button
-      aria-label="Copy message"
+    <div
       className={cn(
-        "inline-flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-accent hover:text-foreground group-hover:opacity-100 focus:opacity-100",
+        "flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100",
         role === "user" ? "self-end" : "self-start",
       )}
-      onClick={() =>
-        void navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1200);
-        })
-      }
+    >
+      {onCopy ? (
+        <ActionButton
+          label={copied ? "Copied" : "Copy message"}
+          onClick={() =>
+            void onCopy().then((success) => {
+              if (!success) return;
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1200);
+            })
+          }
+        >
+          {copied ? (
+            <Check aria-hidden="true" className="size-3.5" />
+          ) : (
+            <Copy aria-hidden="true" className="size-3.5" />
+          )}
+        </ActionButton>
+      ) : null}
+      {onEdit ? (
+        <ActionButton label="Edit message" onClick={onEdit}>
+          <Pencil aria-hidden="true" className="size-3.5" />
+        </ActionButton>
+      ) : null}
+      {onRerun ? (
+        <ActionButton label="Rerun from this message" onClick={onRerun}>
+          <RefreshCcw aria-hidden="true" className="size-3.5" />
+        </ActionButton>
+      ) : null}
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  label,
+  onClick,
+}: {
+  children: ReactNode;
+  label: string;
+  onClick(): void;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:opacity-100"
+      onClick={onClick}
+      title={label}
       type="button"
     >
-      {copied ? (
-        <Check aria-hidden="true" className="size-3.5" />
-      ) : (
-        <Copy aria-hidden="true" className="size-3.5" />
-      )}
+      {children}
     </button>
   );
+}
+
+function UserMessageEditor({
+  initialText,
+  onCancel,
+  onSubmit,
+}: {
+  initialText: string;
+  onCancel(): void;
+  onSubmit(text: string): void;
+}) {
+  const [draft, setDraft] = useState(initialText);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "0";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
+  }, [draft]);
+
+  function submit() {
+    const text = draft.trim();
+    if (text) onSubmit(text);
+  }
+
+  return (
+    <div className="w-[min(32rem,75vw)] max-w-full rounded-2xl border bg-card p-2 shadow-sm">
+      <textarea
+        aria-label="Edit message"
+        autoFocus
+        className="min-h-20 w-full resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-6 outline-none"
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onCancel();
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            submit();
+          }
+        }}
+        ref={textareaRef}
+        value={draft}
+      />
+      <div className="mt-1 flex justify-end gap-1.5">
+        <button
+          className="h-8 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={onCancel}
+          type="button"
+        >
+          Cancel
+        </button>
+        <button
+          className="h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          disabled={!draft.trim()}
+          onClick={submit}
+          type="button"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
+async function copyMessage(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    toast.error("Message could not be copied.");
+    return false;
+  }
 }

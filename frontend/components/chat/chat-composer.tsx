@@ -4,6 +4,7 @@
 
 import {
   ArrowUp,
+  AtSign,
   Brain,
   Check,
   ChevronDown,
@@ -13,7 +14,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -23,8 +24,11 @@ import type {
   ChatReasoningEffort,
   ChatToolId,
   ConfiguredModel,
+  PromptQuote,
 } from "@/contracts/chat";
+import type { PromptSummary } from "@/contracts/prompts";
 import { useDismissibleDetails } from "@/hooks/use-dismissible-details";
+import { usePromptSearch } from "@/hooks/use-prompt-search";
 
 import { ModelSelector } from "./model-selector";
 
@@ -54,6 +58,7 @@ const REASONING_OPTIONS: Array<{ label: string; value: ChatReasoningEffort }> = 
 ];
 
 export function ChatComposer({
+  activePrompt,
   attachments,
   enabledTools,
   instruction,
@@ -61,14 +66,20 @@ export function ChatComposer({
   onAttachmentsChange,
   onInstructionChange,
   onModelChange,
+  onOpenPrompt,
+  onPromptChange,
+  onQuoteRemove,
   onReasoningEffortChange,
   onStop,
   onSubmit,
   onToolsChange,
+  prompts,
+  quotes,
   reasoningEffort,
   running,
   selectedModelId,
 }: {
+  activePrompt?: PromptSummary;
   attachments: Attachment[];
   enabledTools: ChatToolId[];
   instruction: string;
@@ -76,17 +87,28 @@ export function ChatComposer({
   onAttachmentsChange(value: Attachment[]): void;
   onInstructionChange(value: string): void;
   onModelChange(value: string): void;
+  onOpenPrompt(): void;
+  onPromptChange(prompt: PromptSummary | undefined): void;
+  onQuoteRemove(quote: PromptQuote): void;
   onReasoningEffortChange(value: ChatReasoningEffort): void;
   onStop(): void;
   onSubmit(): void;
   onToolsChange(value: ChatToolId[]): void;
+  prompts: PromptSummary[];
+  quotes: PromptQuote[];
   reasoningEffort: ChatReasoningEffort;
   running: boolean;
   selectedModelId: string;
 }) {
+  const composerRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const canSubmit = Boolean((instruction.trim() || attachments.length) && selectedModelId);
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const mentionQuery = instruction.match(/(?:^|\s)@([^@\n]*)$/)?.[1] ?? null;
+  const canSubmit = Boolean(
+    (instruction.trim() || attachments.length || quotes.length) && selectedModelId,
+  );
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -95,14 +117,68 @@ export function ChatComposer({
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
   }, [instruction]);
 
+  useEffect(() => {
+    if (mentionQuery !== null) {
+      setMentionOpen(true);
+      return;
+    }
+    setMentionOpen(false);
+  }, [mentionQuery]);
+
+  const {
+    error: mentionSearchError,
+    loading: mentionSearchLoading,
+    results: matchingPrompts,
+  } = usePromptSearch({ enabled: mentionOpen, limit: 6, prompts, query: mentionQuery });
+  const activeMentionPrompt = matchingPrompts[activeMentionIndex] ?? matchingPrompts[0];
+  const effectiveMentionIndex = matchingPrompts[activeMentionIndex] ? activeMentionIndex : 0;
+
+  useEffect(() => {
+    setActiveMentionIndex(0);
+  }, [mentionOpen, mentionQuery]);
+
+  useEffect(() => {
+    if (!mentionOpen || !activeMentionPrompt) return;
+    document
+      .getElementById(`prompt-mention-option-${activeMentionPrompt.id}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeMentionPrompt, mentionOpen]);
+
+  useEffect(() => {
+    if (!mentionOpen) return;
+    function dismissOnOutsideClick(event: PointerEvent) {
+      if (!composerRef.current?.contains(event.target as Node)) {
+        setMentionOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", dismissOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", dismissOnOutsideClick);
+  }, [mentionOpen]);
+
+  function closeMention() {
+    setMentionOpen(false);
+  }
+
+  function selectPrompt(prompt: PromptSummary) {
+    if (mentionQuery !== null) {
+      onInstructionChange(
+        instruction.replace(/(?:^|\s)@([^@\n]*)$/, (match) => (match.startsWith(" ") ? " " : "")),
+      );
+    }
+    onPromptChange(prompt);
+    setMentionOpen(false);
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
   return (
     <div className="mx-auto w-full max-w-3xl px-3 pb-4 sm:px-6 sm:pb-6">
       <form
-        className="rounded-3xl border border-border/70 bg-background p-3 shadow-lg transition-shadow focus-within:shadow-xl"
+        className="relative rounded-3xl border border-border/70 bg-background p-3 shadow-lg transition-shadow focus-within:shadow-xl"
         onSubmit={(event) => {
           event.preventDefault();
           if (canSubmit && !running) onSubmit();
         }}
+        ref={composerRef}
       >
         <input
           className="hidden"
@@ -117,14 +193,94 @@ export function ChatComposer({
         {attachments.length ? (
           <AttachmentPreviews attachments={attachments} onChange={onAttachmentsChange} />
         ) : null}
+        {activePrompt || quotes.length ? (
+          <div className="mb-2 flex flex-wrap gap-1.5 px-1">
+            {activePrompt ? (
+              <span className="inline-flex max-w-full items-center rounded-full bg-secondary text-xs font-medium">
+                <button
+                  className="inline-flex min-w-0 items-center gap-1.5 rounded-l-full py-1 pl-2.5 pr-1.5 hover:bg-secondary/80"
+                  onClick={onOpenPrompt}
+                  type="button"
+                >
+                  <FileText aria-hidden="true" className="size-3.5 shrink-0" />
+                  <span className="truncate">{activePrompt.title}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                    {activePrompt.revisionId.slice(0, 8)}
+                  </span>
+                </button>
+                <button
+                  aria-label={`Detach ${activePrompt.title} from this chat`}
+                  className="mr-0.5 grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                  onClick={() => onPromptChange(undefined)}
+                  type="button"
+                >
+                  <X aria-hidden="true" className="size-3" />
+                </button>
+              </span>
+            ) : null}
+            {quotes.map((quote) => (
+              <span
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
+                key={`${quote.promptId}-${quote.revisionId}-${quote.text}`}
+              >
+                <span className="truncate">Quoted from {quote.title}</span>
+                <button
+                  aria-label={`Remove quote from ${quote.title}`}
+                  className="grid size-4 shrink-0 place-items-center rounded-full hover:bg-accent"
+                  onClick={() => onQuoteRemove(quote)}
+                  type="button"
+                >
+                  <X aria-hidden="true" className="size-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
         <textarea
+          aria-activedescendant={
+            mentionOpen && activeMentionPrompt
+              ? `prompt-mention-option-${activeMentionPrompt.id}`
+              : undefined
+          }
+          aria-autocomplete="list"
+          aria-controls={mentionOpen ? "prompt-mention-listbox" : undefined}
+          aria-expanded={mentionOpen}
+          aria-haspopup="listbox"
           aria-label="Message"
           className="block min-h-11 w-full resize-none overflow-y-auto bg-transparent px-2 py-2 text-base leading-7 outline-none placeholder:text-muted-foreground"
           disabled={running}
-          onChange={(event) => onInstructionChange(event.target.value)}
+          onChange={(event) => {
+            onInstructionChange(event.target.value);
+            if (mentionOpen && mentionQuery === null) setMentionOpen(false);
+          }}
           onKeyDown={(event) => {
+            if (mentionOpen && event.key === "ArrowDown") {
+              event.preventDefault();
+              setActiveMentionIndex((index) =>
+                matchingPrompts.length ? (index + 1) % matchingPrompts.length : 0,
+              );
+              return;
+            }
+            if (mentionOpen && event.key === "ArrowUp") {
+              event.preventDefault();
+              setActiveMentionIndex((index) =>
+                matchingPrompts.length
+                  ? (index - 1 + matchingPrompts.length) % matchingPrompts.length
+                  : 0,
+              );
+              return;
+            }
+            if (mentionOpen && event.key === "Escape") {
+              event.preventDefault();
+              closeMention();
+              return;
+            }
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
+              if (mentionOpen) {
+                if (activeMentionPrompt) selectPrompt(activeMentionPrompt);
+                return;
+              }
               if (canSubmit && !running) onSubmit();
             }
           }}
@@ -137,8 +293,9 @@ export function ChatComposer({
               void addFiles(files, attachments, onAttachmentsChange);
             }
           }}
-          placeholder="Send a message..."
+          placeholder="Ask anything, or use @ to reference a prompt…"
           ref={textareaRef}
+          role="combobox"
           rows={1}
           value={instruction}
         />
@@ -152,6 +309,24 @@ export function ChatComposer({
               type="button"
             >
               <Paperclip aria-hidden="true" className="size-4" />
+            </button>
+            <button
+              aria-controls={mentionOpen ? "prompt-mention-listbox" : undefined}
+              aria-expanded={mentionOpen}
+              aria-label="Search prompts"
+              className={cn(
+                "grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground",
+                mentionOpen && "bg-accent text-foreground",
+              )}
+              disabled={running}
+              onClick={() => {
+                if (mentionOpen) closeMention();
+                else setMentionOpen(true);
+                window.requestAnimationFrame(() => textareaRef.current?.focus());
+              }}
+              type="button"
+            >
+              <AtSign aria-hidden="true" className="size-4" />
             </button>
             <ToolSelector disabled={running} onChange={onToolsChange} value={enabledTools} />
             <ModelSelector
@@ -187,6 +362,72 @@ export function ChatComposer({
             </Button>
           )}
         </div>
+        {mentionOpen ? (
+          <div className="absolute bottom-[calc(100%+8px)] left-3 z-50 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl">
+            <div className="border-b px-3 py-2">
+              <div className="text-xs font-medium">Reference a prompt</div>
+              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                {mentionQuery !== null
+                  ? "Keep typing after @ to filter the library."
+                  : "Choose a prompt from the library."}
+              </div>
+            </div>
+            <div
+              aria-label="Matching prompts"
+              className="max-h-64 overflow-y-auto p-1.5"
+              id="prompt-mention-listbox"
+              role="listbox"
+            >
+              {mentionSearchLoading ? (
+                <div
+                  className="px-2.5 py-5 text-center text-xs text-muted-foreground"
+                  role="status"
+                >
+                  Searching words and meaning…
+                </div>
+              ) : mentionSearchError ? (
+                <div className="px-2.5 py-5 text-center text-xs text-destructive" role="alert">
+                  {mentionSearchError}
+                </div>
+              ) : matchingPrompts.length ? (
+                matchingPrompts.map((prompt, index) => (
+                  <button
+                    aria-selected={index === effectiveMentionIndex}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-accent",
+                      index === effectiveMentionIndex && "bg-accent",
+                    )}
+                    id={`prompt-mention-option-${prompt.id}`}
+                    key={prompt.id}
+                    onMouseEnter={() => setActiveMentionIndex(index)}
+                    onClick={() => selectPrompt(prompt)}
+                    role="option"
+                    tabIndex={-1}
+                    type="button"
+                  >
+                    <FileText
+                      aria-hidden="true"
+                      className="size-4 shrink-0 text-muted-foreground"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{prompt.title}</span>
+                      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                        {prompt.snippet}
+                      </span>
+                      <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
+                        revision {prompt.revisionId.slice(0, 8)}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <div className="px-2.5 py-5 text-center text-xs text-muted-foreground">
+                  No prompts match this search.
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
       </form>
     </div>
   );

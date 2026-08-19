@@ -2,6 +2,8 @@
 
 import { Brain, ChevronRight } from "lucide-react";
 
+import { ResponseText } from "@/components/chat/elements/response";
+
 export function Reasoning({ summary }: { summary: string }) {
   return (
     <details className="group/reasoning mb-3 text-xs text-muted-foreground">
@@ -13,7 +15,9 @@ export function Reasoning({ summary }: { summary: string }) {
         <Brain aria-hidden="true" className="size-3.5" />
         <span>Reasoning</span>
       </summary>
-      <div className="ml-5 border-l pl-3 leading-5">{summary}</div>
+      <div className="ml-5 border-l pl-3">
+        <ResponseText className="text-xs leading-5" text={summary} />
+      </div>
     </details>
   );
 }

@@ -5,7 +5,7 @@
 import { LoaderCircle, Search, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ChatHistoryIcon } from "@/components/chat/history-icon";
@@ -30,6 +30,7 @@ export function ChatHistory() {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ChatSummary[]>([]);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string>();
+  const deleteConfirmationRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,8 +74,13 @@ export function ChatHistory() {
 
   useEffect(() => {
     if (!confirmingDeleteId) return;
-    const timer = window.setTimeout(() => setConfirmingDeleteId(undefined), 4000);
-    return () => window.clearTimeout(timer);
+    function dismissDeleteConfirmation(event: PointerEvent) {
+      if (!deleteConfirmationRef.current?.contains(event.target as Node)) {
+        setConfirmingDeleteId(undefined);
+      }
+    }
+    document.addEventListener("pointerdown", dismissDeleteConfirmation);
+    return () => document.removeEventListener("pointerdown", dismissDeleteConfirmation);
   }, [confirmingDeleteId]);
 
   const visibleChats = searching && query.trim() ? searchResults : chats;
@@ -127,6 +133,7 @@ export function ChatHistory() {
           onClick={() => {
             setSearching((value) => !value);
             setQuery("");
+            setConfirmingDeleteId(undefined);
           }}
           type="button"
         >
@@ -164,7 +171,15 @@ export function ChatHistory() {
                 {group.label}
               </h2>
               {group.chats.map((chat) => (
-                <div className="group relative" key={chat.id}>
+                <div
+                  className="group relative"
+                  key={chat.id}
+                  onKeyDown={(event) => {
+                    if (confirmingDeleteId === chat.id && event.key === "Escape") {
+                      setConfirmingDeleteId(undefined);
+                    }
+                  }}
+                >
                   <Link
                     className={cn(
                       "flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs hover:bg-sidebar-accent",
@@ -173,31 +188,41 @@ export function ChatHistory() {
                     href={`/chat/${chat.id}`}
                   >
                     <ChatHistoryIcon name={chat.icon} />
-                    <span className="truncate">{chat.title}&nbsp;</span>
+                    <span className="truncate">{chat.title}</span>
                   </Link>
-                  <button
-                    aria-label={
-                      confirmingDeleteId === chat.id
-                        ? `Confirm delete ${chat.title}`
-                        : `Delete ${chat.title}`
-                    }
-                    className={cn(
-                      "absolute right-1 top-1/2 inline-flex h-7 -translate-y-1/2 items-center justify-center gap-1 rounded-md bg-sidebar-accent text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100",
-                      confirmingDeleteId === chat.id
-                        ? "w-auto px-2 text-destructive opacity-100"
-                        : "w-7",
-                    )}
-                    onClick={() => {
-                      if (confirmingDeleteId === chat.id) void deleteChat(chat);
-                      else setConfirmingDeleteId(chat.id);
-                    }}
-                    type="button"
-                  >
-                    <Trash2 aria-hidden="true" className="size-3.5" />
-                    {confirmingDeleteId === chat.id ? (
-                      <span className="text-[11px] font-medium">Confirm</span>
-                    ) : null}
-                  </button>
+                  {confirmingDeleteId === chat.id ? (
+                    <div
+                      className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-sidebar-accent"
+                      ref={deleteConfirmationRef}
+                    >
+                      <button
+                        aria-label="Cancel delete"
+                        autoFocus
+                        className="grid size-7 place-items-center rounded-md bg-sidebar-accent text-muted-foreground hover:text-foreground"
+                        onClick={() => setConfirmingDeleteId(undefined)}
+                        type="button"
+                      >
+                        <X aria-hidden="true" className="size-3.5" />
+                      </button>
+                      <button
+                        aria-label={`Confirm delete ${chat.title}`}
+                        className="grid size-7 place-items-center rounded-md bg-sidebar-accent text-destructive hover:bg-destructive/10"
+                        onClick={() => void deleteChat(chat)}
+                        type="button"
+                      >
+                        <Trash2 aria-hidden="true" className="size-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      aria-label={`Delete ${chat.title}`}
+                      className="pointer-events-none absolute right-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md bg-sidebar-accent text-muted-foreground opacity-0 transition-colors hover:bg-destructive/10 hover:text-destructive group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
+                      onClick={() => setConfirmingDeleteId(chat.id)}
+                      type="button"
+                    >
+                      <Trash2 aria-hidden="true" className="size-3.5" />
+                    </button>
+                  )}
                 </div>
               ))}
             </section>
