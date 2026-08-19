@@ -8,7 +8,8 @@ const DEFAULT_DATABASE_URL = "postgresql://localhost/vibe_prompting";
 const SCHEMA_MIGRATION_LOCK = 1_450_701_647;
 const MIGRATIONS = [
   {
-    load: () => readFile(new URL("../../migrations/001_prompts.sql", import.meta.url), "utf8"),
+    load: () =>
+      readFile(new URL("../../migrations/001_prompt_system.sql", import.meta.url), "utf8"),
     version: 1,
   },
   {
@@ -18,40 +19,12 @@ const MIGRATIONS = [
   },
   {
     load: () =>
-      readFile(new URL("../../migrations/003_evaluation_runs.sql", import.meta.url), "utf8"),
+      readFile(new URL("../../migrations/003_evaluation_system.sql", import.meta.url), "utf8"),
     version: 3,
   },
   {
-    load: () =>
-      readFile(new URL("../../migrations/004_general_chats.sql", import.meta.url), "utf8"),
+    load: () => readFile(new URL("../../migrations/004_application.sql", import.meta.url), "utf8"),
     version: 4,
-  },
-  {
-    load: () =>
-      readFile(new URL("../../migrations/005_chat_metadata.sql", import.meta.url), "utf8"),
-    version: 5,
-  },
-  {
-    load: () => readFile(new URL("../../migrations/006_usage_limits.sql", import.meta.url), "utf8"),
-    version: 6,
-  },
-  {
-    load: () =>
-      readFile(new URL("../../migrations/007_chat_workspace_context.sql", import.meta.url), "utf8"),
-    version: 7,
-  },
-  {
-    load: () =>
-      readFile(
-        new URL("../../migrations/008_prompt_search_embeddings.sql", import.meta.url),
-        "utf8",
-      ),
-    version: 8,
-  },
-  {
-    load: () =>
-      readFile(new URL("../../migrations/009_application_settings.sql", import.meta.url), "utf8"),
-    version: 9,
   },
 ];
 
@@ -74,16 +47,6 @@ export class Database {
   async initialize(): Promise<void> {
     await this.#sql.begin(async (sql) => {
       await sql`SELECT pg_advisory_xact_lock(${SCHEMA_MIGRATION_LOCK})`;
-      await sql.unsafe(`
-        DO $$
-        BEGIN
-          IF to_regclass('public.schema_migrations') IS NULL
-             AND to_regclass('public.prompt_schema_migrations') IS NOT NULL THEN
-            ALTER TABLE prompt_schema_migrations RENAME TO schema_migrations;
-          END IF;
-        END
-        $$
-      `);
       await sql`
         CREATE TABLE IF NOT EXISTS schema_migrations (
           version integer PRIMARY KEY,

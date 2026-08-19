@@ -2,11 +2,11 @@
 
 import { z } from "zod";
 
-import { evaluatorGraph, type EvaluatorScore } from "./graph.ts";
+import { evaluatorGraph, type EvaluatorScore } from "./engine/graph.ts";
 import type {
   EvaluationCriteria as InternalCriteria,
   EvaluationCriterion as InternalCriterion,
-} from "./schemas.ts";
+} from "./engine/schemas.ts";
 
 const instructionSchema = z.string().trim().min(1);
 const categoriesSchema = z

@@ -1,4 +1,4 @@
-/** Composes prompt editing, safe stream projection, scoped tools, and idempotent run cleanup. */
+/** Composes prompt editing, general chat, safe stream projection, scoped tools, and idempotent cleanup. */
 
 import {
   type AgentInputItem,
@@ -16,15 +16,15 @@ import {
 } from "../clients/chat-completions-reasoning.ts";
 import { connectExaSearch } from "../clients/exa.ts";
 import { preserveGeminiToolCallSignatures } from "../clients/gemini-tool-calls.ts";
+import { resolveModelIdentities } from "../clients/models-dev.ts";
 import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../config.ts";
 import type { EvaluationRuns } from "../evaluation/runs.ts";
 import { getModelSpendLimit } from "../model-spend-limit.ts";
-import type { PromptStore } from "../prompts/store.ts";
-import { createPromptWorkspace } from "./artifacts.ts";
+import type { PromptSystem } from "../prompt-system/index.ts";
 import { AGENT_INSTRUCTIONS } from "./instructions.ts";
-import { createPromptEvaluationTool, type PromptEvaluationSnapshot } from "./tools/evaluation.ts";
-import { createPersistedEvaluationTool, createPromptLibraryTools } from "./tools/prompt-library.ts";
-import { createScopedFsTools } from "./tools/scoped-fs.ts";
+import { createEvaluationTool } from "./tools/evaluation.ts";
+import { createPromptLibraryTools } from "./tools/prompt-library.ts";
+import { createPromptWorkspace, createScopedFsTools } from "./tools/scoped-fs.ts";
 
 export type AgentRuntime = {
   agent: OpenAIAgent;
@@ -45,19 +45,17 @@ export type AgentStreamEvent =
       summary?: string;
       type: "tool";
     }
-  | { summary: string; type: "reasoning" }
-  | { report: PromptEvaluationSnapshot["report"]; type: "evaluation" };
+  | { summary: string; type: "reasoning" };
 
 export type PromptEdit = {
-  evaluations: PromptEvaluationSnapshot[];
   markdown: string;
   message: string;
   model: ModelConfig;
 };
 
 export type PromptEditInput = {
-  instruction: string;
   markdown: string;
+  instruction: string;
   modelId: string;
   signal?: AbortSignal;
 };
@@ -93,7 +91,7 @@ export type ChatRunInput = {
   history: ChatConversationMessage[];
   instruction: string;
   modelId: string;
-  prompts: PromptStore;
+  prompts: PromptSystem;
   reasoningEffort: ChatReasoningEffort;
   signal?: AbortSignal;
 };
@@ -171,9 +169,11 @@ export async function streamChatRun(
 ): Promise<ChatRunResult> {
   const enabled = new Set(input.enabledTools);
   const tools: Tool[] = [];
-  if (enabled.has("prompt-library")) tools.push(...createPromptLibraryTools(input.prompts));
-  if (enabled.has("evaluations"))
-    tools.push(createPersistedEvaluationTool(input.evaluations, input.chatId));
+  const promptToolsEnabled = enabled.has("prompt-library");
+  const evaluationsEnabled = enabled.has("evaluations");
+  if (promptToolsEnabled) tools.push(...createPromptLibraryTools(input.prompts));
+  if (evaluationsEnabled)
+    tools.push(createEvaluationTool(input.evaluations, input.chatId, getEvaluationModelReferences));
   let exaServer: MCPServer | undefined;
 
   try {
@@ -210,6 +210,12 @@ export async function streamChatRun(
   }
 }
 
+async function getEvaluationModelReferences() {
+  const { models } = loadRuntimeConfig();
+  const identities = await resolveModelIdentities(models.map(({ id }) => id));
+  return models.map(({ id }, index) => ({ id, label: identities[index]?.label ?? id }));
+}
+
 export async function editPrompt(input: PromptEditInput): Promise<PromptEdit> {
   return streamPromptEdit(input, () => undefined);
 }
@@ -219,7 +225,6 @@ export async function streamPromptEdit(
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<PromptEdit> {
   const workspace = await createPromptWorkspace(input.markdown);
-  const evaluations: PromptEvaluationSnapshot[] = [];
   let exaServer: MCPServer | undefined;
   let cleanupPromise: Promise<void> | undefined;
   const cleanup = () => {
@@ -231,17 +236,7 @@ export async function streamPromptEdit(
     if (input.signal?.aborted) throw abortReason(input.signal);
     exaServer = await connectExaSearch();
     if (input.signal?.aborted) throw abortReason(input.signal);
-    const runtime = createAgentRuntime(
-      input.modelId,
-      [
-        ...createScopedFsTools(workspace),
-        createPromptEvaluationTool(workspace, (snapshot) => {
-          evaluations.push(snapshot);
-          onEvent({ type: "evaluation", report: snapshot.report });
-        }),
-      ],
-      [exaServer],
-    );
+    const runtime = createAgentRuntime(input.modelId, createScopedFsTools(workspace), [exaServer]);
     const spendLimit = getModelSpendLimit();
     await spendLimit?.assertCanSpend(runtime.model);
     const run = await runtime.runner.run(runtime.agent, input.instruction, {
@@ -262,7 +257,6 @@ export async function streamPromptEdit(
       throw new Error("The model did not return text.");
     }
     return {
-      evaluations,
       markdown: await workspace.read(),
       message: run.finalOutput,
       model: runtime.model,
@@ -405,10 +399,10 @@ function getItemCallId(value: unknown): string | undefined {
 
 function summarizeTool(name: string, output: unknown): string {
   if (name === "list_prompts") return "Listed saved prompts.";
-  if (name === "create_prompt") return "Created a prompt artifact.";
+  if (name === "create_prompt") return "Created a prompt.";
   if (name === "read_prompt") return "Read the current prompt.";
-  if (name === "edit_prompt") return "Updated the working prompt.";
-  if (name === "evaluate_prompt") return "Evaluated the working prompt.";
+  if (name === "apply_patch" || name === "patch_prompt") return "Updated the working prompt.";
+  if (name === "evaluate") return "Started an evaluation run.";
   if (name === "web_search_exa") return "Completed web research.";
   if (typeof output === "string" && output.length <= 120) return output;
   return "Completed.";

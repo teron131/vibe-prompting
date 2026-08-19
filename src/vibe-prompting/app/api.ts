@@ -16,7 +16,7 @@ import { editPrompt } from "../agent/runtime.ts";
 import { createChatModel } from "../clients/llm.ts";
 import { evaluate, requestSchema } from "../evaluation/api.ts";
 import { getModelSpendLimit } from "../model-spend-limit.ts";
-import { PromptConflictError } from "../prompts/store.ts";
+import { PromptConflictError } from "../prompt-system/index.ts";
 import {
   createApplicationServices,
   getApplicationServices,
@@ -27,14 +27,14 @@ const modelIdSchema = z.string().trim().min(1).describe("Configured model ID.");
 const promptIdSchema = z.string().uuid();
 const promptParamsSchema = z.object({ promptId: promptIdSchema });
 const createPromptRequestSchema = z.object({
-  markdown: z.string().describe("Initial prompt Markdown."),
+  markdown: z.string().describe("Initial textual prompt markdown."),
   title: z.string().trim().min(1).describe("Human-readable prompt title."),
 });
 const editPromptRequestSchema = z.object({
+  markdown: z.string().describe("Prompt markdown currently visible to the user."),
   instruction: z.string().trim().min(1).describe("Requested prompt change."),
-  markdown: z.string().describe("Prompt Markdown currently visible to the user."),
   modelId: modelIdSchema.describe("Configured model used for the edit."),
-  revisionId: promptIdSchema.describe("Revision the visible Markdown was loaded from."),
+  revisionId: promptIdSchema.describe("Revision the visible markdown was loaded from."),
 });
 const apiCaseSchema = requestSchema.shape.cases.element.extend({
   input: z.string().trim().min(1).describe("Text prompt to send to the target model."),
@@ -64,7 +64,7 @@ export async function evaluateRequest(rawRequest: unknown) {
 
 export async function createApiServer(): Promise<FastifyInstance> {
   const services = await createApplicationServices();
-  const promptStore = services.prompts;
+  const prompts = services.prompts;
   const server = Fastify({ logger: true }).withTypeProvider<ZodTypeProvider>();
   server.setValidatorCompiler(validatorCompiler);
   server.setSerializerCompiler(serializerCompiler);
@@ -74,7 +74,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
     openapi: {
       info: {
         title: "Vibe Prompting API",
-        description: "Edit durable prompts and evaluate configured model responses.",
+        description: "Edit durable text prompts and evaluate configured model responses.",
         version: "1.0.0",
       },
     },
@@ -102,12 +102,12 @@ export async function createApiServer(): Promise<FastifyInstance> {
     {
       schema: {
         body: createPromptRequestSchema,
-        description: "Create a prompt with its initial immutable revision.",
+        description: "Create a text prompt with its initial immutable revision.",
         summary: "Create prompt",
         tags: ["prompts"],
       },
     },
-    (request) => promptStore.createPrompt(request.body),
+    (request) => prompts.createPrompt(request.body),
   );
 
   server.get(
@@ -119,7 +119,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
         tags: ["prompts"],
       },
     },
-    async () => ({ prompts: await promptStore.listPrompts() }),
+    async () => ({ prompts: await prompts.listPrompts() }),
   );
 
   server.post(
@@ -128,30 +128,30 @@ export async function createApiServer(): Promise<FastifyInstance> {
       schema: {
         body: editPromptRequestSchema,
         description:
-          "Persist any visible manual change, edit a temporary prompt.md, and append the result.",
+          "Persist any visible human change, edit temporary markdown with AI, and append the result.",
         params: promptParamsSchema,
         summary: "Edit prompt with AI",
         tags: ["prompts"],
       },
     },
     async (request) => {
-      const currentPrompt = await promptStore.getPrompt(request.params.promptId);
+      const currentPrompt = await prompts.getPrompt(request.params.promptId);
       if (currentPrompt.revisionId !== request.body.revisionId) {
         throw new PromptConflictError();
       }
       const edit = await editPrompt({
-        instruction: request.body.instruction,
         markdown: request.body.markdown,
+        instruction: request.body.instruction,
         modelId: request.body.modelId,
       });
-      const prompt = await promptStore.appendAgentEdit({
+      const prompt = await prompts.appendAiEdit({
+        promptId: request.params.promptId,
         editedMarkdown: edit.markdown,
         expectedRevisionId: request.body.revisionId,
         instruction: request.body.instruction,
-        promptId: request.params.promptId,
         visibleMarkdown: request.body.markdown,
       });
-      return { model: edit.model.id, output: edit.message, prompt };
+      return { prompt, model: edit.model.id, output: edit.message };
     },
   );
 

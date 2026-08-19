@@ -1,109 +1,73 @@
-/** Gives one agent a focused evaluation tool bound to its current temporary prompt file. */
+/** Adapts the evaluation capability into a general-agent tool without owning prompt operations. */
 
-import { createHash } from "node:crypto";
-
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 
-import { createChatModel } from "../../clients/llm.ts";
-import { loadRuntimeConfig } from "../../config.ts";
-import { evaluate } from "../../evaluation/api.ts";
-import type { PromptWorkspace } from "../artifacts.ts";
+import type { EvaluationRuns } from "../../evaluation/runs.ts";
+
+export type ConfiguredModelReference = { id: string; label: string };
 
 const evaluationCaseSchema = z.object({
-  input: z.string().trim().min(1).describe("One realistic user message to run against prompt.md."),
-  criteria: z
-    .array(z.string().trim().min(1))
+  input: z.string().trim().min(1),
+  criteria: z.array(z.string().trim().min(1)).min(1).max(4),
+});
+const evaluationSchema = z.object({
+  cases: z.array(evaluationCaseSchema).min(1).max(3),
+  judges: z
+    .array(z.string().trim().min(1).describe("Configured judge model ID or display label."))
     .min(1)
-    .max(4)
-    .describe("Focused Boolean requirements for judging the resulting response."),
+    .max(3),
+  promptId: z.uuid(),
+  promptRevisionId: z.uuid(),
+  targetModelId: z.string().trim().min(1).describe("Configured target model ID or display label."),
 });
 
-export type PromptEvaluationSnapshot = {
-  markdownHash: string;
-  report: {
-    cases: Array<{
-      evaluations: Array<{
-        comment: string;
-        criterion: string;
-        evidence: string[];
-        passed: boolean;
-      }>;
-      input: string;
-      output: unknown;
-    }>;
-    judgeModel: string;
-    targetModel: string;
-  };
-};
-
-export function createPromptEvaluationTool(
-  workspace: PromptWorkspace,
-  onEvaluation?: (snapshot: PromptEvaluationSnapshot) => void,
+export function createEvaluationTool(
+  evaluations: EvaluationRuns,
+  chatId: string,
+  loadModels: () => Promise<readonly ConfiguredModelReference[]>,
 ): Tool {
-  const modelIds = loadRuntimeConfig().models.map(({ id }) => id);
-  const modelIdSchema = z.enum(modelIds as [string, ...string[]]);
-  const availableModels = modelIds.join(", ");
-
   return tool({
-    name: "evaluate_prompt",
-    description:
-      "Run focused behavioral cases against the current prompt.md and judge each criterion. Use only when the user explicitly asks to test, evaluate, validate, or optimize the prompt, or supplies test cases or acceptance criteria; do not call this for routine edits.",
-    parameters: z.object({
-      cases: z.array(evaluationCaseSchema).min(1).max(3),
-      judgeModel: modelIdSchema.describe(`Configured judge model. Available: ${availableModels}.`),
-      targetModel: modelIdSchema.describe(
-        `Configured model that runs prompt.md. Available: ${availableModels}.`,
-      ),
-    }),
-    async execute({ cases, judgeModel, targetModel }) {
-      const markdown = await workspace.read();
-      const model = createChatModel({ model: targetModel });
-      const run = await evaluate(
+    name: "evaluate",
+    description: "Start one persisted evaluation run with the supplied target and criteria.",
+    parameters: evaluationSchema,
+    async execute({ cases, judges, promptId, promptRevisionId, targetModelId }) {
+      const models = await loadModels();
+      const run = await evaluations.startAgentRun(
         {
-          model: targetModel,
-          async invoke(caseInput: string) {
-            return (await model.invoke([new SystemMessage(markdown), new HumanMessage(caseInput)]))
-              .text;
-          },
-        },
-        {
-          judges: judgeModel,
           cases: cases.map((testCase) => ({
-            input: testCase.input,
             criteria: testCase.criteria.map((instruction) => ({
               type: "boolean" as const,
               instruction,
             })),
+            input: testCase.input,
           })),
+          judges: judges.map((judge) => resolveConfiguredModelId(judge, models)),
+          promptId,
+          promptRevisionId,
+          targetModelId: resolveConfiguredModelId(targetModelId, models),
         },
+        chatId,
       );
-
-      const report = {
-        targetModel,
-        judgeModel,
-        cases: run.cases.map((evaluatedCase) => ({
-          input: evaluatedCase.input,
-          output: evaluatedCase.output,
-          evaluations: evaluatedCase.evaluations.map((evaluation) => {
-            if (typeof evaluation.value !== "boolean") {
-              throw new Error("Prompt evaluation criteria must return Boolean values.");
-            }
-            return {
-              criterion: evaluation.criterion.instruction,
-              passed: evaluation.value,
-              comment: evaluation.comment,
-              evidence: evaluation.evidence,
-            };
-          }),
-        })),
+      return {
+        artifact: { href: `/evaluations/${run.id}`, id: run.id, kind: "evaluation" },
+        run,
+        summary: "Started persisted evaluation run.",
       };
-      onEvaluation?.({
-        markdownHash: createHash("sha256").update(markdown).digest("hex"),
-        report,
-      });
-      return report;
     },
   });
+}
+
+function resolveConfiguredModelId(
+  reference: string,
+  models: readonly ConfiguredModelReference[],
+): string {
+  const normalized = reference.trim().toLocaleLowerCase();
+  const idMatch = models.find((model) => model.id.toLocaleLowerCase() === normalized);
+  if (idMatch) return idMatch.id;
+  const labelMatches = models.filter((model) => model.label.toLocaleLowerCase() === normalized);
+  if (labelMatches.length === 1) return labelMatches[0].id;
+  if (labelMatches.length > 1)
+    throw new Error(`Configured model label is ambiguous: ${reference}. Use its model ID.`);
+  throw new Error(`Unknown configured model: ${reference}.`);
 }

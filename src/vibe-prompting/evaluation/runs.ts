@@ -9,7 +9,7 @@ import { z } from "zod";
 import { createChatModel } from "../clients/llm.ts";
 import { loadRuntimeConfig } from "../config.ts";
 import type { Database, DatabaseClient } from "../database.ts";
-import { PromptConflictError, type PromptStore } from "../prompts/store.ts";
+import { PromptConflictError, type PromptSystem } from "../prompt-system/index.ts";
 import {
   type Criterion,
   type CriterionEvaluation,
@@ -20,7 +20,7 @@ import {
 } from "./api.ts";
 
 export type EvaluationRunStatus = "completed" | "failed" | "interrupted" | "running";
-export type EvaluationRunSource = "browser" | "operator";
+export type EvaluationRunSource = "ai" | "human";
 
 export type EvaluationRunSummary = {
   caseCount: number;
@@ -71,7 +71,7 @@ export type BooleanTrendPoint = {
   runId: string;
 };
 
-export const browserEvaluationInputSchema = requestSchema.extend({
+export const evaluationRunInputSchema = requestSchema.extend({
   cases: requestSchema.shape.cases.element
     .extend({ input: z.string().trim().min(1) })
     .array()
@@ -86,6 +86,8 @@ export const browserEvaluationInputSchema = requestSchema.extend({
 });
 
 type RunRow = {
+  promptId: string;
+  promptRevisionId: string;
   caseCount: number;
   chatId: string | null;
   completedAt: Date | null;
@@ -94,9 +96,7 @@ type RunRow = {
   errorMessage: string | null;
   id: string;
   judgeModelIds: string[];
-  promptId: string;
   promptMarkdown: string;
-  promptRevisionId: string;
   promptTitle: string;
   source: EvaluationRunSource;
   status: EvaluationRunStatus;
@@ -143,9 +143,9 @@ export class EvaluationRequestError extends Error {
 
 export class EvaluationRuns {
   readonly #database: Database;
-  readonly #prompts: PromptStore;
+  readonly #prompts: PromptSystem;
 
-  constructor(database: Database, prompts: PromptStore) {
+  constructor(database: Database, prompts: PromptSystem) {
     this.#database = database;
     this.#prompts = prompts;
   }
@@ -165,12 +165,12 @@ export class EvaluationRuns {
     });
   }
 
-  async startBrowserRun(rawInput: unknown): Promise<EvaluationRunSummary> {
-    return this.#startRun(rawInput, "browser", null);
+  async startHumanRun(rawInput: unknown): Promise<EvaluationRunSummary> {
+    return this.#startRun(rawInput, "human", null);
   }
 
   async startAgentRun(rawInput: unknown, chatId: string): Promise<EvaluationRunSummary> {
-    return this.#startRun(rawInput, "operator", chatId);
+    return this.#startRun(rawInput, "ai", chatId);
   }
 
   async #startRun(
@@ -178,7 +178,7 @@ export class EvaluationRuns {
     source: EvaluationRunSource,
     chatId: string | null,
   ): Promise<EvaluationRunSummary> {
-    const parsed = browserEvaluationInputSchema.safeParse(rawInput);
+    const parsed = evaluationRunInputSchema.safeParse(rawInput);
     if (!parsed.success)
       throw new EvaluationRequestError(
         parsed.error.issues[0]?.message ?? "Invalid evaluation request.",
@@ -196,12 +196,12 @@ export class EvaluationRuns {
     });
     const runId = await this.#database.transaction((sql) =>
       insertRun(sql, {
+        promptId: prompt.id,
+        promptRevisionId: prompt.revisionId,
         cases: request.cases,
         chatId,
         configurationFingerprint,
         judgeModelIds,
-        promptId: prompt.id,
-        promptRevisionId: prompt.revisionId,
         source,
         status: "running",
         targetModelId: input.targetModelId,
@@ -299,12 +299,12 @@ export class EvaluationRuns {
 async function insertRun(
   sql: DatabaseClient,
   input: {
+    promptId: string;
+    promptRevisionId: string;
     cases: EvaluationCase<unknown>[];
     chatId: string | null;
     configurationFingerprint: string;
     judgeModelIds: string[];
-    promptId: string;
-    promptRevisionId: string;
     source: EvaluationRunSource;
     status: EvaluationRunStatus;
     targetModelId: string;
@@ -407,7 +407,8 @@ async function requireRunRow(sql: DatabaseClient, runId: string): Promise<RunRow
 function selectRunRow(sql: DatabaseClient, runId: string) {
   return sql<RunRow[]>`
     SELECT
-      evaluation_runs.id, evaluation_runs.prompt_id, evaluation_runs.prompt_revision_id,
+      evaluation_runs.id, evaluation_runs.prompt_id,
+      evaluation_runs.prompt_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
       evaluation_runs.judge_model_ids, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
@@ -426,7 +427,8 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
 function selectRunRows(sql: DatabaseClient, limit: number) {
   return sql<RunRow[]>`
     SELECT
-      evaluation_runs.id, evaluation_runs.prompt_id, evaluation_runs.prompt_revision_id,
+      evaluation_runs.id, evaluation_runs.prompt_id,
+      evaluation_runs.prompt_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
       evaluation_runs.judge_model_ids, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
@@ -446,7 +448,8 @@ function selectRunRows(sql: DatabaseClient, limit: number) {
 function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, limit: number) {
   return sql<RunRow[]>`
     SELECT
-      evaluation_runs.id, evaluation_runs.prompt_id, evaluation_runs.prompt_revision_id,
+      evaluation_runs.id, evaluation_runs.prompt_id,
+      evaluation_runs.prompt_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
       evaluation_runs.judge_model_ids, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,

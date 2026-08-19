@@ -1,4 +1,4 @@
-/** Defines the persistence-independent evaluation input and score contracts shared by judges and workflows. */
+/** Defines the evaluation engine's normalized subjects, criteria, reports, and attributed scores. */
 
 import { z } from "zod";
 
@@ -21,17 +21,6 @@ export type EvaluatorScore = {
   evidence: string[];
 };
 
-export type JudgeOutput<VALUE> = {
-  value: VALUE;
-  comment: string;
-  evidence: string[];
-};
-
-export type JudgeResult<VALUE, TYPE extends JudgeScoreType> = {
-  name: string;
-  dataType: TYPE;
-} & JudgeOutput<VALUE>;
-
 const commentSchema = z
   .string()
   .trim()
@@ -44,11 +33,6 @@ const resultDetails = {
   comment: commentSchema,
   evidence: evidenceSchema,
 };
-
-export const booleanOutputSchema = z.object({
-  value: z.boolean().describe("Whether the evaluated result satisfies the criterion."),
-  ...resultDetails,
-});
 
 const criterionNameSchema = z.string().trim().min(1);
 const criterionInstructionSchema = z.string().trim().min(1);
@@ -237,25 +221,5 @@ export function createEvaluationReportSchema(criteria: EvaluationCriteria) {
         });
       }
     });
-  });
-}
-
-export function createCategoricalOutputSchema<
-  const CATEGORIES extends readonly [string, ...string[]],
->(categories: CATEGORIES) {
-  return z.object({
-    value: z.enum(categories).describe("The category that best matches the evaluated result."),
-    ...resultDetails,
-  });
-}
-
-export function createNumericOutputSchema(minValue: number, maxValue: number) {
-  return z.object({
-    value: z
-      .number()
-      .min(minValue)
-      .max(maxValue)
-      .describe("The score assigned under the criterion's scale."),
-    ...resultDetails,
   });
 }

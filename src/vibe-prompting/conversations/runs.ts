@@ -15,7 +15,6 @@ export type ConversationRunEvent =
       type: "tool";
     }
   | { summary: string; type: "reasoning" }
-  | { report: unknown; type: "evaluation" }
   | { promptId: string; revisionId: string; type: "prompt-revision" }
   | { message: string; type: "error" }
   | { type: "stopped" }

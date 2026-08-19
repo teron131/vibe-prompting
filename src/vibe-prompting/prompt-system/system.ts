@@ -1,61 +1,77 @@
-/** Owns durable prompt identity, optimistic concurrency, and immutable Markdown revisions in PostgreSQL. */
+/** Owns versioned text prompts, immutable revisions, optimistic concurrency, history navigation, and current-revision search. */
 
 import { randomUUID } from "node:crypto";
 
 import type { Database, DatabaseClient } from "../database.ts";
+import {
+  createPromptSearch,
+  type PromptPassageHit,
+  type PromptSearch,
+  type StoredPromptSearchResult,
+} from "./search.ts";
 
-export type PromptRevisionSource = "operator" | "user";
+export type PromptRevisionAuthor = "ai" | "human";
 
 export type StoredPrompt = {
+  canRedo: boolean;
+  canUndo: boolean;
+  markdown: string;
   createdAt: string;
   id: string;
-  markdown: string;
   revisionCount: number;
   revisionId: string;
+  revisionNumber: number;
   title: string;
   updatedAt: string;
 };
 
-export type StoredPromptRevision = {
+export type StoredPromptRevisionSummary = {
+  promptId: string;
+  source: PromptRevisionAuthor;
   changeRequest: string | null;
   createdAt: string;
   id: string;
-  markdown: string;
   parentRevisionId: string | null;
-  promptId: string;
-  source: PromptRevisionSource;
 };
 
-export type AgentEditInput = {
+export type StoredPromptRevision = StoredPromptRevisionSummary & { markdown: string };
+
+export type AiEditInput = {
+  promptId: string;
   editedMarkdown: string;
   expectedRevisionId: string;
   instruction: string;
-  promptId: string;
   visibleMarkdown: string;
 };
 
 type PromptRow = {
+  canRedo: boolean;
+  canUndo: boolean;
+  markdown: string;
   createdAt: Date;
   id: string;
-  markdown: string;
   revisionCount: number;
   revisionId: string;
+  revisionNumber: number;
   title: string;
   updatedAt: Date;
 };
 
 type PromptRevisionRow = {
+  promptId: string;
+  author: PromptRevisionAuthor;
   changeRequest: string | null;
+  markdown: string;
   createdAt: Date;
   id: string;
-  markdown: string;
   parentRevisionId: string | null;
-  promptId: string;
-  source: PromptRevisionSource;
 };
+
+type PromptRevisionSummaryRow = Omit<PromptRevisionRow, "markdown">;
 
 type CurrentRevisionRow = {
   currentRevisionId: string;
+  redoRevisionIds: string[];
 };
 
 export class PromptConflictError extends Error {
@@ -76,11 +92,39 @@ export class PromptNotFoundError extends Error {
   }
 }
 
-export class PromptStore {
+export class PromptRevisionNotFoundError extends Error {
+  readonly statusCode = 404;
+
+  constructor(promptId: string, revisionId: string) {
+    super(`Revision ${revisionId} was not found for prompt ${promptId}.`);
+    this.name = "PromptRevisionNotFoundError";
+  }
+}
+
+export class PromptHistoryError extends Error {
+  readonly statusCode = 409;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PromptHistoryError";
+  }
+}
+
+export class PromptSystem {
   readonly #database: Database;
+  readonly #search: PromptSearch;
 
   constructor(database: Database) {
     this.#database = database;
+    this.#search = createPromptSearch(database, () => this.listPrompts());
+  }
+
+  async searchPrompts(query: string): Promise<StoredPromptSearchResult[]> {
+    return this.#search.searchPrompts(query);
+  }
+
+  async searchPassages(query: string, promptId?: string): Promise<PromptPassageHit[]> {
+    return this.#search.searchPassages(query, promptId);
   }
 
   async listPrompts(): Promise<StoredPrompt[]> {
@@ -91,13 +135,18 @@ export class PromptStore {
           prompts.title,
           prompts.current_revision_id AS revision_id,
           prompt_revisions.markdown,
-          count(all_revisions.id)::integer AS revision_count,
+          prompt_revisions.parent_revision_id IS NOT NULL AS can_undo,
+          cardinality(prompts.redo_revision_ids) > 0 AS can_redo,
+          prompt_revisions.revision_number,
+          (
+            SELECT count(*)::integer
+            FROM prompt_revisions AS all_revisions
+            WHERE all_revisions.prompt_id = prompts.id
+          ) AS revision_count,
           prompts.created_at,
           prompts.updated_at
         FROM prompts
         JOIN prompt_revisions ON prompt_revisions.id = prompts.current_revision_id
-        JOIN prompt_revisions AS all_revisions ON all_revisions.prompt_id = prompts.id
-        GROUP BY prompts.id, prompt_revisions.markdown
         ORDER BY prompts.updated_at DESC, prompts.id
       `;
       return rows.map(projectPrompt);
@@ -112,24 +161,29 @@ export class PromptStore {
     });
   }
 
-  async listRevisions(promptId: string): Promise<StoredPromptRevision[]> {
+  async listRevisions(promptId: string): Promise<StoredPromptRevisionSummary[]> {
     return this.#database.run(async (sql) => {
       const prompt = await selectPrompt(sql, promptId);
       if (!prompt) throw new PromptNotFoundError(promptId);
-      const rows = await sql<PromptRevisionRow[]>`
-        SELECT
-          id,
-          prompt_id,
-          parent_revision_id,
-          markdown,
-          change_request,
-          source,
-          created_at
+      const rows = await sql<PromptRevisionSummaryRow[]>`
+        SELECT id, prompt_id, parent_revision_id, change_request, author, created_at
         FROM prompt_revisions
         WHERE prompt_id = ${promptId}
-        ORDER BY created_at DESC, id DESC
+        ORDER BY revision_number DESC
       `;
-      return rows.map(projectRevision);
+      return rows.map(projectRevisionSummary);
+    });
+  }
+
+  async getRevision(promptId: string, revisionId: string): Promise<StoredPromptRevision> {
+    return this.#database.run(async (sql) => {
+      const [row] = await sql<PromptRevisionRow[]>`
+        SELECT id, prompt_id, parent_revision_id, markdown, change_request, author, created_at
+        FROM prompt_revisions
+        WHERE prompt_id = ${promptId} AND id = ${revisionId}
+      `;
+      if (!row) throw new PromptRevisionNotFoundError(promptId, revisionId);
+      return projectRevision(row);
     });
   }
 
@@ -144,17 +198,17 @@ export class PromptStore {
         VALUES (${promptId}, ${title}, ${revisionId})
       `;
       await sql`
-        INSERT INTO prompt_revisions (id, prompt_id, markdown, source)
-        VALUES (${revisionId}, ${promptId}, ${input.markdown}, 'user')
+        INSERT INTO prompt_revisions (id, prompt_id, revision_number, markdown, author)
+        VALUES (${revisionId}, ${promptId}, 1, ${input.markdown}, 'human')
       `;
       return requirePrompt(sql, promptId, "Created prompt could not be loaded.");
     });
   }
 
-  async appendManualEdit(input: {
-    expectedRevisionId: string;
-    markdown: string;
+  async appendHumanEdit(input: {
     promptId: string;
+    markdown: string;
+    expectedRevisionId: string;
   }): Promise<StoredPrompt> {
     return this.#database.transaction(async (sql) => {
       const [current] = await lockPrompt(sql, input.promptId);
@@ -168,17 +222,19 @@ export class PromptStore {
           id,
           prompt_id,
           parent_revision_id,
+          revision_number,
           markdown,
           change_request,
-          source
+          author
         )
         VALUES (
           ${revisionId},
           ${input.promptId},
           ${input.expectedRevisionId},
+          ${existing.revisionCount + 1},
           ${input.markdown},
-          'Manual prompt edit.',
-          'user'
+          'Human prompt edit.',
+          'human'
         )
       `;
       await selectCurrentRevision(sql, input.promptId, revisionId);
@@ -186,15 +242,54 @@ export class PromptStore {
     });
   }
 
-  async appendAgentEdit(input: AgentEditInput): Promise<StoredPrompt> {
-    return this.#database.transaction((sql) => appendAgentEdit(sql, input));
+  async appendAiEdit(input: AiEditInput): Promise<StoredPrompt> {
+    return this.#database.transaction((sql) => commitAiEdit(sql, input));
+  }
+
+  async undo(promptId: string, expectedRevisionId: string): Promise<StoredPrompt> {
+    return this.#database.transaction(async (sql) => {
+      const [current] = await lockPrompt(sql, promptId);
+      if (!current) throw new PromptNotFoundError(promptId);
+      if (current.currentRevisionId !== expectedRevisionId) throw new PromptConflictError();
+      const [revision] = await sql<{ parentRevisionId: string | null }[]>`
+        SELECT parent_revision_id
+        FROM prompt_revisions
+        WHERE prompt_id = ${promptId} AND id = ${current.currentRevisionId}
+      `;
+      if (!revision?.parentRevisionId) {
+        throw new PromptHistoryError("There is no earlier saved revision to undo.");
+      }
+      await navigateHistory(sql, {
+        promptId,
+        redoRevisionIds: [current.currentRevisionId, ...current.redoRevisionIds],
+        revisionId: revision.parentRevisionId,
+      });
+      return requirePrompt(sql, promptId, "Undone prompt could not be loaded.");
+    });
+  }
+
+  async redo(promptId: string, expectedRevisionId: string): Promise<StoredPrompt> {
+    return this.#database.transaction(async (sql) => {
+      const [current] = await lockPrompt(sql, promptId);
+      if (!current) throw new PromptNotFoundError(promptId);
+      if (current.currentRevisionId !== expectedRevisionId) throw new PromptConflictError();
+      const [revisionId, ...redoRevisionIds] = current.redoRevisionIds;
+      if (!revisionId) throw new PromptHistoryError("There is no saved revision to redo.");
+      const [revision] = await sql<{ parentRevisionId: string | null }[]>`
+        SELECT parent_revision_id
+        FROM prompt_revisions
+        WHERE prompt_id = ${promptId} AND id = ${revisionId}
+      `;
+      if (!revision || revision.parentRevisionId !== current.currentRevisionId) {
+        throw new PromptHistoryError("The saved redo path is no longer valid.");
+      }
+      await navigateHistory(sql, { promptId, redoRevisionIds, revisionId });
+      return requirePrompt(sql, promptId, "Redone prompt could not be loaded.");
+    });
   }
 }
 
-export async function appendAgentEdit(
-  sql: DatabaseClient,
-  input: AgentEditInput,
-): Promise<StoredPrompt> {
+async function commitAiEdit(sql: DatabaseClient, input: AiEditInput): Promise<StoredPrompt> {
   const [current] = await lockPrompt(sql, input.promptId);
   if (!current) throw new PromptNotFoundError(input.promptId);
   if (current.currentRevisionId !== input.expectedRevisionId) throw new PromptConflictError();
@@ -202,52 +297,58 @@ export async function appendAgentEdit(
   const existing = await requirePrompt(sql, input.promptId, "Prompt could not be loaded.");
   let markdown = existing.markdown;
   let revisionId = input.expectedRevisionId;
+  let revisionNumber = existing.revisionCount + 1;
 
   if (markdown !== input.visibleMarkdown) {
-    const manualRevisionId = randomUUID();
+    const humanRevisionId = randomUUID();
     await sql`
       INSERT INTO prompt_revisions (
         id,
         prompt_id,
         parent_revision_id,
+        revision_number,
         markdown,
         change_request,
-        source
+        author
       )
       VALUES (
-        ${manualRevisionId},
+        ${humanRevisionId},
         ${input.promptId},
         ${revisionId},
+        ${revisionNumber},
         ${input.visibleMarkdown},
-        'Manual edit before the assistant request.',
-        'user'
+        'Human prompt edit before the AI request.',
+        'human'
       )
     `;
     markdown = input.visibleMarkdown;
-    revisionId = manualRevisionId;
+    revisionId = humanRevisionId;
+    revisionNumber += 1;
   }
 
   if (markdown !== input.editedMarkdown) {
-    const agentRevisionId = randomUUID();
+    const aiRevisionId = randomUUID();
     await sql`
       INSERT INTO prompt_revisions (
         id,
         prompt_id,
         parent_revision_id,
+        revision_number,
         markdown,
         change_request,
-        source
+        author
       )
       VALUES (
-        ${agentRevisionId},
+        ${aiRevisionId},
         ${input.promptId},
         ${revisionId},
+        ${revisionNumber},
         ${input.editedMarkdown},
         ${input.instruction},
-        'operator'
+        'ai'
       )
     `;
-    revisionId = agentRevisionId;
+    revisionId = aiRevisionId;
   }
 
   if (revisionId === input.expectedRevisionId) return existing;
@@ -265,6 +366,9 @@ async function selectPrompt(
       prompts.title,
       prompts.current_revision_id AS revision_id,
       prompt_revisions.markdown,
+      prompt_revisions.parent_revision_id IS NOT NULL AS can_undo,
+      cardinality(prompts.redo_revision_ids) > 0 AS can_redo,
+      prompt_revisions.revision_number,
       (
         SELECT count(*)::integer
         FROM prompt_revisions AS all_revisions
@@ -291,7 +395,7 @@ async function requirePrompt(
 
 function lockPrompt(sql: DatabaseClient, promptId: string) {
   return sql<CurrentRevisionRow[]>`
-    SELECT current_revision_id
+    SELECT current_revision_id, redo_revision_ids
     FROM prompts
     WHERE id = ${promptId}
     FOR UPDATE
@@ -305,18 +409,35 @@ async function selectCurrentRevision(
 ): Promise<void> {
   await sql`
     UPDATE prompts
-    SET current_revision_id = ${revisionId}, updated_at = now()
+    SET current_revision_id = ${revisionId}, redo_revision_ids = '{}', updated_at = now()
     WHERE id = ${promptId}
+  `;
+}
+
+async function navigateHistory(
+  sql: DatabaseClient,
+  input: { promptId: string; redoRevisionIds: string[]; revisionId: string },
+): Promise<void> {
+  await sql`
+    UPDATE prompts
+    SET
+      current_revision_id = ${input.revisionId},
+      redo_revision_ids = ${sql.array(input.redoRevisionIds)}::uuid[],
+      updated_at = now()
+    WHERE id = ${input.promptId}
   `;
 }
 
 function projectPrompt(row: PromptRow): StoredPrompt {
   return {
+    canRedo: row.canRedo,
+    canUndo: row.canUndo,
+    markdown: row.markdown,
     createdAt: row.createdAt.toISOString(),
     id: row.id,
-    markdown: row.markdown,
     revisionCount: row.revisionCount,
     revisionId: row.revisionId,
+    revisionNumber: row.revisionNumber,
     title: row.title,
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -324,12 +445,18 @@ function projectPrompt(row: PromptRow): StoredPrompt {
 
 function projectRevision(row: PromptRevisionRow): StoredPromptRevision {
   return {
+    ...projectRevisionSummary(row),
+    markdown: row.markdown,
+  };
+}
+
+function projectRevisionSummary(row: PromptRevisionSummaryRow): StoredPromptRevisionSummary {
+  return {
+    promptId: row.promptId,
+    source: row.author,
     changeRequest: row.changeRequest,
     createdAt: row.createdAt.toISOString(),
     id: row.id,
-    markdown: row.markdown,
     parentRevisionId: row.parentRevisionId,
-    promptId: row.promptId,
-    source: row.source,
   };
 }

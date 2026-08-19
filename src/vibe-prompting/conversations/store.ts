@@ -32,7 +32,7 @@ export type StoredMessagePart =
 
 export type ChatWorkspaceContext = {
   activePromptId: string | null;
-  enabledTools: Array<"evaluations" | "prompt-library" | "web-search">;
+  enabledTools: Array<"prompt-library" | "evaluations" | "web-search">;
   panelOpen: boolean;
   reasoningEffort: "high" | "low" | "medium" | "xhigh";
 };
@@ -111,7 +111,7 @@ type UserMessageInput = {
 const CHAT_MESSAGES_PER_HOUR = 300;
 const CHAT_MESSAGES_PER_DAY = 1_500;
 const CHAT_USAGE_LOCK = 1_450_701_648;
-const WORKSPACE_TOOL_IDS = new Set(["evaluations", "prompt-library", "web-search"]);
+const WORKSPACE_TOOL_IDS = new Set(["prompt-library", "evaluations", "web-search"]);
 
 export class ChatNotFoundError extends Error {
   readonly statusCode = 404;

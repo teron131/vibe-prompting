@@ -1,4 +1,4 @@
-/** Owns target-and-judge evaluation while using Langfuse as optional experiment persistence. */
+/** Executes target cases and judge fan-out while preserving stable input ordering. */
 
 import { END, ReducedValue, Send, START, StateGraph, StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
@@ -8,15 +8,15 @@ import {
   createLangfuseTelemetry,
   type LangfuseConfig,
   loadOptionalLangfuseConfig,
-} from "../clients/langfuse.ts";
-import { LangfuseExperimentRunner } from "./experiments.ts";
+} from "../../clients/langfuse.ts";
+import { LangfuseExperimentRunner } from "../experiments.ts";
 import {
   getJudgeModels,
   type JudgeEvaluation,
   type Judges,
   judgesGraph,
   judgesSchema,
-} from "./judges.ts";
+} from "./evaluators.ts";
 import {
   evaluationCriteriaSchema,
   evaluationSubjectSchema,

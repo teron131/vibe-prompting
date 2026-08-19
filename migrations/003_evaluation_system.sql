@@ -1,16 +1,15 @@
--- Persists exact prompt-bound evaluation attempts and atomic criterion-and-judge score facts.
+-- Creates prompt-linked evaluation runs, cases, and attributed criterion scores.
 
 CREATE TABLE evaluation_runs (
   id uuid PRIMARY KEY,
   prompt_id uuid NOT NULL REFERENCES prompts(id),
   prompt_revision_id uuid NOT NULL,
   chat_id uuid REFERENCES chats(id) ON DELETE SET NULL,
-  source text NOT NULL CHECK (source IN ('browser', 'operator')),
+  source text NOT NULL CHECK (source IN ('human', 'ai')),
   target_model_id text NOT NULL CHECK (btrim(target_model_id) <> ''),
   judge_model_ids text[] NOT NULL CHECK (cardinality(judge_model_ids) > 0),
   status text NOT NULL CHECK (status IN ('running', 'completed', 'failed', 'interrupted')),
   configuration_fingerprint text NOT NULL CHECK (btrim(configuration_fingerprint) <> ''),
-  langfuse_run_name text,
   error_message text,
   created_at timestamptz NOT NULL DEFAULT now(),
   completed_at timestamptz,
@@ -46,9 +45,3 @@ CREATE INDEX evaluation_runs_prompt_created_at_idx
 
 CREATE INDEX evaluation_runs_fingerprint_idx
   ON evaluation_runs(configuration_fingerprint, status, created_at);
-
-CREATE INDEX evaluation_cases_run_position_idx
-  ON evaluation_cases(run_id, position);
-
-CREATE INDEX evaluation_scores_case_position_idx
-  ON evaluation_scores(case_id, criterion_position, judge_model_id);

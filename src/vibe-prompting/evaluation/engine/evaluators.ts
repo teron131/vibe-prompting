@@ -1,13 +1,20 @@
-/** Coordinates criteria judgments across configured models while keeping model routing out of persistence code. */
+/** Owns model-driven evaluator implementations and fan-out across configured judge models. */
 
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import { END, ReducedValue, Send, START, StateGraph, StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
 
-import { createChatModel } from "../clients/llm.ts";
-import { CriteriaEvaluator } from "./evaluators.ts";
+import { createChatModel } from "../../clients/llm.ts";
+import { buildCriteriaPrompt, buildCriteriaSystemPrompt } from "./prompts.ts";
 import {
+  createEvaluationReportSchema,
+  type EvaluationCriteria,
   evaluationCriteriaSchema,
+  type EvaluationReport,
   evaluationReportSchema,
+  type EvaluationSubject,
   evaluationSubjectSchema,
 } from "./schemas.ts";
 
@@ -64,11 +71,12 @@ function dispatchJudges(state: typeof JudgeState.State): Send[] {
 
 const evaluateJudge: typeof JudgeState.Node = async (state, config) => {
   const model = requireJudgeModel(state.judgeModel);
-  const evaluator = new CriteriaEvaluator({
-    model: createChatModel({ model }),
-    criteria: state.criteria,
-  });
-  const report = await evaluator.evaluate(state.subject, config);
+  const report = await evaluateCriteria(
+    createChatModel({ model }),
+    state.criteria,
+    state.subject,
+    config,
+  );
   return {
     evaluations: [{ model, report }],
   };
@@ -92,4 +100,22 @@ export const judgesGraph = new StateGraph({
 export function getJudgeModels(judges: Judges): string[] {
   const { model } = judgesSchema.parse(judges);
   return Array.isArray(model) ? model : [model];
+}
+
+async function evaluateCriteria(
+  model: BaseChatModel,
+  criteria: EvaluationCriteria,
+  subject: EvaluationSubject,
+  options?: Partial<RunnableConfig>,
+): Promise<EvaluationReport> {
+  const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
+  return model
+    .withStructuredOutput<EvaluationReport>(createEvaluationReportSchema(configuredCriteria))
+    .invoke(
+      [
+        new SystemMessage(buildCriteriaSystemPrompt(configuredCriteria)),
+        new HumanMessage(buildCriteriaPrompt(subject, configuredCriteria)),
+      ],
+      options,
+    );
 }

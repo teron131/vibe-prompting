@@ -1,4 +1,11 @@
--- Persists deployment-wide chat and model-usage events independently from conversations so deletion and restarts cannot reset safety boundaries.
+-- Creates deployment-wide settings, request-rate accounting, and model-spend accounting.
+
+CREATE TABLE application_settings (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  model_catalog jsonb NOT NULL,
+  provider_overrides jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 
 CREATE TABLE chat_usage_events (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

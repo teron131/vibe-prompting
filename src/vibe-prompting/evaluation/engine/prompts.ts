@@ -1,4 +1,4 @@
-/** Builds the neutral evidence packet used by the composite evaluator without embedding use-case policy in its execution code. */
+/** Builds neutral judge evidence packets without embedding product workflow policy. */
 
 import type { EvaluationCriteria, EvaluationSubject } from "./schemas.ts";
 

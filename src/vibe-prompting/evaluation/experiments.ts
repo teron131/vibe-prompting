@@ -8,7 +8,7 @@ import {
   type EvaluationCriteria,
   evaluationCriteriaSchema,
   type EvaluatorScore,
-} from "./schemas.ts";
+} from "./engine/schemas.ts";
 
 type EvaluatedCase<
   INPUT = unknown,

@@ -1,11 +1,11 @@
--- Persists prompt-bound conversations and safe reconstructable message parts.
+-- Creates general conversations, reconstructable messages, and persisted workspace state.
 
 CREATE TABLE chats (
   id uuid PRIMARY KEY,
-  prompt_id uuid NOT NULL REFERENCES prompts(id),
   title text NOT NULL CHECK (btrim(title) <> ''),
-  icon text NOT NULL DEFAULT 'prompt',
+  icon text NOT NULL DEFAULT 'message-circle',
   model_id text NOT NULL CHECK (btrim(model_id) <> ''),
+  workspace_context_json jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -17,7 +17,6 @@ CREATE TABLE chat_messages (
   parts_json jsonb NOT NULL,
   metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
   text_content text NOT NULL DEFAULT '',
-  prompt_revision_id uuid REFERENCES prompt_revisions(id),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 

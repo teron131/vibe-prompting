@@ -7,8 +7,7 @@ import { ConversationStore } from "./conversations/store.ts";
 import { createDatabase } from "./database.ts";
 import { EvaluationRuns } from "./evaluation/runs.ts";
 import { configureModelSpendLimit } from "./model-spend-limit.ts";
-import { PromptSearch } from "./prompts/search.ts";
-import { PromptStore } from "./prompts/store.ts";
+import { PromptSystem } from "./prompt-system/index.ts";
 import { ApplicationSettingsStore } from "./settings/index.ts";
 
 export type ConfiguredModel = {
@@ -22,8 +21,7 @@ export type ApplicationServices = {
   close(): Promise<void>;
   conversations: ConversationStore;
   evaluations: EvaluationRuns;
-  promptSearch: PromptSearch;
-  prompts: PromptStore;
+  prompts: PromptSystem;
   runs: ConversationRunRegistry;
   settings: ApplicationSettingsStore;
 };
@@ -32,7 +30,7 @@ const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 4;
+const APPLICATION_SERVICES_VERSION = 5;
 
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
   await getApplicationServices();
@@ -59,13 +57,12 @@ export async function createApplicationServices(
   const settings = new ApplicationSettingsStore(database);
   await settings.initialize();
   configureModelSpendLimit(database);
-  const prompts = new PromptStore(database);
+  const prompts = new PromptSystem(database);
   const evaluations = new EvaluationRuns(database, prompts);
   return {
     close: () => database.close(),
     conversations: new ConversationStore(database),
     evaluations,
-    promptSearch: new PromptSearch(database, prompts),
     prompts,
     runs: new ConversationRunRegistry(),
     settings,
@@ -98,5 +95,5 @@ export type {
 export { EmbeddingError } from "./clients/embedding.ts";
 export * from "./conversations/index.ts";
 export * from "./evaluation/runs.ts";
-export * from "./prompts/store.ts";
+export * from "./prompt-system/index.ts";
 export * from "./settings/index.ts";
