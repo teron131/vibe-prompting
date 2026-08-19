@@ -1,4 +1,4 @@
-/** Preserves Gemini continuation signatures across OpenAI-compatible client and agent adapters. */
+/** Preserves Gemini continuation signatures across OpenAI-compatible framework clients and Target adapters. */
 
 import type {
   Model,

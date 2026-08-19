@@ -8,5 +8,4 @@ export {
   type EvaluationCase,
   type EvaluationRequest,
   type EvaluationRun,
-  type Target,
 } from "./api.ts";

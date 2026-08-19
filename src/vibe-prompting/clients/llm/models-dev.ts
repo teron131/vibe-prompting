@@ -1,4 +1,4 @@
-/** Resolves configured runtime model IDs to canonical Models.dev identities without making display metadata a runtime execution dependency. */
+/** Resolves configured LLM IDs to canonical Models.dev identities without making display metadata a runtime execution dependency. */
 
 import { z } from "zod";
 

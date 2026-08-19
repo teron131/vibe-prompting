@@ -1,5 +1,5 @@
 /**
- * Runs LangChain agents under evaluation through their native message-state contract.
+ * Adapts LangChain agents to the Target contract through their native message-state contract.
  * The adapter exposes only native messages and the configured model ID without translating message history or leaking runtime metadata.
  */
 

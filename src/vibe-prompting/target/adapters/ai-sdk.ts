@@ -1,5 +1,5 @@
 /**
- * Runs AI SDK agents under evaluation while preserving native messages and translating LangChain-compatible text and tool histories at the input boundary.
+ * Adapts AI SDK agents to the Target contract while preserving native messages and translating LangChain-compatible text and tool histories at the input boundary.
  * The adapter exposes only generated messages and the configured model ID while leaving provider metadata, agent setup, tools, stopping policy, and output schema with the supplied AI SDK Agent.
  */
 
@@ -18,7 +18,7 @@ import {
   type ToolSet,
 } from "ai";
 
-import { readGeminiThoughtSignature } from "../../clients/gemini-tool-calls.ts";
+import { readGeminiThoughtSignature } from "../../clients/llm/gemini.ts";
 
 type AiSdkGenerateResult<TOOLS extends ToolSet, OUTPUT> = Omit<
   GenerateTextResult<TOOLS, never>,

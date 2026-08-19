@@ -1,6 +1,6 @@
 /** Generates the native Gemini embeddings used by hybrid saved-prompt search. */
 
-import { loadRuntimeConfig } from "../config.ts";
+import { loadRuntimeConfig } from "../config/index.ts";
 
 export const PROMPT_SEARCH_EMBEDDING_MODEL = "gemini-embedding-2";
 

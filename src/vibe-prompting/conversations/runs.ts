@@ -4,6 +4,7 @@ export type ConversationRunEvent =
   | { delta: string; type: "text-delta" }
   | { type: "reasoning-start" }
   | { delta: string; type: "reasoning-delta" }
+  | { type: "response-reset" }
   | { chatId: string; icon: string; title: string; type: "chat-metadata" }
   | {
       callId: string;
@@ -29,6 +30,9 @@ type ActiveRun = {
   events: ConversationRunEvent[];
   listeners: Set<RunListener>;
   settled: boolean;
+  steering: string[];
+  steeringClosed: boolean;
+  steeringHandler?: (instruction: string) => boolean;
 };
 
 export type ConversationRunSnapshot = {
@@ -59,7 +63,15 @@ export type ClaimedConversationRun = {
   release(): void;
   signal: AbortSignal;
   start(operation: () => Promise<void>): void;
+  steering: ConversationSteering;
   subscribe(listener: RunListener): () => void;
+};
+
+export type ConversationSteering = {
+  close(): boolean;
+  connect(handler: (instruction: string) => boolean): () => void;
+  drain(): string[];
+  retry(): void;
 };
 
 export class ConversationRunRegistry {
@@ -79,6 +91,8 @@ export class ConversationRunRegistry {
       events: [],
       listeners: new Set(),
       settled: false,
+      steering: [],
+      steeringClosed: false,
     };
     this.#runs.set(chatId, run);
 
@@ -119,6 +133,26 @@ export class ConversationRunRegistry {
           release();
         });
       },
+      steering: {
+        close() {
+          if (run.steering.length) return false;
+          run.steeringClosed = true;
+          return true;
+        },
+        connect(handler) {
+          run.steeringHandler = handler;
+          flushSteering(run);
+          return () => {
+            if (run.steeringHandler === handler) run.steeringHandler = undefined;
+          };
+        },
+        drain() {
+          return run.steering.splice(0);
+        },
+        retry() {
+          flushSteering(run);
+        },
+      },
       subscribe(listener) {
         if (run.settled) return () => undefined;
         run.listeners.add(listener);
@@ -141,12 +175,27 @@ export class ConversationRunRegistry {
     return true;
   }
 
+  steer(chatId: string, instruction: string): boolean {
+    const run = this.#runs.get(chatId);
+    if (!run || run.steeringClosed || run.controller.signal.aborted) return false;
+    run.steering.push(instruction);
+    flushSteering(run);
+    return true;
+  }
+
   async stopAndWait(chatId: string): Promise<boolean> {
     const run = this.#runs.get(chatId);
     if (!run) return false;
     this.stop(chatId);
     await run.done;
     return true;
+  }
+}
+
+function flushSteering(run: ActiveRun): void {
+  while (run.steeringHandler && run.steering.length) {
+    if (!run.steeringHandler(run.steering[0])) return;
+    run.steering.shift();
   }
 }
 

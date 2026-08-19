@@ -13,9 +13,8 @@ import {
 import { z } from "zod";
 
 import { editPrompt } from "../agent/runtime.ts";
-import { createChatModel } from "../clients/llm.ts";
+import { createModel } from "../clients/llm/langchain.ts";
 import { evaluate, requestSchema } from "../evaluation/api.ts";
-import { getModelSpendLimit } from "../model-spend-limit.ts";
 import { PromptConflictError } from "../prompt-system/index.ts";
 import {
   createApplicationServices,
@@ -45,9 +44,9 @@ export const apiEvaluationSchema = requestSchema.extend({
 });
 
 export async function evaluateRequest(rawRequest: unknown) {
-  if (!getModelSpendLimit()) await getApplicationServices();
+  await getApplicationServices();
   const { targetModel, ...request } = apiEvaluationSchema.parse(rawRequest);
-  const model = createChatModel({ model: targetModel });
+  const model = createModel({ model: targetModel });
   return evaluate(
     {
       model: targetModel,

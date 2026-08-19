@@ -4,22 +4,17 @@ import {
   type AgentInputItem,
   type MCPServer,
   Agent as OpenAIAgent,
-  OpenAIProvider,
   Runner,
   type RunStreamEvent,
   type Tool,
 } from "@openai/agents";
 
-import {
-  normalizeChatCompletionsReasoning,
-  readChatCompletionsReasoning,
-} from "../clients/chat-completions-reasoning.ts";
-import { connectExaSearch } from "../clients/exa.ts";
-import { preserveGeminiToolCallSignatures } from "../clients/gemini-tool-calls.ts";
-import { resolveModelIdentities } from "../clients/models-dev.ts";
-import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../config.ts";
+import { connectOpenAiAgentsExaSearch } from "../clients/exa.ts";
+import { resolveModelIdentities } from "../clients/llm/models-dev.ts";
+import { createModel } from "../clients/llm/openai-agents.ts";
+import { readChatCompletionsReasoning } from "../clients/llm/reasoning.ts";
+import { loadRuntimeConfig, type ModelConfig } from "../config/index.ts";
 import type { EvaluationRuns } from "../evaluation/runs.ts";
-import { getModelSpendLimit } from "../model-spend-limit.ts";
 import type { PromptSystem } from "../prompt-system/index.ts";
 import { AGENT_INSTRUCTIONS } from "./instructions.ts";
 import { createEvaluationTool } from "./tools/evaluation.ts";
@@ -36,6 +31,7 @@ export type AgentStreamEvent =
   | { delta: string; type: "text-delta" }
   | { type: "reasoning-start" }
   | { delta: string; type: "reasoning-delta" }
+  | { type: "response-reset" }
   | {
       callId: string;
       input?: unknown;
@@ -94,6 +90,14 @@ export type ChatRunInput = {
   prompts: PromptSystem;
   reasoningEffort: ChatReasoningEffort;
   signal?: AbortSignal;
+  steering?: ChatSteering;
+};
+
+export type ChatSteering = {
+  close(): boolean;
+  connect(handler: (instruction: string) => boolean): () => void;
+  drain(): string[];
+  retry(): void;
 };
 
 export type ChatRunResult = {
@@ -107,33 +111,16 @@ export function createAgentRuntime(
   mcpServers: MCPServer[] = [],
   reasoningEffort: ChatReasoningEffort = "medium",
 ): AgentRuntime {
-  const config = loadRuntimeConfig();
-  const model = config.models.find(({ id }) => id === modelId);
-  if (!model) throw new Error(`Unknown configured model: ${modelId}.`);
-
-  const platform = resolveModelPlatform(model, config);
-  const usesResponses = platform.id === "cliproxy";
-  const openAIProvider = new OpenAIProvider({
-    apiKey: platform.apiKey,
-    baseURL: platform.baseURL,
-    strictFeatureValidation: true,
-    useResponses: usesResponses,
-  });
-  const reasoningProvider = usesResponses
-    ? openAIProvider
-    : normalizeChatCompletionsReasoning(openAIProvider);
-  const modelProvider =
-    platform.id === "gemini"
-      ? preserveGeminiToolCallSignatures(reasoningProvider)
-      : reasoningProvider;
+  const { config, provider } = createModel(modelId);
+  const usesResponses = config.id.startsWith("gpt-");
 
   return {
     agent: new OpenAIAgent({
       instructions: AGENT_INSTRUCTIONS,
       mcpServers,
-      model: model.id,
+      model: config.id,
       modelSettings:
-        platform.id === "gemini"
+        config.platform === "gemini"
           ? {
               providerData: {
                 extra_body: {
@@ -149,15 +136,15 @@ export function createAgentRuntime(
           : {
               reasoning: {
                 effort: reasoningEffort,
-                summary: platform.id === "cliproxy" ? "detailed" : "auto",
+                summary: usesResponses ? "detailed" : "auto",
               },
             },
       name: "Vibe Prompting",
       tools,
     }),
-    model,
+    model: config,
     runner: new Runner({
-      modelProvider,
+      modelProvider: provider,
       tracingDisabled: true,
     }),
   };
@@ -178,7 +165,7 @@ export async function streamChatRun(
 
   try {
     if (input.signal?.aborted) throw abortReason(input.signal);
-    if (enabled.has("web-search")) exaServer = await connectExaSearch();
+    if (enabled.has("web-search")) exaServer = await connectOpenAiAgentsExaSearch();
     if (input.signal?.aborted) throw abortReason(input.signal);
     const runtime = createAgentRuntime(
       input.modelId,
@@ -186,25 +173,46 @@ export async function streamChatRun(
       exaServer ? [exaServer] : [],
       input.reasoningEffort,
     );
-    const spendLimit = getModelSpendLimit();
-    await spendLimit?.assertCanSpend(runtime.model);
-    const run = await runtime.runner.run(runtime.agent, formatConversation(input), {
-      signal: input.signal,
-      stream: true,
-    });
-    onEvent({ type: "reasoning-start" });
-    const calledTools = new Map<string, string>();
-    for await (const event of run) {
-      for (const item of projectEvent(event, calledTools)) onEvent(item);
+    let runInput = formatConversation(input);
+    const toolNames = new Map<string, string>();
+    while (true) {
+      const run = await runtime.runner.run(runtime.agent, runInput, {
+        signal: input.signal,
+        stream: true,
+      });
+      const disconnectSteering = input.steering?.connect((instruction) => {
+        try {
+          run.state.addInput(instruction);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      onEvent({ type: "reasoning-start" });
+      for await (const event of run) {
+        for (const item of projectEvent(event, toolNames)) onEvent(item);
+        input.steering?.retry();
+      }
+      try {
+        await run.completed;
+      } finally {
+        disconnectSteering?.();
+      }
+      if (run.error) throw run.error;
+      if (typeof run.finalOutput !== "string") throw new Error("The model did not return text.");
+      const queuedSteering = input.steering?.drain() ?? [];
+      if (queuedSteering.length) {
+        onEvent({ type: "response-reset" });
+        runInput = [
+          ...run.history,
+          ...queuedSteering.map((content) => ({ content, role: "user" as const })),
+        ];
+        continue;
+      }
+      if (!input.steering || input.steering.close()) {
+        return { message: run.finalOutput, model: runtime.model };
+      }
     }
-    try {
-      await run.completed;
-    } finally {
-      await spendLimit?.record(runtime.model, run.state.usage);
-    }
-    if (run.error) throw run.error;
-    if (typeof run.finalOutput !== "string") throw new Error("The model did not return text.");
-    return { message: run.finalOutput, model: runtime.model };
   } finally {
     await exaServer?.close();
   }
@@ -234,24 +242,18 @@ export async function streamPromptEdit(
 
   try {
     if (input.signal?.aborted) throw abortReason(input.signal);
-    exaServer = await connectExaSearch();
+    exaServer = await connectOpenAiAgentsExaSearch();
     if (input.signal?.aborted) throw abortReason(input.signal);
     const runtime = createAgentRuntime(input.modelId, createScopedFsTools(workspace), [exaServer]);
-    const spendLimit = getModelSpendLimit();
-    await spendLimit?.assertCanSpend(runtime.model);
     const run = await runtime.runner.run(runtime.agent, input.instruction, {
       signal: input.signal,
       stream: true,
     });
-    const tools = new Map<string, string>();
+    const toolNames = new Map<string, string>();
     for await (const event of run) {
-      for (const item of projectEvent(event, tools)) onEvent(item);
+      for (const item of projectEvent(event, toolNames)) onEvent(item);
     }
-    try {
-      await run.completed;
-    } finally {
-      await spendLimit?.record(runtime.model, run.state.usage);
-    }
+    await run.completed;
     if (run.error) throw run.error;
     if (typeof run.finalOutput !== "string") {
       throw new Error("The model did not return text.");
@@ -266,7 +268,7 @@ export async function streamPromptEdit(
   }
 }
 
-function projectEvent(event: RunStreamEvent, tools: Map<string, string>): AgentStreamEvent[] {
+function projectEvent(event: RunStreamEvent, toolNames: Map<string, string>): AgentStreamEvent[] {
   if (event.type === "raw_model_stream_event") {
     if (event.data.type === "output_text_delta") {
       return event.data.delta ? [{ type: "text-delta", delta: event.data.delta }] : [];
@@ -293,7 +295,7 @@ function projectEvent(event: RunStreamEvent, tools: Map<string, string>): AgentS
   if (event.name === "tool_called") {
     const identity = getToolIdentity(event.item.rawItem);
     if (!identity) return [];
-    tools.set(identity.callId, identity.name);
+    toolNames.set(identity.callId, identity.name);
     return [
       {
         type: "tool",
@@ -306,9 +308,13 @@ function projectEvent(event: RunStreamEvent, tools: Map<string, string>): AgentS
   }
   if (event.name === "tool_output") {
     const identity = getToolIdentity(event.item.rawItem);
-    const callId = identity?.callId ?? getItemCallId(event.item);
+    const callId =
+      identity?.callId ??
+      ("callId" in event.item && typeof event.item.callId === "string"
+        ? event.item.callId
+        : undefined);
     if (!callId) return [];
-    const name = identity?.name ?? tools.get(callId) ?? "tool";
+    const name = identity?.name ?? toolNames.get(callId) ?? "tool";
     return [
       {
         type: "tool",
@@ -390,11 +396,6 @@ function getToolIdentity(value: unknown): { callId: string; name: string } | und
         ? item.id
         : undefined;
   return callId && typeof item.name === "string" ? { callId, name: item.name } : undefined;
-}
-
-function getItemCallId(value: unknown): string | undefined {
-  if (!value || typeof value !== "object" || !("callId" in value)) return undefined;
-  return typeof value.callId === "string" ? value.callId : undefined;
 }
 
 function summarizeTool(name: string, output: unknown): string {

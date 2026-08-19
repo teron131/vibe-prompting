@@ -1,16 +1,13 @@
-/** Enforces the deployment-wide rolling model-spend circuit breaker from persisted token usage and resolved model pricing. */
+/** Enforces the optional rolling model-spend policy and exposes one per-call accounting lifecycle to every LLM client. */
 
-import { resolveModelPrice } from "./clients/openrouter-pricing.ts";
-import type { ModelConfig } from "./config.ts";
-import type { Database } from "./database.ts";
+import { type ModelConfig, type ModelSpendLimits } from "../../config/index.ts";
+import type { Database } from "../../database.ts";
+import { resolveModelPrice } from "./pricing.ts";
 
-export const MODEL_SPEND_LIMIT_USD = 20;
-
-const MODEL_SPEND_INTERVAL = "1 day";
-const MODEL_SPEND_LOCK = 1_450_701_649;
+const SPEND_LOCK = 1_450_701_649;
 const TOKENS_PER_MILLION = 1_000_000;
 
-export type ModelTokenUsage = {
+type TokenUsage = {
   inputTokens: number;
   outputTokens: number;
 };
@@ -20,33 +17,61 @@ type SpendWindowRow = {
   retryAfterSeconds: number | null;
 };
 
-export class ModelSpendLimitError extends Error {
+export type SpendCall = {
+  record(usage: TokenUsage): Promise<void>;
+};
+
+let spendLimit: SpendLimit | undefined;
+
+export function configureSpendLimit(
+  database: Database,
+  limits: ModelSpendLimits | undefined,
+): void {
+  spendLimit = limits ? new SpendLimit(database, limits) : undefined;
+}
+
+export async function startSpendCall(model: ModelConfig): Promise<SpendCall> {
+  const limit = spendLimit;
+  await limit?.assertCanSpend(model);
+  let recorded = false;
+  return {
+    async record(usage) {
+      if (recorded) return;
+      recorded = true;
+      await limit?.record(model, usage);
+    },
+  };
+}
+
+class SpendLimitError extends Error {
   readonly retryAfterSeconds: number;
   readonly statusCode = 429;
 
-  constructor(retryAfterSeconds: number) {
+  constructor(retryAfterSeconds: number, limits: ModelSpendLimits) {
     super(
-      `The shared deployment has reached its estimated $${MODEL_SPEND_LIMIT_USD} model-spend limit for the last 24 hours.`,
+      `The shared deployment has reached its estimated $${limits.spendUsd} model-spend limit for the last ${limits.windowHours} hours.`,
     );
-    this.name = "ModelSpendLimitError";
+    this.name = "SpendLimitError";
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
-export class ModelSpendLimit {
+class SpendLimit {
   readonly #database: Database;
+  readonly #limits: ModelSpendLimits;
 
-  constructor(database: Database) {
+  constructor(database: Database, limits: ModelSpendLimits) {
     this.#database = database;
+    this.#limits = limits;
   }
 
   async assertCanSpend(model: ModelConfig): Promise<void> {
     await resolveModelPrice(model.id);
     await this.#database.transaction(async (sql) => {
-      await sql`SELECT pg_advisory_xact_lock(${MODEL_SPEND_LOCK})`;
+      await sql`SELECT pg_advisory_xact_lock(${SPEND_LOCK})`;
       await sql`
         DELETE FROM model_cost_events
-        WHERE recorded_at < now() - ${MODEL_SPEND_INTERVAL}::interval
+        WHERE recorded_at < now() - make_interval(hours => ${this.#limits.windowHours})
       `;
       const [window] = await sql<SpendWindowRow[]>`
         WITH ordered_costs AS (
@@ -62,19 +87,19 @@ export class ModelSpendLimit {
             1,
             CEIL(EXTRACT(EPOCH FROM (
               MIN(recorded_at) FILTER (
-                WHERE total_cost - cumulative_cost < ${MODEL_SPEND_LIMIT_USD}
-              ) + ${MODEL_SPEND_INTERVAL}::interval - now()
+                WHERE total_cost - cumulative_cost < ${this.#limits.spendUsd}
+              ) + make_interval(hours => ${this.#limits.windowHours}) - now()
             )))::integer
           ) AS retry_after_seconds
         FROM ordered_costs
       `;
-      if (Number(window?.estimatedSpendUsd ?? 0) >= MODEL_SPEND_LIMIT_USD) {
-        throw new ModelSpendLimitError(window?.retryAfterSeconds ?? 1);
+      if (Number(window?.estimatedSpendUsd ?? 0) >= this.#limits.spendUsd) {
+        throw new SpendLimitError(window?.retryAfterSeconds ?? 1, this.#limits);
       }
     });
   }
 
-  async record(model: ModelConfig, usage: ModelTokenUsage): Promise<void> {
+  async record(model: ModelConfig, usage: TokenUsage): Promise<void> {
     const inputTokens = normalizeTokenCount(usage.inputTokens);
     const outputTokens = normalizeTokenCount(usage.outputTokens);
     if (inputTokens === 0 && outputTokens === 0) return;
@@ -100,17 +125,6 @@ export class ModelSpendLimit {
     `,
     );
   }
-}
-
-let configuredSpendLimit: ModelSpendLimit | undefined;
-
-export function configureModelSpendLimit(database: Database): ModelSpendLimit {
-  configuredSpendLimit = new ModelSpendLimit(database);
-  return configuredSpendLimit;
-}
-
-export function getModelSpendLimit(): ModelSpendLimit | undefined {
-  return configuredSpendLimit;
 }
 
 function normalizeTokenCount(value: number): number {

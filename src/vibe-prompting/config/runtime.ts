@@ -1,4 +1,4 @@
-/** Loads the private model catalogue and environment-owned provider credentials for backend clients. */
+/** Loads model catalogues, provider credentials, runtime overrides, and YAML-backed model configuration. */
 
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";

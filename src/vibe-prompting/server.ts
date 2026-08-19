@@ -1,14 +1,15 @@
 /** Publishes side-effect-free application services for server-only framework adapters. */
 
-import { resolveModelIdentities } from "./clients/models-dev.ts";
-import { loadRuntimeConfig } from "./config.ts";
+import { resolveModelIdentities } from "./clients/llm/models-dev.ts";
+import { configureSpendLimit } from "./clients/llm/spend.ts";
+import { loadModelSpendLimits, loadRuntimeConfig } from "./config/index.ts";
 import { ConversationRunRegistry } from "./conversations/runs.ts";
 import { ConversationStore } from "./conversations/store.ts";
 import { createDatabase } from "./database.ts";
 import { EvaluationRuns } from "./evaluation/runs.ts";
-import { configureModelSpendLimit } from "./model-spend-limit.ts";
 import { PromptSystem } from "./prompt-system/index.ts";
 import { ApplicationSettingsStore } from "./settings/index.ts";
+import { TargetSystem } from "./target/index.ts";
 
 export type ConfiguredModel = {
   id: string;
@@ -24,13 +25,14 @@ export type ApplicationServices = {
   prompts: PromptSystem;
   runs: ConversationRunRegistry;
   settings: ApplicationSettingsStore;
+  targets: TargetSystem;
 };
 
 const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 5;
+const APPLICATION_SERVICES_VERSION = 6;
 
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
   await getApplicationServices();
@@ -56,9 +58,10 @@ export async function createApplicationServices(
   await database.initialize();
   const settings = new ApplicationSettingsStore(database);
   await settings.initialize();
-  configureModelSpendLimit(database);
+  configureSpendLimit(database, loadModelSpendLimits());
   const prompts = new PromptSystem(database);
-  const evaluations = new EvaluationRuns(database, prompts);
+  const targets = new TargetSystem(database, prompts);
+  const evaluations = new EvaluationRuns(database, prompts, targets);
   return {
     close: () => database.close(),
     conversations: new ConversationStore(database),
@@ -66,6 +69,7 @@ export async function createApplicationServices(
     prompts,
     runs: new ConversationRunRegistry(),
     settings,
+    targets,
   };
 }
 
@@ -97,3 +101,4 @@ export * from "./conversations/index.ts";
 export * from "./evaluation/runs.ts";
 export * from "./prompt-system/index.ts";
 export * from "./settings/index.ts";
+export * from "./target/index.ts";

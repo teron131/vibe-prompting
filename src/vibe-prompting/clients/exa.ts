@@ -1,20 +1,52 @@
-/** Owns constrained Exa MCP adapters shared by LangChain workflows and the general agent runtime. */
+/** Owns constrained Exa MCP connections shared across the supported agent frameworks. */
 
+import { createMCPClient } from "@ai-sdk/mcp";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import { createMCPToolStaticFilter, type MCPServer, MCPServerStreamableHttp } from "@openai/agents";
+import type { ToolSet } from "ai";
 
-import { EXA_MCP_URL, loadRuntimeConfig } from "../config.ts";
+import { EXA_MCP_URL, loadRuntimeConfig } from "../config/index.ts";
 
 export const EXA_WEB_SEARCH_TOOL = "web_search_exa";
 
-export type ExaTools = {
+export type LangChainExaTools = {
   close: () => Promise<void>;
   tools: DynamicStructuredTool[];
 };
 
-/** Connects the general agent to only Exa web search while keeping all other remote MCP tools hidden. */
-export async function connectExaSearch(): Promise<MCPServer> {
+export type AiSdkExaTools = {
+  close: () => Promise<void>;
+  tools: ToolSet;
+};
+
+/** Connects a Vercel AI SDK target to only Exa web search and returns an explicit lifecycle owner for the remote MCP client. */
+export async function connectAiSdkExaSearch(): Promise<AiSdkExaTools> {
+  const config = loadRuntimeConfig();
+  const client = await createMCPClient({
+    transport: {
+      type: "http",
+      url: EXA_MCP_URL,
+      ...(config.exa.apiKey && { headers: { "x-api-key": config.exa.apiKey } }),
+    },
+  });
+  try {
+    const definitions = await client.listTools();
+    const definition = definitions.tools.find(({ name }) => name === EXA_WEB_SEARCH_TOOL);
+    if (!definition) throw new Error(`Exa MCP does not expose: ${EXA_WEB_SEARCH_TOOL}.`);
+    const tools = client.toolsFromDefinitions({ ...definitions, tools: [definition] });
+    return {
+      close: () => client.close(),
+      tools: { [EXA_WEB_SEARCH_TOOL]: tools[EXA_WEB_SEARCH_TOOL] as ToolSet[string] },
+    };
+  } catch (error) {
+    await client.close();
+    throw error;
+  }
+}
+
+/** Connects the OpenAI Agents runtime to only Exa web search while keeping all other remote MCP tools hidden. */
+export async function connectOpenAiAgentsExaSearch(): Promise<MCPServer> {
   const config = loadRuntimeConfig();
   const server = new MCPServerStreamableHttp({
     cacheToolsList: true,
@@ -37,10 +69,10 @@ export async function connectExaSearch(): Promise<MCPServer> {
   }
 }
 
-/** Connects to Exa over remote HTTP MCP and exposes only explicitly selected tools. */
-export async function loadExaTools(
+/** Connects LangChain to Exa over remote HTTP MCP and exposes only explicitly selected tools. */
+export async function connectLangChainExaTools(
   toolNames: readonly string[] = [EXA_WEB_SEARCH_TOOL],
-): Promise<ExaTools> {
+): Promise<LangChainExaTools> {
   if (!toolNames.length) throw new Error("At least one Exa tool name is required.");
 
   const config = loadRuntimeConfig();

@@ -14,7 +14,7 @@ import {
   type PlatformId,
   saveLocalModelCatalog,
   setRuntimeConfigOverrides,
-} from "../config.ts";
+} from "../config/index.ts";
 import type { Database, DatabaseClient } from "../database.ts";
 import {
   decryptSecret,

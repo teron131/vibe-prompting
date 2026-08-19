@@ -1,4 +1,4 @@
-/** Reproduces Model Atlas effective pricing from OpenRouter provider prices weighted by reported token volume. */
+/** Resolves effective LLM pricing from OpenRouter provider prices weighted by reported token volume. */
 
 import { z } from "zod";
 

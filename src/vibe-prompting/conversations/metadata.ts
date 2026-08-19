@@ -4,8 +4,8 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import dynamicIconImports from "lucide-react/dynamicIconImports.js";
 import { z } from "zod";
 
-import { createChatModel } from "../clients/llm.ts";
-import { loadRuntimeConfig } from "../config.ts";
+import { createModel } from "../clients/llm/langchain.ts";
+import { loadRuntimeConfig } from "../config/index.ts";
 
 const DEFAULT_CHAT_ICON = "message-circle";
 const MAX_MESSAGES = 12;
@@ -55,7 +55,7 @@ export async function generateChatMetadata({
 
   try {
     const { metadataModel } = loadRuntimeConfig();
-    const model = createChatModel({
+    const model = createModel({
       maxRetries: 0,
       model: metadataModel.id,
       temperature: 0.2,

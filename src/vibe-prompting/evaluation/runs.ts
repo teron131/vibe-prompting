@@ -2,14 +2,13 @@
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type postgres from "postgres";
 import { z } from "zod";
 
-import { createChatModel } from "../clients/llm.ts";
-import { loadRuntimeConfig } from "../config.ts";
+import { loadRuntimeConfig } from "../config/index.ts";
 import type { Database, DatabaseClient } from "../database.ts";
 import { PromptConflictError, type PromptSystem } from "../prompt-system/index.ts";
+import type { PinnedTarget, TargetSystem } from "../target/index.ts";
 import {
   type Criterion,
   type CriterionEvaluation,
@@ -28,6 +27,7 @@ export type EvaluationRunSummary = {
   completedAt: string | null;
   configurationFingerprint: string;
   createdAt: string;
+  effectiveInstructionsHash: string | null;
   errorMessage: string | null;
   id: string;
   judgeModelIds: string[];
@@ -36,6 +36,9 @@ export type EvaluationRunSummary = {
   promptTitle: string;
   source: EvaluationRunSource;
   status: EvaluationRunStatus;
+  targetProfileId: string | null;
+  targetProfileName: string | null;
+  targetProfileRevisionId: string | null;
   targetModelId: string;
 };
 
@@ -62,6 +65,7 @@ export type StoredEvaluationCase = {
 export type StoredEvaluationRun = EvaluationRunSummary & {
   cases: StoredEvaluationCase[];
   promptMarkdown: string;
+  targetConfiguration: Record<string, unknown> | null;
 };
 
 export type BooleanTrendPoint = {
@@ -85,7 +89,7 @@ export const evaluationRunInputSchema = requestSchema.extend({
   targetModelId: z.string().trim().min(1),
 });
 
-type RunRow = {
+type RunSummaryRow = {
   promptId: string;
   promptRevisionId: string;
   caseCount: number;
@@ -93,14 +97,22 @@ type RunRow = {
   completedAt: Date | null;
   configurationFingerprint: string;
   createdAt: Date;
+  effectiveInstructionsHash: string | null;
   errorMessage: string | null;
   id: string;
   judgeModelIds: string[];
-  promptMarkdown: string;
   promptTitle: string;
   source: EvaluationRunSource;
   status: EvaluationRunStatus;
+  targetProfileId: string | null;
+  targetProfileName: string | null;
+  targetProfileRevisionId: string | null;
   targetModelId: string;
+};
+
+type RunRow = RunSummaryRow & {
+  promptMarkdown: string;
+  targetConfiguration: Record<string, unknown> | null;
 };
 
 type CaseRow = {
@@ -144,10 +156,12 @@ export class EvaluationRequestError extends Error {
 export class EvaluationRuns {
   readonly #database: Database;
   readonly #prompts: PromptSystem;
+  readonly #targets: TargetSystem;
 
-  constructor(database: Database, prompts: PromptSystem) {
+  constructor(database: Database, prompts: PromptSystem, targets: TargetSystem) {
     this.#database = database;
     this.#prompts = prompts;
+    this.#targets = targets;
   }
 
   async reconcileInterrupted(): Promise<number> {
@@ -186,28 +200,50 @@ export class EvaluationRuns {
     const input = parsed.data;
     const request = requestSchema.parse({ cases: input.cases, judges: input.judges });
     const judgeModelIds = Array.isArray(request.judges) ? request.judges : [request.judges];
-    requireConfiguredModels([input.targetModelId, ...judgeModelIds]);
+    const configuredModels = new Set(loadRuntimeConfig().models.map(({ id }) => id));
+    const unknownModel = [input.targetModelId, ...judgeModelIds].find(
+      (id) => !configuredModels.has(id),
+    );
+    if (unknownModel) throw new EvaluationRequestError(`Model is not configured: ${unknownModel}.`);
     const prompt = await this.#prompts.getPrompt(input.promptId);
     if (prompt.revisionId !== input.promptRevisionId) throw new PromptConflictError();
-    const configurationFingerprint = createConfigurationFingerprint({
-      cases: request.cases,
-      judges: judgeModelIds,
+    const pinnedTarget = await this.#targets.createPinnedTarget({
+      promptId: prompt.id,
+      promptRevisionId: prompt.revisionId,
       targetModelId: input.targetModelId,
     });
-    const runId = await this.#database.transaction((sql) =>
-      insertRun(sql, {
-        promptId: prompt.id,
-        promptRevisionId: prompt.revisionId,
-        cases: request.cases,
-        chatId,
-        configurationFingerprint,
-        judgeModelIds,
-        source,
-        status: "running",
-        targetModelId: input.targetModelId,
-      }),
-    );
-    void this.#executeBrowserRun(runId, prompt.markdown, input.targetModelId, {
+    const targetConfiguration = pinnedTarget.profile.configuration;
+    const configurationFingerprint = createConfigurationFingerprint({
+      cases: request.cases,
+      effectiveInstructionsHash: pinnedTarget.effectiveInstructionsHash,
+      judges: judgeModelIds,
+      targetConfiguration,
+      targetModelId: input.targetModelId,
+      targetProfileRevisionId: pinnedTarget.profile.revisionId,
+    });
+    let runId: string;
+    try {
+      runId = await this.#database.transaction((sql) =>
+        insertRun(sql, {
+          promptId: prompt.id,
+          promptRevisionId: prompt.revisionId,
+          cases: request.cases,
+          chatId,
+          configurationFingerprint,
+          judgeModelIds,
+          source,
+          status: "running",
+          targetProfileId: pinnedTarget.profile.id,
+          targetProfileRevisionId: pinnedTarget.profile.revisionId,
+          targetModelId: input.targetModelId,
+          effectiveInstructionsHash: pinnedTarget.effectiveInstructionsHash,
+        }),
+      );
+    } catch (error) {
+      await pinnedTarget.close();
+      throw error;
+    }
+    void this.#executeRun(runId, pinnedTarget, {
       cases: request.cases,
       judges: judgeModelIds,
     }).catch(() => undefined);
@@ -219,14 +255,33 @@ export class EvaluationRuns {
       const row = await requireRunRow(sql, runId);
       const cases = await selectCases(sql, runId);
       const scores = await selectScores(sql, runId);
-      const scoresByCase = groupScoresByCase(scores);
+      const scoresByCase = new Map<string, ScoreRow[]>();
+      for (const score of scores) {
+        const grouped = scoresByCase.get(score.caseId) ?? [];
+        grouped.push(score);
+        scoresByCase.set(score.caseId, grouped);
+      }
       return {
         ...projectRunSummary(row),
         cases: cases.map((testCase) => ({
-          ...projectCase(testCase),
-          scores: (scoresByCase.get(testCase.id) ?? []).map(projectScore),
+          criteria: testCase.criteria,
+          id: testCase.id,
+          input: testCase.input,
+          output: testCase.output,
+          position: testCase.position,
+          scores: (scoresByCase.get(testCase.id) ?? []).map((score) => ({
+            comment: score.comment,
+            criterion: score.criterion,
+            criterionPosition: score.criterionPosition,
+            dataType: score.dataType,
+            evidence: score.evidence,
+            id: score.id,
+            judgeModelId: score.judgeModelId,
+            value: score.value,
+          })),
         })),
         promptMarkdown: row.promptMarkdown,
+        targetConfiguration: row.targetConfiguration,
       };
     });
   }
@@ -271,27 +326,24 @@ export class EvaluationRuns {
     return runs.map(projectBooleanTrendPoint);
   }
 
-  async #executeBrowserRun(
+  async #executeRun(
     runId: string,
-    markdown: string,
-    targetModelId: string,
+    pinnedTarget: PinnedTarget,
     request: { cases: EvaluationCase<unknown>[]; judges: string[] },
   ): Promise<void> {
     try {
-      const model = createChatModel({ model: targetModelId });
-      const result = await evaluate(
-        {
-          model: targetModelId,
-          async invoke(input: unknown) {
-            const text = typeof input === "string" ? input : JSON.stringify(input);
-            return (await model.invoke([new SystemMessage(markdown), new HumanMessage(text)])).text;
-          },
-        },
-        request,
-      );
+      const result = await evaluate(pinnedTarget.target, request);
       await this.#database.transaction((sql) => completeRun(sql, runId, request.cases, result));
     } catch (error) {
-      await this.#database.run((sql) => failRun(sql, runId, safeExecutionError(error)));
+      await this.#database.run(
+        (sql) => sql`
+          UPDATE evaluation_runs
+          SET status = 'failed', error_message = ${safeExecutionError(error)}, completed_at = now()
+          WHERE id = ${runId} AND status = 'running'
+        `,
+      );
+    } finally {
+      await pinnedTarget.close();
     }
   }
 }
@@ -307,7 +359,10 @@ async function insertRun(
     judgeModelIds: string[];
     source: EvaluationRunSource;
     status: EvaluationRunStatus;
+    targetProfileId: string;
+    targetProfileRevisionId: string;
     targetModelId: string;
+    effectiveInstructionsHash: string;
   },
 ): Promise<string> {
   const runId = randomUUID();
@@ -315,12 +370,15 @@ async function insertRun(
     INSERT INTO evaluation_runs (
       id, prompt_id, prompt_revision_id, chat_id, source, target_model_id,
       judge_model_ids, status, configuration_fingerprint,
+      target_profile_id, target_profile_revision_id, effective_instructions_hash,
       completed_at
     )
     VALUES (
       ${runId}, ${input.promptId}, ${input.promptRevisionId}, ${input.chatId}, ${input.source},
       ${input.targetModelId}, ${sql.array(input.judgeModelIds)}, ${input.status},
-      ${input.configurationFingerprint}, ${input.status === "completed" ? new Date() : null}
+      ${input.configurationFingerprint}, ${input.targetProfileId},
+      ${input.targetProfileRevisionId}, ${input.effectiveInstructionsHash},
+      ${input.status === "completed" ? new Date() : null}
     )
   `;
   for (const [position, testCase] of input.cases.entries()) {
@@ -382,19 +440,12 @@ async function insertScore(
       judge_model_id, value_json, comment, evidence_json
     )
     VALUES (
-      ${randomUUID()}, ${caseId}, ${criterionPosition}, ${scoreDataType(criterion)},
+      ${randomUUID()}, ${caseId}, ${criterionPosition},
+      ${criterion.type.toUpperCase() as StoredEvaluationScore["dataType"]},
       ${sql.json(criterion as postgres.JSONValue)}, ${evaluation.judge},
       ${sql.json(evaluation.value as postgres.JSONValue)}, ${evaluation.comment},
       ${sql.json(evaluation.evidence)}
     )
-  `;
-}
-
-async function failRun(sql: DatabaseClient, runId: string, errorMessage: string): Promise<void> {
-  await sql`
-    UPDATE evaluation_runs
-    SET status = 'failed', error_message = ${errorMessage}, completed_at = now()
-    WHERE id = ${runId} AND status = 'running'
   `;
 }
 
@@ -412,56 +463,72 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
       evaluation_runs.judge_model_ids, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
+      evaluation_runs.effective_instructions_hash,
+      evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
+      target_profile_revisions.configuration AS target_configuration,
       evaluation_runs.created_at, evaluation_runs.completed_at,
+      target_profiles.name AS target_profile_name,
       prompts.title AS prompt_title, prompt_revisions.markdown AS prompt_markdown,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
+    LEFT JOIN target_profile_revisions
+      ON target_profile_revisions.target_profile_id = evaluation_runs.target_profile_id
+      AND target_profile_revisions.id = evaluation_runs.target_profile_revision_id
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
     WHERE evaluation_runs.id = ${runId}
-    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.markdown
+    GROUP BY
+      evaluation_runs.id, prompts.title, prompt_revisions.markdown,
+      target_profiles.name, target_profile_revisions.configuration
   `;
 }
 
 function selectRunRows(sql: DatabaseClient, limit: number) {
-  return sql<RunRow[]>`
+  return sql<RunSummaryRow[]>`
     SELECT
       evaluation_runs.id, evaluation_runs.prompt_id,
       evaluation_runs.prompt_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
       evaluation_runs.judge_model_ids, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
+      evaluation_runs.effective_instructions_hash,
+      evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
       evaluation_runs.created_at, evaluation_runs.completed_at,
-      prompts.title AS prompt_title, prompt_revisions.markdown AS prompt_markdown,
+      target_profiles.name AS target_profile_name,
+      prompts.title AS prompt_title,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
-    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.markdown
+    GROUP BY evaluation_runs.id, prompts.title, target_profiles.name
     ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
     LIMIT ${limit}
   `;
 }
 
 function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, limit: number) {
-  return sql<RunRow[]>`
+  return sql<RunSummaryRow[]>`
     SELECT
       evaluation_runs.id, evaluation_runs.prompt_id,
       evaluation_runs.prompt_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
       evaluation_runs.judge_model_ids, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
+      evaluation_runs.effective_instructions_hash,
+      evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
       evaluation_runs.created_at, evaluation_runs.completed_at,
-      prompts.title AS prompt_title, prompt_revisions.markdown AS prompt_markdown,
+      target_profiles.name AS target_profile_name,
+      prompts.title AS prompt_title,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
     WHERE evaluation_runs.prompt_id = ${promptId}
-    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.markdown
+    GROUP BY evaluation_runs.id, prompts.title, target_profiles.name
     ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
     LIMIT ${limit}
   `;
@@ -491,13 +558,14 @@ function selectScores(sql: DatabaseClient, runId: string) {
   `;
 }
 
-function projectRunSummary(row: RunRow): EvaluationRunSummary {
+function projectRunSummary(row: RunSummaryRow): EvaluationRunSummary {
   return {
     caseCount: row.caseCount,
     chatId: row.chatId,
     completedAt: row.completedAt?.toISOString() ?? null,
     configurationFingerprint: row.configurationFingerprint,
     createdAt: row.createdAt.toISOString(),
+    effectiveInstructionsHash: row.effectiveInstructionsHash,
     errorMessage: row.errorMessage,
     id: row.id,
     judgeModelIds: row.judgeModelIds,
@@ -506,64 +574,30 @@ function projectRunSummary(row: RunRow): EvaluationRunSummary {
     promptTitle: row.promptTitle,
     source: row.source,
     status: row.status,
+    targetProfileId: row.targetProfileId,
+    targetProfileName: row.targetProfileName,
+    targetProfileRevisionId: row.targetProfileRevisionId,
     targetModelId: row.targetModelId,
   };
 }
 
-function projectCase(row: CaseRow): Omit<StoredEvaluationCase, "scores"> {
-  return {
-    criteria: row.criteria,
-    id: row.id,
-    input: row.input,
-    output: row.output,
-    position: row.position,
-  };
-}
-
-function projectScore(row: ScoreRow): StoredEvaluationScore {
-  return {
-    comment: row.comment,
-    criterion: row.criterion,
-    criterionPosition: row.criterionPosition,
-    dataType: row.dataType,
-    evidence: row.evidence,
-    id: row.id,
-    judgeModelId: row.judgeModelId,
-    value: row.value,
-  };
-}
-
-function groupScoresByCase(scores: ScoreRow[]): Map<string, ScoreRow[]> {
-  const grouped = new Map<string, ScoreRow[]>();
-  for (const score of scores) {
-    const existing = grouped.get(score.caseId) ?? [];
-    existing.push(score);
-    grouped.set(score.caseId, existing);
-  }
-  return grouped;
-}
-
-function scoreDataType(criterion: Criterion): StoredEvaluationScore["dataType"] {
-  return criterion.type.toUpperCase() as StoredEvaluationScore["dataType"];
-}
-
 function createConfigurationFingerprint(input: {
   cases: EvaluationCase<unknown>[];
+  effectiveInstructionsHash: string;
   judges: string[];
+  targetConfiguration: Record<string, unknown>;
   targetModelId: string;
+  targetProfileRevisionId: string;
 }): string {
   const canonical = JSON.stringify({
     cases: input.cases,
+    effectiveInstructionsHash: input.effectiveInstructionsHash,
     judges: input.judges.toSorted(),
+    targetConfiguration: input.targetConfiguration,
     targetModelId: input.targetModelId,
+    targetProfileRevisionId: input.targetProfileRevisionId,
   });
   return createHash("sha256").update(canonical).digest("hex");
-}
-
-function requireConfiguredModels(modelIds: string[]): void {
-  const configured = new Set(loadRuntimeConfig().models.map(({ id }) => id));
-  const unknown = modelIds.find((id) => !configured.has(id));
-  if (unknown) throw new EvaluationRequestError(`Model is not configured: ${unknown}.`);
 }
 
 function safeExecutionError(error: unknown): string {

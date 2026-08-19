@@ -1,4 +1,4 @@
-/** Restores provider-emitted reasoning summaries that the Agents Chat Completions adapter does not recognize. */
+/** Restores provider-emitted reasoning summaries that the OpenAI Agents Chat Completions adapter does not recognize. */
 
 import type {
   Model,

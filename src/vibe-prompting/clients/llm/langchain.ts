@@ -1,19 +1,19 @@
-/** Builds configured OpenAI-compatible LangChain models and preserves provider continuation data that generic serialization would lose. */
+/** Builds configured LangChain chat models with shared spend accounting and provider-specific continuation preservation. */
 
-import { AIMessage, type BaseMessage } from "@langchain/core/messages";
+import { AIMessage, AIMessageChunk, type BaseMessage } from "@langchain/core/messages";
 import {
   type ChatOpenAIFields,
   ChatOpenAI as NativeChatOpenAI,
   ChatOpenAICompletions as NativeChatOpenAICompletions,
 } from "@langchain/openai";
 
-import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../config.ts";
-import { getModelSpendLimit } from "../model-spend-limit.ts";
-import { readGeminiThoughtSignature } from "./gemini-tool-calls.ts";
+import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../../config/index.ts";
+import { readGeminiThoughtSignature } from "./gemini.ts";
+import { type SpendCall, startSpendCall } from "./spend.ts";
 
 type ClientConfiguration = NonNullable<ChatOpenAIFields["configuration"]>;
 
-export type ChatModelOptions = Omit<
+export type ModelOptions = Omit<
   ChatOpenAIFields,
   "apiKey" | "configuration" | "model" | "modelName" | "openAIApiKey"
 > & {
@@ -21,37 +21,34 @@ export type ChatModelOptions = Omit<
   configuration?: Omit<ClientConfiguration, "apiKey" | "baseURL">;
 };
 
-export function createChatModel({
-  model,
-  configuration,
-  ...options
-}: ChatModelOptions): NativeChatOpenAI {
+export function createModel({ model, configuration, ...options }: ModelOptions): NativeChatOpenAI {
   const modelId = model.trim();
   if (!modelId) throw new Error("Model ID must not be empty.");
 
-  const config = loadRuntimeConfig();
-  const configuredModel =
-    config.models.find((candidate) => candidate.id === modelId) ??
-    (config.metadataModel.id === modelId ? config.metadataModel : undefined);
-  if (!configuredModel) throw new Error(`Model is not configured: ${modelId}.`);
+  const runtime = loadRuntimeConfig();
+  const modelConfig =
+    runtime.models.find((candidate) => candidate.id === modelId) ??
+    (runtime.metadataModel.id === modelId ? runtime.metadataModel : undefined);
+  if (!modelConfig) throw new Error(`Model is not configured: ${modelId}.`);
 
-  const platform = resolveModelPlatform(configuredModel, config);
+  const platform = resolveModelPlatform(modelConfig, runtime);
   const fields = {
     model: modelId,
     ...options,
     apiKey: platform.apiKey,
     configuration: { ...configuration, baseURL: platform.baseURL },
+    useResponsesApi: modelId.startsWith("gpt-"),
   };
-  return new BudgetedChatOpenAI({
+  return new SpendLimitedChatOpenAI({
     ...fields,
-    modelConfig: configuredModel,
+    modelConfig,
     ...(platform.id === "gemini" && {
       completions: new GeminiChatOpenAICompletions(fields),
     }),
   });
 }
 
-class BudgetedChatOpenAI extends NativeChatOpenAI {
+class SpendLimitedChatOpenAI extends NativeChatOpenAI {
   readonly #modelConfig: ModelConfig;
 
   constructor(fields: ChatOpenAIFields & { modelConfig: ModelConfig }) {
@@ -61,8 +58,7 @@ class BudgetedChatOpenAI extends NativeChatOpenAI {
   }
 
   override async _generate(...args: Parameters<NativeChatOpenAI["_generate"]>) {
-    const spendLimit = getModelSpendLimit();
-    await spendLimit?.assertCanSpend(this.#modelConfig);
+    const call = await startSpendCall(this.#modelConfig);
     const result = await super._generate(...args);
     let inputTokens = 0;
     let outputTokens = 0;
@@ -71,9 +67,52 @@ class BudgetedChatOpenAI extends NativeChatOpenAI {
       inputTokens += generation.message.usage_metadata?.input_tokens ?? 0;
       outputTokens += generation.message.usage_metadata?.output_tokens ?? 0;
     }
-    await spendLimit?.record(this.#modelConfig, { inputTokens, outputTokens });
+    await call.record({ inputTokens, outputTokens });
     return result;
   }
+
+  override async *_streamChatModelEvents(
+    ...args: Parameters<NativeChatOpenAI["_streamChatModelEvents"]>
+  ) {
+    const call = await startSpendCall(this.#modelConfig);
+    let usage: LangChainUsage | undefined;
+    for await (const event of super._streamChatModelEvents(...args)) {
+      if (event.event === "usage") usage = event.usage;
+      if (event.event === "message-finish") {
+        usage = event.usage ?? usage;
+        await recordLangChainUsage(call, usage);
+      }
+      yield event;
+    }
+    await recordLangChainUsage(call, usage);
+  }
+
+  override async *_streamResponseChunks(
+    ...args: Parameters<NativeChatOpenAI["_streamResponseChunks"]>
+  ) {
+    const call = await startSpendCall(this.#modelConfig);
+    let usage: LangChainUsage | undefined;
+    for await (const chunk of super._streamResponseChunks(...args)) {
+      if (AIMessageChunk.isInstance(chunk.message) && chunk.message.usage_metadata) {
+        usage = chunk.message.usage_metadata;
+        await recordLangChainUsage(call, usage);
+      }
+      yield chunk;
+    }
+    await recordLangChainUsage(call, usage);
+  }
+}
+
+type LangChainUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+};
+
+function recordLangChainUsage(call: SpendCall, usage: LangChainUsage | undefined): Promise<void> {
+  return call.record({
+    inputTokens: usage?.input_tokens ?? 0,
+    outputTokens: usage?.output_tokens ?? 0,
+  });
 }
 
 class GeminiChatOpenAICompletions extends NativeChatOpenAICompletions {

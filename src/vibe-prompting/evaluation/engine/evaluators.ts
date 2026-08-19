@@ -6,7 +6,7 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import { END, ReducedValue, Send, START, StateGraph, StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
 
-import { createChatModel } from "../../clients/llm.ts";
+import { createModel } from "../../clients/llm/langchain.ts";
 import { buildCriteriaPrompt, buildCriteriaSystemPrompt } from "./prompts.ts";
 import {
   createEvaluationReportSchema,
@@ -70,9 +70,10 @@ function dispatchJudges(state: typeof JudgeState.State): Send[] {
 }
 
 const evaluateJudge: typeof JudgeState.Node = async (state, config) => {
-  const model = requireJudgeModel(state.judgeModel);
+  const model = state.judgeModel;
+  if (!model) throw new Error("Judge model was not dispatched.");
   const report = await evaluateCriteria(
-    createChatModel({ model }),
+    createModel({ model }),
     state.criteria,
     state.subject,
     config,
@@ -81,11 +82,6 @@ const evaluateJudge: typeof JudgeState.Node = async (state, config) => {
     evaluations: [{ model, report }],
   };
 };
-
-function requireJudgeModel(model: string | undefined): string {
-  if (!model) throw new Error("Judge model was not dispatched.");
-  return model;
-}
 
 export const judgesGraph = new StateGraph({
   input: JudgeInput,

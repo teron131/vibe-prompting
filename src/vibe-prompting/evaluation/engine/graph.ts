@@ -9,6 +9,7 @@ import {
   type LangfuseConfig,
   loadOptionalLangfuseConfig,
 } from "../../clients/langfuse.ts";
+import { targetSchema } from "../../target/api.ts";
 import { LangfuseExperimentRunner } from "../experiments.ts";
 import {
   getJudgeModels,
@@ -23,11 +24,6 @@ import {
   type EvaluatorScore,
 } from "./schemas.ts";
 
-export type Target = {
-  readonly model: string;
-  invoke(input: unknown): PromiseLike<unknown>;
-};
-
 export type { EvaluatorScore } from "./schemas.ts";
 
 const DEFAULT_MAX_CONCURRENCY = 10;
@@ -38,18 +34,6 @@ const evaluatorCaseSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
   criteria: evaluationCriteriaSchema,
 });
-const targetSchema = z.custom<Target>(
-  (value) =>
-    typeof value === "object" &&
-    value !== null &&
-    "model" in value &&
-    typeof value.model === "string" &&
-    value.model.length > 0 &&
-    value.model === value.model.trim() &&
-    "invoke" in value &&
-    typeof value.invoke === "function",
-  "Target must expose a non-empty model ID and an invoke function.",
-);
 const evaluatedCaseSchema = z.object({
   input: z.unknown(),
   output: z.unknown(),
