@@ -1,26 +1,41 @@
 /** Owns browser-safe durable prompt and immutable revision shapes shared by routes and components. */
 
 export type PromptSummary = {
+  canRedo: boolean;
+  canUndo: boolean;
   createdAt: string;
   id: string;
-  markdown: string;
   revisionCount: number;
   revisionId: string;
+  revisionNumber: number;
   title: string;
   updatedAt: string;
 };
 
-export type PromptRevision = {
+export type PromptCurrent = PromptSummary & { markdown: string };
+
+export type PromptRevisionSummary = {
   changeRequest: string | null;
   createdAt: string;
   id: string;
-  markdown: string;
   parentRevisionId: string | null;
   promptId: string;
-  source: "operator" | "user";
+  source: "ai" | "human";
 };
 
-export type PromptDetail = { prompt: PromptSummary; revisions: PromptRevision[] };
-export type PromptSearchResult = PromptSummary & { snippet: string };
+export type PromptRevision = PromptRevisionSummary & { markdown: string };
+export type PromptDetail = { prompt: PromptCurrent; revisions: PromptRevisionSummary[] };
+export type PromptRevisionResponse = {
+  parentMarkdown: string | null;
+  revision: PromptRevision;
+};
+export type PromptSearchPassage = {
+  end: number;
+  promptId: string;
+  revisionId: string;
+  start: number;
+  text: string;
+};
+export type PromptSearchResult = PromptSummary & { passages: PromptSearchPassage[] };
 export type PromptSearchResponse = { prompts: PromptSearchResult[] };
 export type PromptsResponse = { prompts: PromptSummary[] };

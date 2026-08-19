@@ -2,7 +2,7 @@
 
 import { Settings } from "lucide-react";
 
-import { SettingsPage } from "@/components/settings/settings-page";
+import { SettingsPage } from "@/components/settings/page";
 import { FeaturePageHeader } from "@/components/shell/header";
 
 export default function SettingsRoute() {

@@ -2,7 +2,7 @@
 
 import { FlaskConical } from "lucide-react";
 
-import { EvaluationWorkbench } from "@/components/evaluations/evaluation-workbench";
+import { EvaluationWorkbench } from "@/components/evaluations/workbench";
 import { FeaturePageHeader } from "@/components/shell/header";
 
 export default async function EvaluationsPage({

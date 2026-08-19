@@ -2,7 +2,7 @@
 
 "use client";
 
-import { ChevronDown, CircleAlert, ExternalLink, LoaderCircle, Wrench } from "lucide-react";
+import { ChevronRight, CircleAlert, ExternalLink, LoaderCircle, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -12,7 +12,7 @@ import type { MessagePart } from "@/contracts/chat";
 
 type ToolPart = Extract<MessagePart, { type: "tool" }>;
 
-export function Tool({ part }: { part: ToolPart }) {
+export function Tool({ nested = false, part }: { nested?: boolean; part: ToolPart }) {
   const running = part.state === "running";
   const [open, setOpen] = useState(running);
   const artifact = readArtifact(part.output);
@@ -28,33 +28,32 @@ export function Tool({ part }: { part: ToolPart }) {
 
   return (
     <details
-      className="group/tool not-prose mb-2 w-full max-w-full overflow-hidden"
+      className={cn("group/tool not-prose w-full max-w-full overflow-hidden", !nested && "mb-2")}
       onToggle={(event) => setOpen(event.currentTarget.open)}
       open={open}
     >
-      <summary className="flex w-full min-w-0 cursor-pointer list-none items-center justify-between gap-3 border-b border-transparent py-2 text-left transition-colors hover:text-zinc-950 group-open/tool:border-zinc-200/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/60 dark:hover:text-white dark:group-open/tool:border-zinc-800/80 [&::-webkit-details-marker]:hidden">
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <span className="flex size-5 shrink-0 items-center justify-center text-zinc-500 dark:text-zinc-400">
-            <Wrench aria-hidden="true" className="size-3.5" strokeWidth={1.7} />
+      <summary
+        className={cn(
+          "flex w-full min-w-0 cursor-pointer list-none items-center gap-2.5 text-left transition-colors hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/60 dark:hover:text-white [&::-webkit-details-marker]:hidden",
+          nested ? "h-7 py-0" : "py-2",
+        )}
+      >
+        <span className="flex size-5 shrink-0 items-center justify-center text-zinc-500 dark:text-zinc-400">
+          <Wrench aria-hidden="true" className="size-3.5" strokeWidth={1.7} />
+        </span>
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">Tool</span>
+          <span className="truncate font-mono text-xs font-medium text-zinc-800 dark:text-zinc-200">
+            {part.name}
           </span>
-          <span className="flex min-w-0 items-baseline gap-2">
-            <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">Tool</span>
-            <span className="truncate font-mono text-xs font-medium text-zinc-800 dark:text-zinc-200">
-              {part.name}
-            </span>
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <ToolState state={part.state} />
-          <span className="flex size-6 items-center justify-center text-zinc-400 transition-colors group-hover/tool:text-zinc-700 dark:group-hover/tool:text-zinc-200">
-            <ChevronDown
-              aria-hidden="true"
-              className="size-4 transition-transform duration-200 group-open/tool:rotate-180"
-            />
-          </span>
-        </div>
+        </span>
+        <ChevronRight
+          aria-hidden="true"
+          className="size-4 shrink-0 text-zinc-400 transition-transform duration-200 group-open/tool:rotate-90 group-hover/tool:text-zinc-700 dark:group-hover/tool:text-zinc-200"
+        />
+        <ToolState state={part.state} />
       </summary>
-      <div className="min-w-0 max-w-full pl-7 pr-2 text-popover-foreground">
+      <div className="ml-2 min-w-0 max-w-full border-l border-border/70 pb-1 pl-3 pr-2 text-popover-foreground">
         {part.input !== undefined && part.input !== null ? (
           <ToolSection label="Input" value={part.input} />
         ) : null}
@@ -120,7 +119,7 @@ function StructuredValue({ nested = false, value }: { nested?: boolean; value: u
 
   if (isRecord(value)) {
     const directText = typeof value.text === "string" ? value.text : undefined;
-    if (directText) return <ResponseText className="text-sm leading-5" text={directText} />;
+    if (directText) return <ResponseText compact text={directText} />;
     const entries = Object.entries(value).filter(([key]) => !key.startsWith("_") && key !== "type");
     if (!entries.length) return <span className="text-zinc-500">None</span>;
     return (
@@ -129,14 +128,14 @@ function StructuredValue({ nested = false, value }: { nested?: boolean; value: u
           <div
             className={cn(
               "grid gap-1.5 py-2.5 first:pt-0 last:pb-0",
-              !nested && "sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4",
+              !nested && "sm:grid-cols-[6rem_minmax(0,1fr)] sm:gap-3",
             )}
             key={key}
           >
             <dt className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
               {humanizeLabel(key)}
             </dt>
-            <dd className="min-w-0 text-sm leading-5 text-zinc-800 dark:text-zinc-200">
+            <dd className="min-w-0 text-xs leading-4 text-zinc-800 dark:text-zinc-200">
               <StructuredValue nested value={item} />
             </dd>
           </div>
@@ -162,7 +161,7 @@ function StructuredValue({ nested = false, value }: { nested?: boolean; value: u
       </a>
     );
   }
-  if (typeof value === "string") return <ResponseText className="text-sm leading-5" text={value} />;
+  if (typeof value === "string") return <ResponseText compact text={value} />;
   return <span className="whitespace-pre-wrap break-words">{String(value)}</span>;
 }
 

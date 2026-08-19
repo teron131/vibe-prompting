@@ -21,6 +21,7 @@ import type {
   EvaluationRunSummary,
 } from "@/contracts/evaluations";
 import type { PromptDetail, PromptsResponse, PromptSummary } from "@/contracts/prompts";
+import type { TargetProfile, TargetProfileResponse } from "@/contracts/targets";
 
 type CriterionDraft = {
   categories: string;
@@ -46,6 +47,7 @@ export function EvaluationWorkbench({ initialPromptId }: { initialPromptId?: str
   const [runs, setRuns] = useState<EvaluationRunSummary[]>([]);
   const [promptId, setPromptId] = useState("");
   const [targetModelId, setTargetModelId] = useState("");
+  const [targetProfile, setTargetProfile] = useState<TargetProfile | null>();
   const [judges, setJudges] = useState<string[]>([]);
   const [cases, setCases] = useState<CaseDraft[]>([
     { input: "", criteria: [{ ...NEW_CRITERION }] },
@@ -80,6 +82,25 @@ export function EvaluationWorkbench({ initialPromptId }: { initialPromptId?: str
       .finally(() => setLoading(false));
   }, [initialPromptId]);
 
+  useEffect(() => {
+    if (!promptId) {
+      setTargetProfile(undefined);
+      return;
+    }
+    let active = true;
+    setTargetProfile(undefined);
+    void fetchJson<TargetProfileResponse>(`/api/targets?promptId=${encodeURIComponent(promptId)}`)
+      .then(({ profile }) => {
+        if (active) setTargetProfile(profile);
+      })
+      .catch((error) => {
+        if (active) toast.error(readError(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [promptId]);
+
   function updateCase(caseIndex: number, update: (draft: CaseDraft) => CaseDraft) {
     setCases((current) =>
       current.map((draft, index) => (index === caseIndex ? update(draft) : draft)),
@@ -103,6 +124,7 @@ export function EvaluationWorkbench({ initialPromptId }: { initialPromptId?: str
     event.preventDefault();
     const prompt = prompts.find(({ id }) => id === promptId);
     if (!prompt) return toast.error("Select a saved prompt.");
+    if (!targetProfile) return toast.error("This prompt does not have a target runtime profile.");
     let configuredCases: Array<{ criteria: Criterion[]; input: string }>;
     try {
       configuredCases = cases.map(projectCase);
@@ -195,6 +217,16 @@ export function EvaluationWorkbench({ initialPromptId }: { initialPromptId?: str
                 ))}
               </Select>
             </Field>
+          </div>
+          <div className="mt-3 rounded-lg bg-secondary/50 px-3 py-2 text-xs">
+            <span className="font-medium">Target runtime</span>
+            <span className="ml-2 text-muted-foreground">
+              {targetProfile === undefined
+                ? "Checking configuration…"
+                : targetProfile
+                  ? `${targetProfile.name} · revision ${targetProfile.revisionNumber}`
+                  : "Not configured for this prompt"}
+            </span>
           </div>
           <fieldset className="mt-4">
             <legend className="text-sm font-medium">Judge models</legend>
@@ -299,7 +331,10 @@ export function EvaluationWorkbench({ initialPromptId }: { initialPromptId?: str
             <Plus aria-hidden="true" className="size-4" />
             Add case
           </Button>
-          <Button disabled={submitting || !prompts.length || !models.length} type="submit">
+          <Button
+            disabled={submitting || !prompts.length || !models.length || !targetProfile}
+            type="submit"
+          >
             {submitting ? (
               <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
             ) : (
@@ -333,9 +368,12 @@ export function EvaluationWorkbench({ initialPromptId }: { initialPromptId?: str
                     {run.caseCount} {run.caseCount === 1 ? "case" : "cases"} ·{" "}
                     {run.judgeModelIds.length} {run.judgeModelIds.length === 1 ? "judge" : "judges"}
                   </div>
-                  <div className="truncate">{run.targetModelId}</div>
+                  <div className="truncate">
+                    {run.targetProfileName ?? "Legacy runtime"} · {run.targetModelId}
+                  </div>
                   <div>
-                    {run.source} · revision {run.promptRevisionId.slice(0, 8)}
+                    {run.source === "ai" ? "AI" : "Human"} · revision{" "}
+                    {run.promptRevisionId.slice(0, 8)}
                   </div>
                   <div>{formatDate(run.completedAt ?? run.createdAt)}</div>
                 </div>

@@ -7,7 +7,8 @@ import {
   generateChatMetadata,
   getApplicationServices,
   isConfiguredModelId,
-  type PromptStore,
+  PromptRevisionNotFoundError,
+  type PromptSystem,
   type StoredMessagePart,
   type StoredPrompt,
   streamChatRun,
@@ -23,6 +24,7 @@ import type {
   DeleteChatResponse,
   PromptQuote,
   RunEvent,
+  SteerChatResponse,
   StopChatResponse,
 } from "@/contracts/chat";
 
@@ -148,6 +150,7 @@ export async function POST(request: Request) {
           prompts: services.prompts,
           reasoningEffort: input.workspace.reasoningEffort,
           signal: claim?.signal,
+          steering: claim?.steering,
         },
         (event) => {
           collected.add(event);
@@ -198,6 +201,32 @@ export async function PATCH(request: Request) {
   }
 }
 
+export async function PUT(request: Request) {
+  try {
+    const input = parseSteeringRequest(await request.json());
+    if (!(await isConfiguredModelId(input.modelId))) {
+      throw new RequestError(`Unknown configured model: ${input.modelId}.`, 400);
+    }
+    const services = await getApplicationServices();
+    if (!services.runs.steer(input.chatId, input.instruction)) {
+      throw new RequestError("The agent run is no longer available to steer.", 409);
+    }
+    await services.conversations.appendUserMessage({
+      attachments: [],
+      chatId: input.chatId,
+      context: input.workspace,
+      instruction: input.instruction,
+      messageId: input.messageId,
+      modelId: input.modelId,
+      quotes: [],
+    });
+    const payload = { accepted: true } satisfies SteerChatResponse;
+    return Response.json(payload, { headers: NO_STORE_HEADERS });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const chatId = requireUuid(new URL(request.url).searchParams.get("id"), "Chat ID");
@@ -212,27 +241,21 @@ export async function DELETE(request: Request) {
 }
 
 class CollectedAssistantParts {
-  readonly #evaluations: StoredMessagePart[] = [];
   readonly #reasoning: StoredMessagePart[] = [];
   readonly #tools = new Map<string, Extract<StoredMessagePart, { type: "tool" }>>();
 
   add(event: AgentStreamEvent): void {
-    if (event.type === "reasoning") {
+    if (event.type === "response-reset") {
+      this.#reasoning.length = 0;
+    } else if (event.type === "reasoning") {
       this.#reasoning.push({ type: "reasoning", summary: event.summary });
     } else if (event.type === "tool") {
       this.#tools.set(event.callId, { ...this.#tools.get(event.callId), ...event });
-    } else if (event.type === "evaluation") {
-      this.#evaluations.push({ type: "evaluation", report: event.report });
     }
   }
 
   finish(message: string): StoredMessagePart[] {
-    return [
-      ...this.#reasoning,
-      ...this.#tools.values(),
-      ...this.#evaluations,
-      { type: "text", text: message },
-    ];
+    return [...this.#reasoning, ...this.#tools.values(), { type: "text", text: message }];
   }
 }
 
@@ -279,6 +302,17 @@ function parseChatRequest(value: unknown): ChatRequest {
     throw new RequestError("A replacement must reuse the selected user message ID.", 400);
   }
   return input;
+}
+
+function parseSteeringRequest(value: unknown) {
+  const record = readRecord(value);
+  return {
+    chatId: requireUuid(record.chatId, "Chat ID"),
+    instruction: requireText(record.instruction, "Steering message"),
+    messageId: requireUuid(record.messageId, "Message ID"),
+    modelId: requireText(record.modelId, "Model"),
+    workspace: requireWorkspaceContext(record.workspace),
+  };
 }
 
 function projectRunHistory(
@@ -330,17 +364,20 @@ function requirePromptQuotes(value: unknown): PromptQuote[] {
 }
 
 async function validatePromptQuotes(
-  prompts: PromptStore,
+  prompts: PromptSystem,
   quotes: PromptQuote[],
 ): Promise<PromptQuote[]> {
   return Promise.all(
     quotes.map(async (quote) => {
-      const [prompt, revisions] = await Promise.all([
-        prompts.getPrompt(quote.promptId),
-        prompts.listRevisions(quote.promptId),
-      ]);
-      const revision = revisions.find(({ id }) => id === quote.revisionId);
-      if (!revision) throw new RequestError("A quoted prompt revision was not found.", 400);
+      const prompt = await prompts.getPrompt(quote.promptId);
+      const revision = await prompts
+        .getRevision(quote.promptId, quote.revisionId)
+        .catch((error) => {
+          if (error instanceof PromptRevisionNotFoundError) {
+            throw new RequestError("A quoted prompt revision was not found.", 400);
+          }
+          throw error;
+        });
       if (!revision.markdown.includes(quote.text))
         throw new RequestError("Quoted prompt text no longer matches its revision.", 400);
       return { ...quote, title: prompt.title };
@@ -356,7 +393,7 @@ function formatWorkspaceInstruction(
   const context: string[] = [];
   if (activePrompt) {
     context.push(
-      `Current prompt artifact: ${activePrompt.title} (prompt ${activePrompt.id}, revision ${activePrompt.revisionId}).\n<prompt_markdown>\n${activePrompt.markdown}\n</prompt_markdown>`,
+      `Current prompt: ${activePrompt.title} (prompt ${activePrompt.id}, revision ${activePrompt.revisionId}).\n<prompt_markdown>\n${activePrompt.markdown}\n</prompt_markdown>`,
     );
   }
   for (const quote of quotes) {

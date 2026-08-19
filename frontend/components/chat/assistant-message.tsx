@@ -4,7 +4,9 @@
 
 import {
   BarChart3,
+  Brain,
   Check,
+  ChevronRight,
   Copy,
   FileText,
   GitCommitHorizontal,
@@ -12,6 +14,7 @@ import {
   Pencil,
   Quote,
   RefreshCcw,
+  Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -32,6 +35,7 @@ type PromptReference = {
 };
 
 export function AssistantMessage({
+  continuedByUser = false,
   disabled,
   message,
   modelId,
@@ -39,6 +43,7 @@ export function AssistantMessage({
   onPromptReference,
   onRerun,
 }: {
+  continuedByUser?: boolean;
   disabled: boolean;
   message: ChatMessage;
   modelId?: string;
@@ -54,7 +59,7 @@ export function AssistantMessage({
   return (
     <Message
       actions={
-        !disabled && !editing && (text || onRerun) ? (
+        !continuedByUser && !disabled && !editing && (text || onRerun) ? (
           <MessageActions
             onCopy={text ? () => copyMessage(text) : undefined}
             onEdit={message.role === "user" && text ? () => setEditing(true) : undefined}
@@ -66,6 +71,7 @@ export function AssistantMessage({
       avatar={
         message.role === "assistant" ? <ModelIcon className="size-6" modelId={modelId} /> : null
       }
+      compactAfter={continuedByUser}
       role={message.role}
     >
       {editing ? (
@@ -91,14 +97,11 @@ export function AssistantMessage({
         </>
       ) : (
         <>
-          {message.parts.map((part, index) => (
-            <MessagePartView
-              key={`${part.type}-${index}`}
-              onPromptReference={onPromptReference}
-              part={part}
-              role={message.role}
-            />
-          ))}
+          <MessageParts
+            onPromptReference={onPromptReference}
+            parts={message.parts}
+            role={message.role}
+          />
           {disabled && message.role === "assistant" && message.parts.length === 0 ? (
             <div
               className="flex items-center gap-2 py-1 text-xs text-muted-foreground"
@@ -112,6 +115,133 @@ export function AssistantMessage({
       )}
     </Message>
   );
+}
+
+type ActivityPart = Extract<MessagePart, { type: "reasoning" | "tool" }>;
+type ToolPart = Extract<MessagePart, { type: "tool" }>;
+
+function MessageParts({
+  onPromptReference,
+  parts,
+  role,
+}: {
+  onPromptReference(reference: PromptReference): void;
+  parts: MessagePart[];
+  role: ChatMessage["role"];
+}) {
+  const rendered: ReactNode[] = [];
+  let index = 0;
+
+  while (index < parts.length) {
+    const part = parts[index];
+    if (part.type !== "reasoning" && part.type !== "tool") {
+      rendered.push(
+        <MessagePartView
+          key={`${part.type}-${index}`}
+          onPromptReference={onPromptReference}
+          part={part}
+          role={role}
+        />,
+      );
+      index += 1;
+      continue;
+    }
+
+    const start = index;
+    const activity: ActivityPart[] = [];
+    while (index < parts.length) {
+      const candidate = parts[index];
+      if (candidate.type !== "reasoning" && candidate.type !== "tool") break;
+      activity.push(candidate);
+      index += 1;
+    }
+    rendered.push(<ActivityGroup key={`activity-${start}`} parts={activity} />);
+  }
+
+  return rendered;
+}
+
+function ActivityGroup({ parts }: { parts: ActivityPart[] }) {
+  const [open, setOpen] = useState(true);
+  const toolCount = parts.filter((part) => part.type === "tool").length;
+  const reasoningCount = parts.filter((part) => part.type === "reasoning").length;
+  const running = parts.some((part) => part.type === "tool" && part.state === "running");
+  const summary = activitySummary(
+    reasoningCount,
+    parts.filter((part): part is ToolPart => part.type === "tool"),
+  );
+
+  useEffect(() => {
+    if (running) setOpen(true);
+  }, [running]);
+
+  return (
+    <details
+      className="group/activity not-prose text-xs text-muted-foreground"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      open={open}
+    >
+      <summary className="flex w-full cursor-pointer list-none items-center gap-2 py-1.5 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 [&::-webkit-details-marker]:hidden">
+        <span className="flex size-5 shrink-0 items-center justify-center">
+          {toolCount ? (
+            <Wrench aria-hidden="true" className="size-3.5" strokeWidth={1.7} />
+          ) : (
+            <Brain aria-hidden="true" className="size-3.5" strokeWidth={1.7} />
+          )}
+        </span>
+        <span className="min-w-0 truncate">{summary}</span>
+        <ChevronRight
+          aria-hidden="true"
+          className="size-4 shrink-0 transition-transform duration-200 group-open/activity:rotate-90"
+        />
+      </summary>
+      <div className="ml-2 border-l border-border/70 pl-3">
+        {parts.map((part, index) =>
+          part.type === "reasoning" ? (
+            <Reasoning key={`reasoning-${index}`} nested summary={part.summary} />
+          ) : (
+            <Tool key={part.callId || `tool-${index}`} nested part={part} />
+          ),
+        )}
+      </div>
+    </details>
+  );
+}
+
+function activitySummary(reasoningCount: number, tools: ToolPart[]) {
+  const activities = reasoningCount
+    ? [`Reasoned in ${reasoningCount} ${reasoningCount === 1 ? "step" : "steps"}`]
+    : [];
+  const counts = new Map<string, number>();
+  for (const tool of tools) {
+    const action = toolAction(tool.name);
+    counts.set(action, (counts.get(action) ?? 0) + 1);
+  }
+  for (const [action, count] of counts) activities.push(toolActionSummary(action, count));
+  return activities.join(" · ");
+}
+
+function toolAction(name: string) {
+  if (name === "web_search_exa") return "web-search";
+  if (name === "read_prompt") return "read-prompt";
+  if (name === "patch_prompt" || name === "apply_patch") return "edit-prompt";
+  if (name === "create_prompt") return "create-prompt";
+  if (name === "evaluate") return "evaluate";
+  if (name === "search_prompts") return "search-prompts";
+  if (name === "list_prompts") return "list-prompts";
+  return name;
+}
+
+function toolActionSummary(action: string, count: number) {
+  if (action === "web-search") return `Searched the web ${count} ${count === 1 ? "time" : "times"}`;
+  if (action === "read-prompt") return `Read ${count} ${count === 1 ? "prompt" : "prompts"}`;
+  if (action === "edit-prompt") return `Edited ${count} ${count === 1 ? "prompt" : "prompts"}`;
+  if (action === "create-prompt") return `Created ${count} ${count === 1 ? "prompt" : "prompts"}`;
+  if (action === "evaluate") return `Ran ${count} ${count === 1 ? "evaluation" : "evaluations"}`;
+  if (action === "search-prompts")
+    return `Searched prompts ${count} ${count === 1 ? "time" : "times"}`;
+  if (action === "list-prompts") return `Listed prompts ${count} ${count === 1 ? "time" : "times"}`;
+  return `Ran ${action} ${count} ${count === 1 ? "time" : "times"}`;
 }
 
 function MessagePartView({

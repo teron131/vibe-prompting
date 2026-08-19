@@ -8,15 +8,17 @@ export function Message({
   actions,
   avatar,
   children,
+  compactAfter = false,
   role,
 }: {
   actions?: ReactNode;
   avatar?: ReactNode;
   children: ReactNode;
+  compactAfter?: boolean;
   role: "assistant" | "user";
 }) {
   return (
-    <article className="group/message mb-6 w-full">
+    <article className={cn("group/message w-full", compactAfter ? "mb-2" : "mb-6")}>
       <div
         className={cn(
           "flex w-full items-start gap-2 md:gap-3",

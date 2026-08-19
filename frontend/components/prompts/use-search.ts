@@ -94,27 +94,13 @@ export function usePromptSearch({
   return {
     error: serverState.error,
     loading: serverState.loading,
-    results: serverState.results.slice(0, limit),
+    results: (serverState.error ? localResults : serverState.results).slice(0, limit),
   };
 }
 
 function findLocalPrompts(prompts: PromptSummary[], query: string): PromptSearchResult[] {
   const normalizedQuery = query.toLocaleLowerCase();
   return prompts
-    .filter(
-      ({ markdown, title }) =>
-        !normalizedQuery ||
-        title.toLocaleLowerCase().includes(normalizedQuery) ||
-        markdown.toLocaleLowerCase().includes(normalizedQuery),
-    )
-    .map((prompt) => ({ ...prompt, snippet: createSnippet(prompt.markdown, normalizedQuery) }));
-}
-
-function createSnippet(markdown: string, query: string): string {
-  const text = markdown.replace(/\s+/g, " ").trim();
-  if (!text) return "No prompt content";
-  const matchIndex = query ? text.toLocaleLowerCase().indexOf(query) : 0;
-  const start = Math.max(0, matchIndex - 40);
-  const excerpt = text.slice(start, start + 140);
-  return `${start ? "…" : ""}${excerpt}${start + excerpt.length < text.length ? "…" : ""}`;
+    .filter(({ title }) => !normalizedQuery || title.toLocaleLowerCase().includes(normalizedQuery))
+    .map((prompt) => ({ ...prompt, passages: [] }));
 }

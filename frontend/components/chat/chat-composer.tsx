@@ -17,6 +17,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { usePromptSearch } from "@/components/prompts/use-search";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import type {
@@ -28,13 +29,12 @@ import type {
 } from "@/contracts/chat";
 import type { PromptSummary } from "@/contracts/prompts";
 import { useDismissibleDetails } from "@/hooks/use-dismissible-details";
-import { usePromptSearch } from "@/hooks/use-prompt-search";
 
 import { ModelSelector } from "./model-selector";
 
 const TOOL_OPTIONS: Array<{ description: string; id: ChatToolId; label: string }> = [
   {
-    description: "Create, read, and edit saved prompt artifacts.",
+    description: "Create, read, and edit saved prompts.",
     id: "prompt-library",
     label: "Prompt library",
   },
@@ -109,6 +109,7 @@ export function ChatComposer({
   const canSubmit = Boolean(
     (instruction.trim() || attachments.length || quotes.length) && selectedModelId,
   );
+  const canSteer = Boolean(instruction.trim());
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -176,7 +177,7 @@ export function ChatComposer({
         className="relative rounded-3xl border border-border/70 bg-background p-3 shadow-lg transition-shadow focus-within:shadow-xl"
         onSubmit={(event) => {
           event.preventDefault();
-          if (canSubmit && !running) onSubmit();
+          if (running ? canSteer : canSubmit) onSubmit();
         }}
         ref={composerRef}
       >
@@ -248,7 +249,6 @@ export function ChatComposer({
           aria-haspopup="listbox"
           aria-label="Message"
           className="block min-h-11 w-full resize-none overflow-y-auto bg-transparent px-2 py-2 text-base leading-7 outline-none placeholder:text-muted-foreground"
-          disabled={running}
           onChange={(event) => {
             onInstructionChange(event.target.value);
             if (mentionOpen && mentionQuery === null) setMentionOpen(false);
@@ -276,12 +276,13 @@ export function ChatComposer({
               return;
             }
             if (event.key === "Enter" && !event.shiftKey) {
+              if (event.nativeEvent.isComposing) return;
               event.preventDefault();
               if (mentionOpen) {
                 if (activeMentionPrompt) selectPrompt(activeMentionPrompt);
                 return;
               }
-              if (canSubmit && !running) onSubmit();
+              if (running ? canSteer : canSubmit) composerRef.current?.requestSubmit();
             }
           }}
           onPaste={(event) => {
@@ -293,7 +294,11 @@ export function ChatComposer({
               void addFiles(files, attachments, onAttachmentsChange);
             }
           }}
-          placeholder="Ask anything, or use @ to reference a prompt…"
+          placeholder={
+            running
+              ? "Add guidance while the agent works…"
+              : "Ask anything, or use @ to reference a prompt…"
+          }
           ref={textareaRef}
           role="combobox"
           rows={1}
@@ -328,28 +333,40 @@ export function ChatComposer({
             >
               <AtSign aria-hidden="true" className="size-4" />
             </button>
-            <ToolSelector disabled={running} onChange={onToolsChange} value={enabledTools} />
+            <ToolSelector disabled={false} onChange={onToolsChange} value={enabledTools} />
             <ModelSelector
-              disabled={running}
+              disabled={false}
               models={models}
               onChange={onModelChange}
               value={selectedModelId}
             />
             <ReasoningSelector
-              disabled={running}
+              disabled={false}
               onChange={onReasoningEffortChange}
               value={reasoningEffort}
             />
           </div>
           {running ? (
-            <Button
-              aria-label="Stop generating"
-              className="size-10 shrink-0 rounded-full"
-              onClick={onStop}
-              size="icon"
-            >
-              <Square aria-hidden="true" className="size-3.5 fill-current" />
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                aria-label="Stop generating"
+                className="size-9 rounded-full"
+                onClick={onStop}
+                size="icon"
+                variant="ghost"
+              >
+                <Square aria-hidden="true" className="size-3 fill-current" />
+              </Button>
+              <Button
+                aria-label="Steer agent"
+                className="size-10 rounded-full"
+                disabled={!canSteer}
+                size="icon"
+                type="submit"
+              >
+                <ArrowUp aria-hidden="true" className="size-4" />
+              </Button>
+            </div>
           ) : (
             <Button
               aria-label="Send message"
@@ -412,7 +429,7 @@ export function ChatComposer({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{prompt.title}</span>
                       <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                        {prompt.snippet}
+                        {prompt.passages[0]?.text}
                       </span>
                       <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
                         revision {prompt.revisionId.slice(0, 8)}

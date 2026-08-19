@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const services = await getApplicationServices();
     return Response.json(
-      (await services.evaluations.startBrowserRun(body)) satisfies EvaluationRunSummary,
+      (await services.evaluations.startHumanRun(body)) satisfies EvaluationRunSummary,
       {
         headers: NO_STORE_HEADERS,
         status: 202,

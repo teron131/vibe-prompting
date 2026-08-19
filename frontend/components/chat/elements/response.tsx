@@ -37,11 +37,21 @@ function normalizeLatexDelimiters(markdown: string) {
     .join("");
 }
 
-export function ResponseText({ className, text }: { className?: string; text: string }) {
+export function ResponseText({
+  className,
+  compact = false,
+  text,
+}: {
+  className?: string;
+  compact?: boolean;
+  text: string;
+}) {
   return (
     <Streamdown
       className={cn(
         "size-full min-w-0 text-sm leading-6 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:text-blue-700 [&_a]:underline [&_a]:underline-offset-2 [&_code]:break-words [&_code]:whitespace-pre-wrap [&_code]:text-sm [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:text-sm [&_pre_code]:break-normal! [&_pre_code]:whitespace-pre! dark:[&_a]:text-blue-300",
+        compact &&
+          "text-xs! leading-4! [&_code]:text-xs! [&_h1]:my-1.5! [&_h1]:text-sm! [&_h1]:leading-5! [&_h2]:my-1.5! [&_h2]:text-xs! [&_h2]:leading-4! [&_h3]:my-1! [&_h3]:text-xs! [&_h3]:leading-4! [&_li]:my-0.5! [&_ol]:my-1.5! [&_p]:my-1.5! [&_pre]:text-xs! [&_ul]:my-1.5!",
         className,
       )}
       remarkPlugins={responseRemarkPlugins}

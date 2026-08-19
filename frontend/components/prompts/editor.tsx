@@ -1,0 +1,664 @@
+/** Owns current prompt reading, editing, preview, conflict-safe immutable saves, dirty navigation guards, and revision inspection. */
+
+"use client";
+
+import {
+  BookOpen,
+  Eye,
+  GitCompareArrows,
+  History,
+  LoaderCircle,
+  Pencil,
+  Redo2,
+  Save,
+  Undo2,
+} from "lucide-react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+
+import { MarkdownPreview } from "@/components/prompts/artifact";
+import { PromptDiff } from "@/components/prompts/diff";
+import { PromptEvaluationView } from "@/components/prompts/evaluation-view";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/components/ui/utils";
+import type {
+  BooleanTrendPoint,
+  EvaluationRun,
+  EvaluationRunResponse,
+  EvaluationRunsResponse,
+  EvaluationRunSummary,
+} from "@/contracts/evaluations";
+import type {
+  PromptCurrent,
+  PromptDetail,
+  PromptRevisionResponse,
+  PromptRevisionSummary,
+  PromptSearchPassage,
+} from "@/contracts/prompts";
+
+export function PromptEditor({
+  onDirtyChange,
+  promptId,
+  selectedPassage,
+}: {
+  onDirtyChange?(dirty: boolean): void;
+  promptId: string;
+  selectedPassage?: PromptSearchPassage;
+}) {
+  const [detail, setDetail] = useState<PromptDetail>();
+  const [draft, setDraft] = useState("");
+  const [mode, setMode] = useState<"edit" | "preview" | "read">("edit");
+  const [view, setView] = useState<"edit" | "evaluations" | "history">("edit");
+  const [selectedRevisionId, setSelectedRevisionId] = useState("");
+  const [selectedRevision, setSelectedRevision] = useState<PromptRevisionResponse>();
+  const [revisionLoading, setRevisionLoading] = useState(false);
+  const [revisionError, setRevisionError] = useState<string>();
+  const [revisionRequest, setRevisionRequest] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [historyAction, setHistoryAction] = useState<"redo" | "undo">();
+  const [error, setError] = useState<string>();
+  const [runs, setRuns] = useState<EvaluationRunSummary[]>([]);
+  const [trend, setTrend] = useState<BooleanTrendPoint[]>([]);
+  const [latestRun, setLatestRun] = useState<EvaluationRun>();
+  const [latestRunLoading, setLatestRunLoading] = useState(false);
+  const [latestRunError, setLatestRunError] = useState<string>();
+  const [latestRunRequest, setLatestRunRequest] = useState(0);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dirty = Boolean(detail && draft !== detail.prompt.markdown);
+
+  const loadPrompt = useCallback(async () => {
+    const value = await fetchJson<PromptDetail>(`/api/prompts/${promptId}`);
+    setDetail(value);
+    setDraft(value.prompt.markdown);
+    setSelectedRevisionId(value.prompt.revisionId);
+    setError(undefined);
+  }, [promptId]);
+
+  const loadRuns = useCallback(async () => {
+    try {
+      const value = await fetchJson<EvaluationRunsResponse>(
+        `/api/evaluations?promptId=${encodeURIComponent(promptId)}`,
+      );
+      setRuns(value.runs);
+      setLatestRunError(undefined);
+    } catch (cause) {
+      setRuns([]);
+      setLatestRunError(readError(cause));
+    }
+  }, [promptId]);
+
+  useEffect(() => {
+    void loadPrompt().catch((cause) => setError(readError(cause)));
+    void loadRuns();
+  }, [loadPrompt, loadRuns]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (
+      !detail ||
+      !selectedPassage ||
+      selectedPassage.revisionId !== detail.prompt.revisionId ||
+      dirty
+    )
+      return;
+    if (view !== "edit" || mode !== "edit") {
+      setView("edit");
+      setMode("edit");
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      const start = Math.min(selectedPassage.start, textarea.value.length);
+      const end = Math.min(Math.max(selectedPassage.end, start), textarea.value.length);
+      textarea.focus();
+      textarea.setSelectionRange(start, end);
+      scrollTextareaToOffset(textarea, start);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [detail, dirty, mode, selectedPassage, view]);
+
+  useEffect(() => {
+    if (!selectedRevisionId) return;
+    const controller = new AbortController();
+    setRevisionLoading(true);
+    setRevisionError(undefined);
+    void fetchJson<PromptRevisionResponse>(
+      `/api/prompts/${promptId}/revisions/${selectedRevisionId}`,
+      { signal: controller.signal },
+    )
+      .then((value) => setSelectedRevision(value))
+      .catch((cause) => {
+        if (!controller.signal.aborted) setRevisionError(readError(cause));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRevisionLoading(false);
+      });
+    return () => controller.abort();
+  }, [promptId, revisionRequest, selectedRevisionId]);
+
+  const latestRunId = runs[0]?.id;
+  useEffect(() => {
+    if (!latestRunId) {
+      setLatestRun(undefined);
+      setTrend([]);
+      return;
+    }
+    let cancelled = false;
+    let timer: number | undefined;
+    setLatestRunLoading(true);
+    setLatestRunError(undefined);
+    const refresh = async () => {
+      try {
+        const value = await fetchJson<EvaluationRunResponse>(`/api/evaluations/${latestRunId}`);
+        if (cancelled) return;
+        setLatestRun(value.run);
+        setTrend(value.trend);
+        setLatestRunLoading(false);
+        if (value.run.status === "running") timer = window.setTimeout(refresh, 1500);
+      } catch (cause) {
+        if (cancelled) return;
+        setLatestRunError(readError(cause));
+        setLatestRunLoading(false);
+      }
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [latestRunId, latestRunRequest]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    const guardLinks = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (target && !window.confirm("Discard the unsaved prompt draft?")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    document.addEventListener("click", guardLinks, true);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("click", guardLinks, true);
+    };
+  }, [dirty]);
+
+  async function save() {
+    if (!detail || !dirty || saving) return;
+    setSaving(true);
+    setError(undefined);
+    try {
+      await fetchJson<PromptCurrent>(`/api/prompts/${promptId}`, {
+        body: JSON.stringify({ expectedRevisionId: detail.prompt.revisionId, markdown: draft }),
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      });
+      await loadPrompt();
+    } catch (cause) {
+      const message = readError(cause);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const navigateHistory = useCallback(
+    async (action: "redo" | "undo") => {
+      if (!detail || dirty || saving || historyAction) return;
+      setHistoryAction(action);
+      setError(undefined);
+      try {
+        await fetchJson<PromptCurrent>(`/api/prompts/${promptId}`, {
+          body: JSON.stringify({ action, expectedRevisionId: detail.prompt.revisionId }),
+          headers: { "content-type": "application/json" },
+          method: "PATCH",
+        });
+        await loadPrompt();
+      } catch (cause) {
+        const message = readError(cause);
+        setError(message);
+        toast.error(message);
+      } finally {
+        setHistoryAction(undefined);
+      }
+    },
+    [detail, dirty, historyAction, loadPrompt, promptId, saving],
+  );
+
+  function saveWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.key.toLowerCase() !== "s")
+      return;
+    event.preventDefault();
+    void save();
+  }
+
+  useEffect(() => {
+    const handleSavedRevisionShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isEditableTarget(event.target)) return;
+      if ((!event.ctrlKey && !event.metaKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      const action =
+        key === "z" && !event.shiftKey
+          ? "undo"
+          : key === "y" || (key === "z" && event.shiftKey)
+            ? "redo"
+            : undefined;
+      if (!action) return;
+      const available = action === "undo" ? detail?.prompt.canUndo : detail?.prompt.canRedo;
+      if (!available || dirty || saving || historyAction) return;
+      event.preventDefault();
+      void navigateHistory(action);
+    };
+    window.addEventListener("keydown", handleSavedRevisionShortcut);
+    return () => window.removeEventListener("keydown", handleSavedRevisionShortcut);
+  }, [detail, dirty, historyAction, navigateHistory, saving]);
+
+  const selectedRevisionSummary = detail?.revisions.find(({ id }) => id === selectedRevisionId);
+  const selectedDate = selectedRevisionSummary ? formatDate(selectedRevisionSummary.createdAt) : "";
+  const revisionVersions = new Map(
+    detail?.revisions.map((revision, index, revisions) => [
+      revision.id,
+      revisions.length - index,
+    ]) ?? [],
+  );
+
+  if (!detail && !error)
+    return (
+      <div className="grid min-h-[60vh] place-items-center">
+        <LoaderCircle
+          aria-label="Loading prompt"
+          className="size-5 animate-spin text-muted-foreground"
+        />
+      </div>
+    );
+  if (!detail)
+    return (
+      <div className="p-4">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          {error}
+        </div>
+      </div>
+    );
+
+  return (
+    <div className="w-full" onKeyDown={saveWithKeyboard}>
+      <div className="mb-4">
+        <h2 className="text-xl font-semibold">{detail.prompt.title}</h2>
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <button
+            aria-label={view === "history" ? "Close version history" : "Open version history"}
+            aria-pressed={view === "history"}
+            className={cn(
+              "inline-flex h-7 items-center gap-1.5 rounded-md px-2 font-medium hover:bg-accent hover:text-foreground",
+              view === "history" && "bg-accent text-foreground",
+            )}
+            onClick={() => setView((current) => (current === "history" ? "edit" : "history"))}
+            title="Version history"
+            type="button"
+          >
+            <History aria-hidden="true" className="size-3.5" />v{detail.prompt.revisionNumber} ·{" "}
+            {detail.prompt.revisionCount} versions
+          </button>
+          <span>Updated {formatDate(detail.prompt.updatedAt)}</span>
+        </div>
+      </div>
+      {error ? (
+        <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+      <div aria-label="Prompt views" className="mb-5 flex border-b" role="tablist">
+        <PromptViewTab active={view === "edit"} label="Prompt" onClick={() => setView("edit")} />
+        <PromptViewTab
+          active={view === "evaluations"}
+          label={`Evaluations ${runs.length}`}
+          onClick={() => setView("evaluations")}
+        />
+      </div>
+      {view === "edit" ? (
+        <section className="overflow-hidden border-y bg-card/20">
+          <div className="flex h-11 items-center gap-1 border-b px-2">
+            <div
+              aria-label="Prompt view mode"
+              className="grid h-8 min-w-0 flex-1 grid-cols-3 sm:max-w-72"
+              role="group"
+            >
+              <button
+                aria-pressed={mode === "read"}
+                className={cn(
+                  "inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  mode === "read" && "bg-primary font-semibold text-primary-foreground",
+                )}
+                onClick={() => setMode("read")}
+                type="button"
+              >
+                <BookOpen aria-hidden="true" className="size-3.5 shrink-0" />
+                Read
+              </button>
+              <button
+                aria-pressed={mode === "edit"}
+                className={cn(
+                  "inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  mode === "edit" && "bg-primary font-semibold text-primary-foreground",
+                )}
+                onClick={() => setMode("edit")}
+                type="button"
+              >
+                <Pencil aria-hidden="true" className="size-3.5 shrink-0" />
+                Edit
+              </button>
+              <button
+                aria-pressed={mode === "preview"}
+                className={cn(
+                  "inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  mode === "preview" && "bg-primary font-semibold text-primary-foreground",
+                )}
+                onClick={() => setMode("preview")}
+                type="button"
+              >
+                <Eye aria-hidden="true" className="size-4 shrink-0" />
+                Preview
+              </button>
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              {!dirty && detail.prompt.canUndo ? (
+                <Button
+                  aria-label="Undo last saved change"
+                  disabled={saving || Boolean(historyAction)}
+                  onClick={() => navigateHistory("undo")}
+                  size="icon"
+                  title="Undo saved revision (Ctrl/Cmd+Z)"
+                  variant="ghost"
+                >
+                  {historyAction === "undo" ? (
+                    <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+                  ) : (
+                    <Undo2 aria-hidden="true" className="size-4" />
+                  )}
+                </Button>
+              ) : null}
+              {!dirty && detail.prompt.canRedo ? (
+                <Button
+                  aria-label="Redo saved change"
+                  disabled={saving || Boolean(historyAction)}
+                  onClick={() => navigateHistory("redo")}
+                  size="icon"
+                  title="Redo saved revision (Ctrl+Y or Cmd/Ctrl+Shift+Z)"
+                  variant="ghost"
+                >
+                  {historyAction === "redo" ? (
+                    <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+                  ) : (
+                    <Redo2 aria-hidden="true" className="size-4" />
+                  )}
+                </Button>
+              ) : null}
+              {dirty ? (
+                <Button disabled={saving} onClick={save} size="sm">
+                  {saving ? (
+                    <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+                  ) : (
+                    <Save aria-hidden="true" className="size-4" />
+                  )}
+                  Save
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          {mode === "preview" ? (
+            <MarkdownPreview className="min-h-96 p-5 sm:p-7" markdown={draft} />
+          ) : mode === "read" ? (
+            <pre
+              aria-label="Latest prompt source"
+              className="min-h-[32rem] whitespace-pre-wrap break-words px-5 py-5 font-mono text-sm leading-6 sm:px-7 sm:py-7"
+              tabIndex={0}
+            >
+              {draft}
+            </pre>
+          ) : (
+            <div className="relative">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 overflow-hidden"
+              >
+                <div className="pt-5 font-mono text-sm leading-6 sm:pt-7" ref={gutterRef}>
+                  {draft.split("\n").map((line, index) => (
+                    <div className="grid min-h-6 grid-cols-[3rem_minmax(0,1fr)]" key={index}>
+                      <span className="select-none border-r border-border/70 pr-3 text-right text-muted-foreground/55">
+                        {index + 1}
+                      </span>
+                      <span className="invisible whitespace-pre-wrap break-words pl-4 pr-5 sm:pr-7">
+                        {line}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <Textarea
+                aria-label="Prompt Markdown"
+                className="relative min-h-[32rem] resize-y rounded-none border-0 bg-transparent py-5 pl-16 pr-5 font-mono leading-6 shadow-none focus-visible:outline-none sm:py-7 sm:pl-16 sm:pr-7"
+                onChange={(event) => setDraft(event.target.value)}
+                onScroll={(event) => {
+                  if (gutterRef.current) {
+                    gutterRef.current.style.transform = `translateY(-${event.currentTarget.scrollTop}px)`;
+                  }
+                }}
+                ref={textareaRef}
+                value={draft}
+              />
+            </div>
+          )}
+        </section>
+      ) : null}
+      {view === "history" ? (
+        <section className="grid gap-5 lg:grid-cols-[18rem_1fr]">
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold">Revision history</h3>
+              <span className="text-xs text-muted-foreground">
+                {detail.revisions.length} versions
+              </span>
+            </div>
+            <div className="overflow-hidden rounded-xl border bg-card">
+              {detail.revisions.map((revision, index) => (
+                <RevisionButton
+                  active={revision.id === selectedRevisionId}
+                  current={revision.id === detail.prompt.revisionId}
+                  key={revision.id}
+                  onClick={() => {
+                    setSelectedRevisionId(revision.id);
+                    setSelectedRevision(undefined);
+                  }}
+                  revision={revision}
+                  version={detail.revisions.length - index}
+                />
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <GitCompareArrows aria-hidden="true" className="size-4" />
+              <h3 className="text-sm font-semibold">Adjacent revision diff</h3>
+            </div>
+            {revisionLoading ? (
+              <div className="grid min-h-48 place-items-center rounded-xl border bg-card">
+                <LoaderCircle
+                  aria-label="Loading revision diff"
+                  className="size-5 animate-spin text-muted-foreground"
+                />
+              </div>
+            ) : revisionError ? (
+              <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+                <p>{revisionError}</p>
+                <Button
+                  className="mt-3"
+                  onClick={() => setRevisionRequest((value) => value + 1)}
+                  size="sm"
+                  variant="outline"
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : selectedRevision && selectedRevisionSummary ? (
+              <div>
+                <div className="mb-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span className="rounded-full bg-secondary px-2 py-1 capitalize">
+                    {revisionAuthorLabel(selectedRevisionSummary.source)}
+                  </span>
+                  <span>{selectedDate}</span>
+                  {selectedRevisionSummary.changeRequest ? (
+                    <span>{selectedRevisionSummary.changeRequest}</span>
+                  ) : null}
+                </div>
+                <PromptDiff
+                  after={selectedRevision.revision.markdown}
+                  before={selectedRevision.parentMarkdown ?? ""}
+                />
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+                Select a revision to inspect its changes.
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
+      {view === "evaluations" ? (
+        <PromptEvaluationView
+          error={latestRunError}
+          latestRun={latestRun}
+          loading={latestRunLoading}
+          onRetry={() => {
+            if (latestRunId) setLatestRunRequest((value) => value + 1);
+            else void loadRuns();
+          }}
+          promptId={promptId}
+          revisionVersions={revisionVersions}
+          runs={runs}
+          trend={trend}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PromptViewTab({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick(): void;
+}) {
+  return (
+    <button
+      aria-selected={active}
+      className={cn(
+        "relative min-h-11 px-4 text-sm text-muted-foreground hover:text-foreground",
+        active &&
+          "font-medium text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-foreground",
+      )}
+      onClick={onClick}
+      role="tab"
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
+function RevisionButton({
+  active,
+  current,
+  onClick,
+  revision,
+  version,
+}: {
+  active: boolean;
+  current: boolean;
+  onClick(): void;
+  revision: PromptRevisionSummary;
+  version: number;
+}) {
+  return (
+    <button
+      className={cn(
+        "block w-full border-b px-3 py-3 text-left text-xs transition-colors last:border-0 hover:bg-accent",
+        active && "bg-accent",
+      )}
+      onClick={onClick}
+      aria-pressed={active}
+      type="button"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="font-mono font-semibold">v{version}</span>
+          {current ? (
+            <span className="rounded-full bg-primary px-1.5 py-0.5 font-sans text-[10px] font-medium text-primary-foreground">
+              current
+            </span>
+          ) : null}
+        </span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {formatDate(revision.createdAt)}
+        </span>
+      </div>
+      <div className="mt-1.5 truncate text-foreground">
+        {revision.changeRequest ?? "Initial prompt"}
+      </div>
+      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span>{revisionAuthorLabel(revision.source)}</span>
+        <span aria-hidden="true">·</span>
+        <span className="font-mono">{revision.id.slice(0, 7)}</span>
+      </div>
+    </button>
+  );
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
+    new Date(value),
+  );
+}
+
+function revisionAuthorLabel(source: PromptRevisionSummary["source"]): string {
+  return source === "ai" ? "AI" : "Human";
+}
+
+async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const response = await fetch(input, { cache: "no-store", ...init });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: unknown };
+    throw new Error(typeof body.error === "string" ? body.error : "Prompt request failed.");
+  }
+  return (await response.json()) as T;
+}
+
+function readError(error: unknown): string {
+  return error instanceof Error ? error.message : "Prompt request failed.";
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    Boolean(target.closest("input, textarea, [contenteditable='true']"))
+  );
+}
+
+function scrollTextareaToOffset(textarea: HTMLTextAreaElement, offset: number) {
+  const line = textarea.value.slice(0, offset).split("\n").length - 1;
+  const lineHeight = Number.parseFloat(window.getComputedStyle(textarea).lineHeight) || 20;
+  textarea.scrollTop = Math.max(0, line * lineHeight - textarea.clientHeight / 3);
+}

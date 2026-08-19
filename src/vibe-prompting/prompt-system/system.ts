@@ -205,6 +205,15 @@ export class PromptSystem {
     });
   }
 
+  async deletePrompt(promptId: string, expectedRevisionId: string): Promise<void> {
+    await this.#database.transaction(async (sql) => {
+      const [current] = await lockPrompt(sql, promptId);
+      if (!current) throw new PromptNotFoundError(promptId);
+      if (current.currentRevisionId !== expectedRevisionId) throw new PromptConflictError();
+      await sql`DELETE FROM prompts WHERE id = ${promptId}`;
+    });
+  }
+
   async appendHumanEdit(input: {
     promptId: string;
     markdown: string;

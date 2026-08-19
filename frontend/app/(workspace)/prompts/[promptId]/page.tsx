@@ -1,8 +1,8 @@
-/** Presents one current prompt editor and its immutable revision evidence. */
+/** Opens one prompt inside the shared session-agnostic prompt workspace. */
 
 import { Sparkles } from "lucide-react";
 
-import { PromptEditor } from "@/components/prompts/prompt-editor";
+import { PromptChatLink, PromptStudio } from "@/components/prompts/studio";
 import { FeaturePageHeader } from "@/components/shell/header";
 
 export default async function PromptDetailPage({
@@ -12,9 +12,9 @@ export default async function PromptDetailPage({
 }) {
   const { promptId } = await params;
   return (
-    <main className="min-h-screen">
-      <FeaturePageHeader icon={Sparkles} title="Prompt detail" />
-      <PromptEditor promptId={promptId} />
+    <main className="flex h-screen min-h-0 flex-col overflow-hidden">
+      <FeaturePageHeader icon={Sparkles} rightContent={<PromptChatLink />} title="Prompts" />
+      <PromptStudio initialPromptId={promptId} />
     </main>
   );
 }

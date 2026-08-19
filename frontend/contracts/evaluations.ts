@@ -15,14 +15,18 @@ export type EvaluationRunSummary = {
   completedAt: string | null;
   configurationFingerprint: string;
   createdAt: string;
+  effectiveInstructionsHash: string | null;
   errorMessage: string | null;
   id: string;
   judgeModelIds: string[];
   promptId: string;
   promptRevisionId: string;
   promptTitle: string;
-  source: "browser" | "operator";
+  source: "ai" | "human";
   status: EvaluationRunStatus;
+  targetProfileId: string | null;
+  targetProfileName: string | null;
+  targetProfileRevisionId: string | null;
   targetModelId: string;
 };
 
@@ -49,6 +53,7 @@ export type EvaluationCase = {
 export type EvaluationRun = EvaluationRunSummary & {
   cases: EvaluationCase[];
   promptMarkdown: string;
+  targetConfiguration: Record<string, unknown> | null;
 };
 
 export type BooleanTrendPoint = {

@@ -15,7 +15,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { MarkdownPreview } from "@/components/prompts/prompt-artifact";
+import { MarkdownPreview } from "@/components/prompts/artifact";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import type {
@@ -118,7 +118,11 @@ export function EvaluationReport({ runId }: { runId: string }) {
           <h2 className="text-xl font-semibold">{run.promptTitle}</h2>
           <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
             <Status status={run.status} />
-            <span>{run.source}</span>
+            <span>{run.source === "ai" ? "AI" : "Human"}</span>
+            <span>{run.targetProfileName ?? "Legacy runtime"}</span>
+            {run.targetProfileRevisionId ? (
+              <span className="font-mono">Runtime {run.targetProfileRevisionId.slice(0, 8)}</span>
+            ) : null}
             <span className="font-mono">Revision {run.promptRevisionId.slice(0, 8)}</span>
             <span>{formatDate(run.completedAt ?? run.createdAt)}</span>
           </div>

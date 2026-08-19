@@ -3,12 +3,14 @@
 "use client";
 
 import { FileText, LoaderCircle, PanelRightOpen, TriangleAlert } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppIcon } from "@/components/app-icon";
 import { Conversation as ConversationView } from "@/components/chat/elements/conversation";
+import { PromptContextPanel } from "@/components/prompts/context-panel";
 import { FeaturePageHeader } from "@/components/shell/header";
 import type {
   Attachment,
@@ -21,6 +23,7 @@ import type {
   Conversation,
   PromptQuote,
   RunEvent,
+  SteerChatResponse,
   StopChatResponse,
 } from "@/contracts/chat";
 import type { PromptsResponse, PromptSummary } from "@/contracts/prompts";
@@ -29,7 +32,6 @@ import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 import { AssistantMessage } from "./assistant-message";
 import { ChatComposer } from "./chat-composer";
 import { ChatHistoryIcon } from "./history-icon";
-import { PromptWorkspace } from "./prompt-workspace";
 
 const DEFAULT_TOOLS: ChatToolId[] = ["prompt-library", "evaluations", "web-search"];
 
@@ -86,6 +88,7 @@ export function Chat({
   const [instruction, setInstruction] = useState("");
   const [loading, setLoading] = useState(true);
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const panelWasOpen = useRef(panelOpen);
 
   const loadPrompts = useCallback(async () => {
     const data = await fetchJson<PromptsResponse>("/api/prompts");
@@ -195,6 +198,13 @@ export function Chat({
     workspaceReady,
   ]);
 
+  useEffect(() => {
+    const opened = panelOpen && !panelWasOpen.current;
+    panelWasOpen.current = panelOpen;
+    if (!workspaceReady || !opened) return;
+    void loadPrompts().catch((cause) => setError(readError(cause)));
+  }, [loadPrompts, panelOpen, setError, workspaceReady]);
+
   function activatePrompt(prompt: PromptSummary, showPanel: boolean) {
     setActivePromptId(prompt.id);
     setHighlightedQuote(undefined);
@@ -261,11 +271,22 @@ export function Chat({
           />
         }
         rightContent={
-          <button
-            aria-label={activePrompt ? `Open ${activePrompt.title}` : "Open prompt workspace"}
+          <Link
+            aria-expanded={panelOpen}
+            aria-label={
+              panelOpen
+                ? "Close prompt panel"
+                : activePrompt
+                  ? `Open ${activePrompt.title}`
+                  : "Open prompt workspace"
+            }
             className="inline-flex h-8 max-w-[min(18rem,45vw)] items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-accent"
-            onClick={() => setPanelOpen(true)}
-            type="button"
+            href={activePrompt ? `/prompts/${activePrompt.id}` : "/prompts"}
+            onClick={(event) => {
+              if (!window.matchMedia("(min-width: 768px)").matches) return;
+              event.preventDefault();
+              setPanelOpen((open) => !open);
+            }}
           >
             <FileText aria-hidden="true" className="size-3.5 shrink-0" />
             <span className="truncate">{activePrompt?.title ?? "Prompt"}</span>
@@ -273,7 +294,7 @@ export function Chat({
               aria-hidden="true"
               className="size-3.5 shrink-0 text-muted-foreground"
             />
-          </button>
+          </Link>
         }
         title={conversation?.chat.title ?? "New chat"}
       />
@@ -291,7 +312,7 @@ export function Chat({
               {messages.length === 0 ? (
                 <EmptyState onSelect={setInstruction} />
               ) : (
-                messages.map((message) => {
+                messages.map((message, index) => {
                   const modelId =
                     typeof message.metadata.modelId === "string"
                       ? message.metadata.modelId
@@ -299,6 +320,9 @@ export function Chat({
                   const rerunSource = rerunSources.get(message.id);
                   return (
                     <AssistantMessage
+                      continuedByUser={
+                        message.role === "user" && messages[index + 1]?.role === "user"
+                      }
                       disabled={running}
                       key={message.id}
                       message={message}
@@ -342,10 +366,15 @@ export function Chat({
               selectedModelId={selectedModelId}
             />
           </section>
-          <PromptWorkspace
+          <PromptContextPanel
             activePrompt={activePrompt}
             highlightedQuote={highlightedQuote}
             onClose={() => setPanelOpen(false)}
+            onPromptUpdated={(prompt) =>
+              setPrompts((current) =>
+                current.map((candidate) => (candidate.id === prompt.id ? prompt : candidate)),
+              )
+            }
             onQuote={addQuote}
             onSelectPrompt={(prompt) => activatePrompt(prompt, true)}
             open={panelOpen}
@@ -415,11 +444,14 @@ function useChatRun({
   }, [chatId, detached, loadConversation, onPromptsRefresh]);
 
   async function submit(replacement?: ReplacementSubmission) {
+    if (running) {
+      await steer();
+      return;
+    }
     const requestAttachments = replacement?.attachments ?? attachments;
     const requestQuotes = replacement?.quotes ?? quotes;
     const draftInstruction = replacement?.instruction ?? instruction;
     if (
-      running ||
       (!draftInstruction.trim() && !requestAttachments.length && !requestQuotes.length) ||
       !selectedModelId
     )
@@ -530,6 +562,49 @@ function useChatRun({
       } catch {
         setConversation(conversation);
       }
+    }
+  }
+
+  async function steer() {
+    const runChatId = chatId ?? ownedRunIdRef.current;
+    const steeringInstruction = instruction.trim();
+    if (!runChatId || !steeringInstruction || !selectedModelId) return;
+    const messageId = crypto.randomUUID();
+    const optimisticUser: ChatMessage = {
+      chatId: runChatId,
+      createdAt: new Date().toISOString(),
+      id: messageId,
+      metadata: { steering: true },
+      parts: [{ type: "text", text: steeringInstruction }],
+      role: "user",
+    };
+    setConversation((current) =>
+      current ? { ...current, messages: [...current.messages, optimisticUser] } : current,
+    );
+    onInstructionChange("");
+    setError(undefined);
+    try {
+      await fetchJson<SteerChatResponse>("/api/chat", {
+        body: JSON.stringify({
+          chatId: runChatId,
+          instruction: steeringInstruction,
+          messageId,
+          modelId: selectedModelId,
+          workspace: { activePromptId, enabledTools, panelOpen, reasoningEffort },
+        }),
+        headers: { "content-type": "application/json" },
+        method: "PUT",
+      });
+    } catch (cause) {
+      const message = readError(cause);
+      setConversation((current) =>
+        current
+          ? { ...current, messages: current.messages.filter(({ id }) => id !== messageId) }
+          : current,
+      );
+      onInstructionChange(steeringInstruction);
+      setError(message);
+      toast.error(message);
     }
   }
 
@@ -664,6 +739,12 @@ function addLiveEvent(
     else parts.push({ type: "text", text: event.delta });
     return { ...message, parts };
   }
+  if (event.type === "response-reset") {
+    return {
+      ...message,
+      parts: message.parts.filter((part) => part.type !== "reasoning" && part.type !== "text"),
+    };
+  }
   if (event.type === "reasoning-start") {
     if (message.parts.some((part) => part.type === "reasoning" && part.streaming)) return message;
     return {
@@ -792,7 +873,7 @@ function readWorkspaceDraft(key: string): WorkspaceDraft | undefined {
 }
 
 function isChatToolId(value: unknown): value is ChatToolId {
-  return value === "evaluations" || value === "prompt-library" || value === "web-search";
+  return value === "prompt-library" || value === "evaluations" || value === "web-search";
 }
 
 function isReasoningEffort(value: unknown): value is ChatReasoningEffort {

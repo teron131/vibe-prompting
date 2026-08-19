@@ -30,6 +30,11 @@ const MIGRATIONS = [
     load: () => readFile(new URL("../../migrations/005_target.sql", import.meta.url), "utf8"),
     version: 5,
   },
+  {
+    load: () =>
+      readFile(new URL("../../migrations/006_prompt_deletion.sql", import.meta.url), "utf8"),
+    version: 6,
+  },
 ];
 
 export type DatabaseClient = postgres.Sql | postgres.TransactionSql;

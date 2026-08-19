@@ -32,7 +32,7 @@ const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 6;
+const APPLICATION_SERVICES_VERSION = 7;
 
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
   await getApplicationServices();

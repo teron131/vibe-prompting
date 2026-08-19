@@ -20,10 +20,10 @@ export async function GET(request: Request) {
 
   try {
     const services = await getApplicationServices();
-    return Response.json(
-      { prompts: await services.promptSearch.search(query) } satisfies PromptSearchResponse,
-      { headers: NO_STORE_HEADERS },
+    const prompts = (await services.prompts.searchPrompts(query)).map(
+      ({ markdown: _markdown, ...prompt }) => prompt,
     );
+    return Response.json({ prompts } satisfies PromptSearchResponse, { headers: NO_STORE_HEADERS });
   } catch (error) {
     if (error instanceof EmbeddingError) {
       return Response.json(

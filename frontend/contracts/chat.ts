@@ -74,6 +74,7 @@ export type RunEvent =
   | { delta: string; type: "text-delta" }
   | { type: "reasoning-start" }
   | { delta: string; type: "reasoning-delta" }
+  | { type: "response-reset" }
   | { chatId: string; icon: string; title: string; type: "chat-metadata" }
   | Extract<MessagePart, { type: "reasoning" | "tool" | "evaluation" | "prompt-revision" }>
   | { message: string; type: "error" }
@@ -85,4 +86,5 @@ export type ChatPage = { chats: ChatSummary[]; nextCursor: string | null };
 export type ChatSearchResponse = { chats: ChatSummary[] };
 export type ConfiguredModelsResponse = { models: ConfiguredModel[] };
 export type StopChatResponse = { stopped: boolean };
+export type SteerChatResponse = { accepted: true };
 export type DeleteChatResponse = { deleted: true };

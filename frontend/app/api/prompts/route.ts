@@ -2,7 +2,7 @@
 
 import { getApplicationServices } from "vibe-prompting/server";
 
-import type { PromptsResponse, PromptSummary } from "@/contracts/prompts";
+import type { PromptCurrent, PromptsResponse } from "@/contracts/prompts";
 
 import { promptErrorResponse, requireRecord, requireString, requireText } from "./request";
 
@@ -14,10 +14,10 @@ const NO_STORE_HEADERS = { "cache-control": "no-store" };
 export async function GET() {
   try {
     const services = await getApplicationServices();
-    return Response.json(
-      { prompts: await services.prompts.listPrompts() } satisfies PromptsResponse,
-      { headers: NO_STORE_HEADERS },
+    const prompts = (await services.prompts.listPrompts()).map(
+      ({ markdown: _markdown, ...prompt }) => prompt,
     );
+    return Response.json({ prompts } satisfies PromptsResponse, { headers: NO_STORE_HEADERS });
   } catch {
     return Response.json({ error: "Saved prompts could not be loaded." }, { status: 500 });
   }
@@ -29,13 +29,11 @@ export async function POST(request: Request) {
     const title = requireText(record.title, "Prompt title");
     const markdown = requireString(record.markdown, "Prompt Markdown");
     const services = await getApplicationServices();
-    return Response.json(
-      (await services.prompts.createPrompt({ markdown, title })) satisfies PromptSummary,
-      {
-        headers: NO_STORE_HEADERS,
-        status: 201,
-      },
-    );
+    const prompt = await services.prompts.createPrompt({ markdown, title });
+    return Response.json(prompt satisfies PromptCurrent, {
+      headers: NO_STORE_HEADERS,
+      status: 201,
+    });
   } catch (error) {
     return promptErrorResponse(error);
   }
