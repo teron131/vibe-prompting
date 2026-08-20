@@ -24,7 +24,7 @@ import { createApiRequester, createErrorReader } from "@/shared/api";
 const criteriaApi = createApiRequester({}, (status) => `Request failed with ${status}.`);
 const readError = createErrorReader("The criteria profile request failed.");
 
-type Draft = CriteriaProfileInput & { id?: string; isDefault?: boolean };
+type Draft = CriteriaProfileInput & { id?: string };
 type CriterionType = Criterion["type"];
 
 export function CriteriaManager() {
@@ -82,7 +82,7 @@ export function CriteriaManager() {
   }
 
   async function remove() {
-    if (!draft?.id || draft.isDefault) return;
+    if (!draft?.id) return;
     try {
       await criteriaApi.empty(
         `/api/evaluations/criteria-profiles/${encodeURIComponent(draft.id)}`,
@@ -144,8 +144,6 @@ export function CriteriaManager() {
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{profile.name}</span>
                     <span className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap font-mono text-[10px] uppercase">
-                      {profile.isDefault ? <span>Default</span> : <span>Custom</span>}
-                      <span>·</span>
                       <CriterionTypeSummary criteria={profile.criteria} />
                     </span>
                   </span>
@@ -185,7 +183,6 @@ export function CriteriaManager() {
                       setDraft({
                         ...draft,
                         id: undefined,
-                        isDefault: false,
                         name: `${draft.name} copy`,
                       })
                     }
@@ -244,7 +241,7 @@ export function CriteriaManager() {
               >
                 <Plus className="size-3.5" /> Add criterion ({draft.criteria.length}/10)
               </Button>
-              {draft.id && !draft.isDefault ? (
+              {draft.id ? (
                 <Button
                   className="text-destructive hover:text-destructive"
                   onClick={remove}
@@ -451,7 +448,6 @@ function toDraft(profile: CriteriaProfile): Draft {
   return {
     criteria: structuredClone(profile.criteria),
     id: profile.id,
-    isDefault: profile.isDefault,
     name: profile.name,
   };
 }
@@ -505,8 +501,5 @@ function CriterionTypeSummary({ criteria }: { criteria: Criterion[] }) {
 }
 
 function sortProfiles(profiles: CriteriaProfile[]): CriteriaProfile[] {
-  return [...profiles].sort(
-    (left, right) =>
-      Number(right.isDefault) - Number(left.isDefault) || left.name.localeCompare(right.name),
-  );
+  return [...profiles].sort((left, right) => left.name.localeCompare(right.name));
 }

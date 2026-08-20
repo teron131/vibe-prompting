@@ -9,8 +9,11 @@ import type { Target } from "./api.ts";
 export const targetConfigurationSchema = z
   .object({
     maxOutputTokens: z.number().int().positive().max(100_000).optional(),
-    maxSteps: z.number().int().min(1).max(20),
-    tools: z.array(z.enum(["web-search"])).max(1),
+    maxSteps: z.number().int().min(1).max(20).optional(),
+    tools: z
+      .array(z.enum(["web-search"]))
+      .max(1)
+      .optional(),
   })
   .strict();
 
@@ -29,7 +32,7 @@ export function createAiSdkTarget(input: {
     instructions: input.instructions,
     maxOutputTokens: input.configuration.maxOutputTokens,
     model: input.model,
-    stopWhen: stepCountIs(input.configuration.maxSteps),
+    stopWhen: input.configuration.maxSteps ? stepCountIs(input.configuration.maxSteps) : undefined,
     tools: input.tools,
   });
   return {

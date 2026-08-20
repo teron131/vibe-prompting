@@ -1,6 +1,6 @@
 /** Exposes prompt-bound target profile availability without leaking runtime construction into the browser. */
 
-import { getApplicationServices, TargetProfileNotFoundError } from "vibe-prompting/server";
+import { getApplicationServices } from "vibe-prompting/server";
 
 import type { TargetProfileResponse } from "@/contracts/targets";
 
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    if (error instanceof TargetProfileNotFoundError) {
+    if (error && typeof error === "object" && "statusCode" in error && error.statusCode === 404) {
       return Response.json({ profile: null } satisfies TargetProfileResponse, {
         headers: NO_STORE_HEADERS,
       });

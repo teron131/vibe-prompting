@@ -1,6 +1,6 @@
 {
   "name": "vibe-prompting",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -21,7 +21,7 @@
     "lint:fix": "oxlint --fix .",
     "mcp": "node src/vibe-prompting/app/mcp.ts",
     "mcp:dev": "node --watch --watch-preserve-output src/vibe-prompting/app/mcp.ts",
-    "seed:evaluations": "node scripts/seed-evaluation-demo.ts",
+    "seed:demo": "node scripts/seed-evaluation-demo.ts",
     "server": "node src/vibe-prompting/app/api.ts",
     "server:dev": "node --watch --watch-preserve-output src/vibe-prompting/app/api.ts",
     "test-agent": "node test_agent.ts",

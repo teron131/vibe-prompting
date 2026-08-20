@@ -221,7 +221,6 @@ export function EvaluationRunBuilder() {
     }
     if (
       !request ||
-      !targetProfile ||
       request.configurations.length === 0 ||
       request.targetModelIds.length === 0 ||
       request.judges.length === 0 ||
@@ -256,7 +255,7 @@ export function EvaluationRunBuilder() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [request, targetProfile, trackedBatch]);
+  }, [request, trackedBatch]);
 
   useEffect(() => {
     if (!batchRunIds) return;
@@ -343,6 +342,14 @@ export function EvaluationRunBuilder() {
   const batchFinished = Boolean(
     preview && startedRuns.length > 0 && finishedRuns === preview.executionCount,
   );
+  const missingRequirements = getMissingRequirements({
+    caseMode,
+    cases,
+    configurationIds,
+    judges,
+    promptId,
+    targetModelIds,
+  });
 
   return (
     <div className="mx-auto grid w-full max-w-[1480px] grid-cols-1 bg-muted/15 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_25rem]">
@@ -358,7 +365,7 @@ export function EvaluationRunBuilder() {
         </div>
 
         <RunSection
-          description="Pin one current prompt revision and its deployed target profile."
+          description="Run one current prompt revision through the AI SDK agent."
           title="Target"
         >
           <Field label="Prompt">
@@ -375,15 +382,15 @@ export function EvaluationRunBuilder() {
             <Definition
               label="Target profile"
               value={
-                targetProfile === undefined ? "Loading…" : (targetProfile?.name ?? "Not configured")
+                targetProfile === undefined ? "Loading…" : (targetProfile?.name ?? "AI SDK agent")
               }
             />
             <Definition
               label="Runtime"
               value={
                 targetProfile
-                  ? `${targetProfile.configuration.maxSteps} steps · ${targetProfile.configuration.tools.length ? targetProfile.configuration.tools.join(", ") : "no tools"}`
-                  : "—"
+                  ? `${targetProfile.configuration.maxSteps ?? "AI SDK default"} steps · ${targetProfile.configuration.tools?.length ? targetProfile.configuration.tools.join(", ") : "no tools"}`
+                  : "AI SDK defaults"
               }
             />
           </div>
@@ -685,8 +692,8 @@ export function EvaluationRunBuilder() {
         </RunSection>
       </section>
 
-      <aside className="border-t bg-muted/35 lg:border-t-0">
-        <div className="px-4 py-5 sm:px-6 lg:px-5 xl:px-6 xl:py-8">
+      <aside className="border-t bg-muted/35 lg:sticky lg:top-0 lg:max-h-[calc(100vh-var(--header-height))] lg:self-start lg:overflow-y-auto lg:border-t-0">
+        <div className="flex min-h-[calc(100vh-var(--header-height))] flex-col px-4 py-5 sm:px-6 lg:px-5 xl:px-6 xl:py-8">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold">Execution manifest</h2>
             {previewing && (
@@ -818,14 +825,22 @@ export function EvaluationRunBuilder() {
               </Button>
             </>
           ) : (
-            <div className="mt-5 flex gap-3 py-5 text-sm text-muted-foreground">
-              <CircleAlert className="mt-0.5 size-4 shrink-0" />
-              <p className="leading-6">
-                {caseMode === "generate"
-                  ? "Generate and review the requested inputs before the exact execution manifest is expanded."
-                  : "Complete the target, score profile, judge, and case settings to generate the exact manifest."}
-              </p>
-            </div>
+            <>
+              <div className="mt-5 flex gap-3 py-5 text-sm text-muted-foreground">
+                <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                <div>
+                  <p className="font-medium text-foreground">Complete setup to run</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 leading-6">
+                    {missingRequirements.map((requirement) => (
+                      <li key={requirement}>{requirement}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <Button className="mt-auto w-full" disabled>
+                Run evaluation
+              </Button>
+            </>
           )}
         </div>
       </aside>
@@ -860,6 +875,27 @@ function Field({ children, label }: { children: React.ReactNode; label: string }
       {children}
     </label>
   );
+}
+
+function getMissingRequirements(input: {
+  caseMode: CaseMode;
+  cases: string[];
+  configurationIds: string[];
+  judges: string[];
+  promptId: string;
+  targetModelIds: string[];
+}): string[] {
+  const missing: string[] = [];
+  if (!input.promptId) missing.push("Choose a prompt revision.");
+  if (input.targetModelIds.length === 0) missing.push("Select at least one target model.");
+  if (input.configurationIds.length === 0) missing.push("Select at least one score profile.");
+  if (input.judges.length === 0) missing.push("Select at least one judge model.");
+  if (input.caseMode === "generate") {
+    missing.push("Generate and review the requested inputs.");
+  } else if (input.cases.some((value) => !value.trim())) {
+    missing.push("Complete every manual case input.");
+  }
+  return missing.length > 0 ? missing : ["Waiting for the exact manifest to finish loading."];
 }
 
 function Definition({ label, value }: { label: string; value: string }) {

@@ -31,7 +31,7 @@ Never invent identifiers, SQL, fields, operations, joins, or write actions.
 When a question cannot be represented exactly, choose the closest conservative read query instead of broadening its scope.
 Return one JSON object and no Markdown.
 The discriminator property must be named operation, never metric, action, or type.
-Valid shapes are {"operation":"count","entity":"runs","filters":{"search":"company","searchField":"all"}}, {"operation":"keyword_count","field":"all","keyword":"company","filters":{}}, {"operation":"group_count","groupBy":"status","limit":20,"filters":{}}, and {"operation":"average","groupBy":"criterion","limit":20,"filters":{}}.
+Valid shapes are {"operation":"count","entity":"runs","filters":{"search":"evidence","searchField":"all"}}, {"operation":"keyword_count","field":"all","keyword":"evidence","filters":{}}, {"operation":"group_count","groupBy":"status","limit":20,"filters":{}}, and {"operation":"average","groupBy":"criterion","limit":20,"filters":{}}.
 Omit filters, groupBy, field, and limit when they are not needed.`;
 
 /** Uses the configured low-effort helper model to turn one question into a read-only result query. */

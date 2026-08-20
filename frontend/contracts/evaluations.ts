@@ -104,7 +104,6 @@ export type CriteriaProfile = {
   createdAt: string;
   criteria: Criterion[];
   id: string;
-  isDefault: boolean;
   name: string;
   updatedAt: string;
 };

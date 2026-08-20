@@ -7,6 +7,7 @@ import { ConversationRunRegistry } from "./conversations/runs.ts";
 import { ConversationStore } from "./conversations/store.ts";
 import { createDatabase } from "./database.ts";
 import { CriteriaProfiles } from "./evaluation/criteria-profiles.ts";
+import { ensureEvaluationDemo } from "./evaluation/demo.ts";
 import { EvaluationResults } from "./evaluation/results/index.ts";
 import { EvaluationRuns } from "./evaluation/runs/index.ts";
 import { PromptSystem } from "./prompt-system/index.ts";
@@ -37,7 +38,7 @@ const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 13;
+const APPLICATION_SERVICES_VERSION = 16;
 
 /** Resolves configured model identities after the shared services and database are ready. */
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
@@ -65,6 +66,7 @@ export async function createApplicationServices(
 ): Promise<ApplicationServices> {
   const database = createDatabase(databaseUrl);
   await database.initialize();
+  await ensureEvaluationDemo(database);
   const settings = new ApplicationSettingsStore(database);
   await settings.initialize();
   configureSpendLimit(database, loadModelSpendLimits());
@@ -73,7 +75,6 @@ export async function createApplicationServices(
   const targets = new TargetSystem(database, prompts);
   const evaluations = new EvaluationRuns(database, prompts, targets);
   const criteriaProfiles = new CriteriaProfiles(database);
-  await criteriaProfiles.initialize();
   return {
     prompts,
     targets,

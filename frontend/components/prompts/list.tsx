@@ -139,7 +139,7 @@ export function PromptList({
             <Input
               className="mt-1"
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="Customer support assistant"
+              placeholder="Markdown explainer"
               value={title}
             />
           </label>

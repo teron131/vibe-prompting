@@ -132,10 +132,7 @@ export class EvaluationRuns {
       );
     const input = parsed.data;
     requireConfiguredModels([...input.targetModelIds, ...input.judges]);
-    const [prompt] = await Promise.all([
-      this.#prompts.getPrompt(input.promptId),
-      this.#targets.getProfileForPrompt(input.promptId),
-    ]);
+    const prompt = await this.#prompts.getPrompt(input.promptId);
     if (prompt.revisionId !== input.promptRevisionId) throw new PromptConflictError();
     return input;
   }

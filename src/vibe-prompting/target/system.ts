@@ -30,6 +30,17 @@ export type PinnedTarget = {
   target: Target<string, string>;
 };
 
+/** Reports target-profile validation and lifecycle failures with an HTTP-safe status code. */
+export class TargetProfileError extends Error {
+  readonly statusCode: number;
+
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.name = "TargetProfileError";
+    this.statusCode = statusCode;
+  }
+}
+
 type ProfileRow = {
   configuration: unknown;
   createdAt: Date;
@@ -74,9 +85,17 @@ export class TargetSystem {
   }): Promise<TargetProfile> {
     const name = input.name.trim();
     const instructions = input.instructions.trim();
-    if (!name) throw new Error("Target profile name is required.");
-    if (!instructions) throw new Error("Target profile instructions are required.");
-    const configuration = targetConfigurationSchema.parse(input.configuration);
+    if (!name) throw new TargetProfileError("Target profile name is required.", 400);
+    if (!instructions)
+      throw new TargetProfileError("Target profile instructions are required.", 400);
+    const parsedConfiguration = targetConfigurationSchema.safeParse(input.configuration);
+    if (!parsedConfiguration.success) {
+      throw new TargetProfileError(
+        parsedConfiguration.error.issues[0]?.message ?? "Target configuration is invalid.",
+        400,
+      );
+    }
+    const configuration = parsedConfiguration.data;
     await this.#prompts.getPrompt(input.promptId);
     const id = randomUUID();
     const revisionId = randomUUID();
@@ -100,6 +119,30 @@ export class TargetSystem {
 
   async getProfileForPrompt(promptId: string): Promise<TargetProfile> {
     return this.#database.run((sql) => requireProfileForPrompt(sql, promptId));
+  }
+
+  /** Persists the vanilla AI SDK agent only when a prompt has no explicit target override. */
+  async ensureProfileForPrompt(promptId: string): Promise<TargetProfile> {
+    await this.#prompts.getPrompt(promptId);
+    const id = randomUUID();
+    const revisionId = randomUUID();
+    return this.#database.transaction(async (sql) => {
+      const [created] = await sql<{ id: string }[]>`
+        INSERT INTO target_profiles (id, name, prompt_id, current_revision_id)
+        VALUES (${id}, 'AI SDK agent', ${promptId}, ${revisionId})
+        ON CONFLICT (prompt_id) DO NOTHING
+        RETURNING id
+      `;
+      if (created) {
+        await sql`
+          INSERT INTO target_profile_revisions (
+            id, target_profile_id, revision_number, instructions, configuration
+          )
+          VALUES (${revisionId}, ${id}, 1, '', ${sql.json({})})
+        `;
+      }
+      return requireProfileForPrompt(sql, promptId);
+    });
   }
 
   async appendProfileRevision(input: {
@@ -155,15 +198,17 @@ export class TargetSystem {
     targetModelId: string;
   }): Promise<PinnedTarget> {
     const [profile, prompt] = await Promise.all([
-      this.getProfileForPrompt(input.promptId),
+      this.ensureProfileForPrompt(input.promptId),
       this.#prompts.getRevision(input.promptId, input.promptRevisionId),
     ]);
-    const effectiveInstructions = `${profile.instructions}\n\n${prompt.markdown}`;
+    const effectiveInstructions = [profile.instructions, prompt.markdown]
+      .filter(Boolean)
+      .join("\n\n");
     const effectiveInstructionsHash = createHash("sha256")
       .update(effectiveInstructions)
       .digest("hex");
     const model = createModel(input.targetModelId);
-    const exa = profile.configuration.tools.includes("web-search")
+    const exa = profile.configuration.tools?.includes("web-search")
       ? await connectAiSdkExaSearch()
       : undefined;
     const target = createAiSdkTarget({

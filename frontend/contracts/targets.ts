@@ -2,8 +2,8 @@
 
 export type TargetConfiguration = {
   maxOutputTokens?: number;
-  maxSteps: number;
-  tools: Array<"web-search">;
+  maxSteps?: number;
+  tools?: Array<"web-search">;
 };
 
 export type TargetProfile = {

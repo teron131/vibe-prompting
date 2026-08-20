@@ -61,6 +61,19 @@ const MIGRATIONS = [
       readFile(new URL("../../migrations/010_search_embeddings.sql", import.meta.url), "utf8"),
     version: 10,
   },
+  {
+    load: () =>
+      readFile(
+        new URL("../../migrations/011_database_owned_criteria_profiles.sql", import.meta.url),
+        "utf8",
+      ),
+    version: 11,
+  },
+  {
+    load: () =>
+      readFile(new URL("../../migrations/012_default_ai_sdk_target.sql", import.meta.url), "utf8"),
+    version: 12,
+  },
 ];
 
 export type DatabaseClient = postgres.Sql | postgres.TransactionSql;
