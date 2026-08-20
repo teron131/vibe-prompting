@@ -346,38 +346,20 @@ export function ChatComposer({
               value={reasoningEffort}
             />
           </div>
-          {running ? (
-            <div className="flex shrink-0 items-center gap-1">
-              <Button
-                aria-label="Stop generating"
-                className="size-9 rounded-full"
-                onClick={onStop}
-                size="icon"
-                variant="ghost"
-              >
-                <Square aria-hidden="true" className="size-3 fill-current" />
-              </Button>
-              <Button
-                aria-label="Steer agent"
-                className="size-10 rounded-full"
-                disabled={!canSteer}
-                size="icon"
-                type="submit"
-              >
-                <ArrowUp aria-hidden="true" className="size-4" />
-              </Button>
-            </div>
-          ) : (
-            <Button
-              aria-label="Send message"
-              className="size-10 shrink-0 rounded-full"
-              disabled={!canSubmit}
-              size="icon"
-              type="submit"
-            >
+          <Button
+            aria-label={running ? "Stop generating" : "Send message"}
+            className="size-10 shrink-0 rounded-full"
+            disabled={!running && !canSubmit}
+            onClick={running ? onStop : undefined}
+            size="icon"
+            type={running ? "button" : "submit"}
+          >
+            {running ? (
+              <Square aria-hidden="true" className="size-3 fill-current" />
+            ) : (
               <ArrowUp aria-hidden="true" className="size-4" />
-            </Button>
-          )}
+            )}
+          </Button>
         </div>
         {mentionOpen ? (
           <div className="absolute bottom-[calc(100%+8px)] left-3 z-50 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl">
@@ -521,6 +503,9 @@ function ReasoningSelector({
         />
       </summary>
       <div className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-max rounded-xl border bg-popover p-1 shadow-xl">
+        <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          Reasoning
+        </div>
         {REASONING_OPTIONS.map((option) => (
           <button
             className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-accent"

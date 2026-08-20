@@ -18,6 +18,7 @@ export type EvaluationRunSummary = {
   effectiveInstructionsHash: string | null;
   errorMessage: string | null;
   id: string;
+  isSyntheticExample: boolean;
   judgeModelIds: string[];
   promptId: string;
   promptRevisionId: string;
@@ -55,6 +56,64 @@ export type EvaluationRun = EvaluationRunSummary & {
   promptMarkdown: string;
   targetConfiguration: Record<string, unknown> | null;
 };
+
+export type EvaluationBatchConfiguration = {
+  criteria: Criterion[];
+  id: string;
+  name: string;
+};
+
+export type EvaluationBatchRequest = {
+  cases: Array<{ input: string }>;
+  configurations: EvaluationBatchConfiguration[];
+  isSyntheticExample: boolean;
+  judges: string[];
+  promptId: string;
+  promptRevisionId: string;
+  repetitions: number;
+  targetModelIds: string[];
+};
+
+export type EvaluationBatchJob = {
+  caseCount: number;
+  configurationId: string;
+  configurationName: string;
+  criterionCount: number;
+  executionNumber: number;
+  id: string;
+  judgeScoreDecisions: number;
+  repetition: number;
+  targetModelId: string;
+};
+
+export type EvaluationBatchPreview = {
+  executionCount: number;
+  jobs: EvaluationBatchJob[];
+  judgeScoreDecisions: number;
+  targetCaseInvocations: number;
+};
+
+export type EvaluationBatchStart = {
+  preview: EvaluationBatchPreview;
+  runs: EvaluationRunSummary[];
+};
+
+export type EvaluationBatchStatus = { runs: EvaluationRunSummary[] };
+
+export type CriteriaProfile = {
+  createdAt: string;
+  criteria: Criterion[];
+  id: string;
+  isDefault: boolean;
+  name: string;
+  updatedAt: string;
+};
+
+export type CriteriaProfileInput = { criteria: Criterion[]; name: string };
+
+export type CriteriaProfileResponse = { profile: CriteriaProfile };
+
+export type CriteriaProfilesResponse = { profiles: CriteriaProfile[] };
 
 export type BooleanTrendPoint = {
   completedAt: string;

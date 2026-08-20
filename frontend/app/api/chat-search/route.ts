@@ -1,6 +1,6 @@
-/** Exposes bounded PostgreSQL text search over chat titles and persisted user or assistant text. */
+/** Exposes shared hybrid search over chat titles and persisted user or assistant text. */
 
-import { getApplicationServices } from "vibe-prompting/server";
+import { EmbeddingError, getApplicationServices } from "vibe-prompting/server";
 
 import type { ChatSearchResponse } from "@/contracts/chat";
 
@@ -19,7 +19,10 @@ export async function GET(request: Request) {
       chats: await services.conversations.searchChats(query),
     } satisfies ChatSearchResponse;
     return Response.json(payload, { headers: { "cache-control": "no-store" } });
-  } catch {
+  } catch (error) {
+    if (error instanceof EmbeddingError) {
+      return Response.json({ error: error.message }, { status: error.statusCode });
+    }
     return Response.json({ error: "Chat search failed." }, { status: 500 });
   }
 }

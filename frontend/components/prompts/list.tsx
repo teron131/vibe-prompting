@@ -18,20 +18,29 @@ import type {
   PromptsResponse,
   PromptSummary,
 } from "@/contracts/prompts";
+import { createApiRequester, createErrorReader } from "@/shared/api";
+
+const promptApi = createApiRequester({ cache: "no-store" }, "Prompt request failed.");
+const readError = createErrorReader("Prompt request failed.");
 
 export function PromptList({
   activePromptId,
+  creating,
+  onCreate,
+  onCreatingChange,
   onPromptDeleted,
   onSelectPrompt,
 }: {
   activePromptId?: string;
+  creating: boolean;
+  onCreate(): void;
+  onCreatingChange(value: boolean): void;
   onPromptDeleted(promptId: string): void;
   onSelectPrompt(prompt: PromptSummary, passage?: PromptSearchPassage): void;
 }) {
   const [prompts, setPrompts] = useState<PromptSummary[]>([]);
   const [runs, setRuns] = useState<EvaluationRunSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [deletingPromptId, setDeletingPromptId] = useState<string>();
   const [title, setTitle] = useState("");
@@ -41,7 +50,7 @@ export function PromptList({
   const loadPrompts = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchJson<PromptsResponse>("/api/prompts");
+      const data = await promptApi.json<PromptsResponse>("/api/prompts");
       setPrompts(data.prompts);
     } catch (error) {
       toast.error(readError(error));
@@ -52,7 +61,7 @@ export function PromptList({
 
   const loadRuns = useCallback(async () => {
     try {
-      const data = await fetchJson<EvaluationRunsResponse>("/api/evaluations");
+      const data = await promptApi.json<EvaluationRunsResponse>("/api/evaluations");
       setRuns(data.runs);
     } catch {
       setRuns([]);
@@ -79,12 +88,12 @@ export function PromptList({
     if (!title.trim()) return;
     setSubmitting(true);
     try {
-      const prompt = await fetchJson<PromptSummary>("/api/prompts", {
+      const prompt = await promptApi.json<PromptSummary>("/api/prompts", {
         body: JSON.stringify({ markdown, title }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
-      setCreating(false);
+      onCreatingChange(false);
       setTitle("");
       setMarkdown("");
       await loadPrompts();
@@ -106,7 +115,7 @@ export function PromptList({
       return;
     setDeletingPromptId(prompt.id);
     try {
-      await fetchJson<{ promptId: string }>(`/api/prompts/${prompt.id}`, {
+      await promptApi.json<{ promptId: string }>(`/api/prompts/${prompt.id}`, {
         body: JSON.stringify({ expectedRevisionId: prompt.revisionId }),
         headers: { "content-type": "application/json" },
         method: "DELETE",
@@ -123,16 +132,6 @@ export function PromptList({
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col border-r bg-card/30 lg:w-80 lg:shrink-0">
-      <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold">Prompt files</h2>
-          <p className="truncate text-xs text-muted-foreground">Current versions</p>
-        </div>
-        <Button className="h-10" onClick={() => setCreating((value) => !value)} size="sm">
-          <FilePlus2 aria-hidden="true" className="size-4" />
-          New
-        </Button>
-      </div>
       {creating ? (
         <form className="space-y-3 border-b bg-background p-4" onSubmit={createPrompt}>
           <label className="block text-sm font-medium">
@@ -154,7 +153,7 @@ export function PromptList({
             />
           </label>
           <div className="flex justify-end gap-2">
-            <Button disabled={submitting} onClick={() => setCreating(false)} variant="ghost">
+            <Button disabled={submitting} onClick={() => onCreatingChange(false)} variant="ghost">
               Cancel
             </Button>
             <Button disabled={submitting || !title.trim()} type="submit">
@@ -166,43 +165,51 @@ export function PromptList({
           </div>
         </form>
       ) : null}
-      {prompts.length ? (
-        <div className="border-b p-3">
-          <label className="relative block">
-            <span className="sr-only">Search prompts</span>
-            {searchLoading ? (
-              <LoaderCircle
-                aria-hidden="true"
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground"
+      <div className="border-b p-3">
+        <div className="flex items-center gap-2">
+          {prompts.length ? (
+            <label className="relative min-w-0 flex-1">
+              <span className="sr-only">Search prompts</span>
+              {searchLoading ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground"
+                />
+              ) : (
+                <Search
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                />
+              )}
+              <Input
+                className="h-10 bg-background pl-9 pr-10"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search prompts"
+                value={query}
               />
-            ) : (
-              <Search
-                aria-hidden="true"
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              />
-            )}
-            <Input
-              className="h-10 bg-background pl-9 pr-10"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search prompts"
-              value={query}
-            />
-            {query ? (
-              <button
-                aria-label="Clear prompt search"
-                className="absolute right-1 top-1 grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                onClick={() => setQuery("")}
-                type="button"
-              >
-                <X aria-hidden="true" className="size-4" />
-              </button>
-            ) : null}
-          </label>
-          {searchError ? (
-            <p className="mt-2 text-xs text-muted-foreground">Showing name matches.</p>
-          ) : null}
+              {query ? (
+                <button
+                  aria-label="Clear prompt search"
+                  className="absolute right-1 top-1 grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                  onClick={() => setQuery("")}
+                  type="button"
+                >
+                  <X aria-hidden="true" className="size-4" />
+                </button>
+              ) : null}
+            </label>
+          ) : (
+            <div className="flex-1" />
+          )}
+          <Button onClick={onCreate} size="sm">
+            <FilePlus2 aria-hidden="true" className="size-3.5" />
+            New
+          </Button>
         </div>
-      ) : null}
+        {prompts.length && searchError ? (
+          <p className="mt-2 text-xs text-muted-foreground">Showing name matches.</p>
+        ) : null}
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {loading ? (
           <PromptSkeleton />
@@ -359,17 +366,4 @@ function PromptSkeleton() {
       ))}
     </div>
   );
-}
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, { cache: "no-store", ...init });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: unknown };
-    throw new Error(typeof body.error === "string" ? body.error : "Prompt request failed.");
-  }
-  return (await response.json()) as T;
-}
-
-function readError(error: unknown): string {
-  return error instanceof Error ? error.message : "Prompt request failed.";
 }

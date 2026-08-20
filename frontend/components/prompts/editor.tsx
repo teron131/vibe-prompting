@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { MarkdownPreview } from "@/components/prompts/artifact";
 import { PromptDiff } from "@/components/prompts/diff";
 import { PromptEvaluationView } from "@/components/prompts/evaluation-view";
+import { PromptStats } from "@/components/prompts/stats";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
@@ -37,6 +38,11 @@ import type {
   PromptRevisionSummary,
   PromptSearchPassage,
 } from "@/contracts/prompts";
+import { createApiRequester, createErrorReader } from "@/shared/api";
+import { formatDateTime } from "@/shared/date";
+
+const promptApi = createApiRequester({ cache: "no-store" }, "Prompt request failed.");
+const readError = createErrorReader("Prompt request failed.");
 
 export function PromptEditor({
   onDirtyChange,
@@ -65,12 +71,11 @@ export function PromptEditor({
   const [latestRunLoading, setLatestRunLoading] = useState(false);
   const [latestRunError, setLatestRunError] = useState<string>();
   const [latestRunRequest, setLatestRunRequest] = useState(0);
-  const gutterRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dirty = Boolean(detail && draft !== detail.prompt.markdown);
 
   const loadPrompt = useCallback(async () => {
-    const value = await fetchJson<PromptDetail>(`/api/prompts/${promptId}`);
+    const value = await promptApi.json<PromptDetail>(`/api/prompts/${promptId}`);
     setDetail(value);
     setDraft(value.prompt.markdown);
     setSelectedRevisionId(value.prompt.revisionId);
@@ -79,7 +84,7 @@ export function PromptEditor({
 
   const loadRuns = useCallback(async () => {
     try {
-      const value = await fetchJson<EvaluationRunsResponse>(
+      const value = await promptApi.json<EvaluationRunsResponse>(
         `/api/evaluations?promptId=${encodeURIComponent(promptId)}`,
       );
       setRuns(value.runs);
@@ -129,10 +134,10 @@ export function PromptEditor({
     const controller = new AbortController();
     setRevisionLoading(true);
     setRevisionError(undefined);
-    void fetchJson<PromptRevisionResponse>(
-      `/api/prompts/${promptId}/revisions/${selectedRevisionId}`,
-      { signal: controller.signal },
-    )
+    void promptApi
+      .json<PromptRevisionResponse>(`/api/prompts/${promptId}/revisions/${selectedRevisionId}`, {
+        signal: controller.signal,
+      })
       .then((value) => setSelectedRevision(value))
       .catch((cause) => {
         if (!controller.signal.aborted) setRevisionError(readError(cause));
@@ -156,7 +161,9 @@ export function PromptEditor({
     setLatestRunError(undefined);
     const refresh = async () => {
       try {
-        const value = await fetchJson<EvaluationRunResponse>(`/api/evaluations/${latestRunId}`);
+        const value = await promptApi.json<EvaluationRunResponse>(
+          `/api/evaluations/${latestRunId}`,
+        );
         if (cancelled) return;
         setLatestRun(value.run);
         setTrend(value.trend);
@@ -198,7 +205,7 @@ export function PromptEditor({
     setSaving(true);
     setError(undefined);
     try {
-      await fetchJson<PromptCurrent>(`/api/prompts/${promptId}`, {
+      await promptApi.json<PromptCurrent>(`/api/prompts/${promptId}`, {
         body: JSON.stringify({ expectedRevisionId: detail.prompt.revisionId, markdown: draft }),
         headers: { "content-type": "application/json" },
         method: "PATCH",
@@ -219,7 +226,7 @@ export function PromptEditor({
       setHistoryAction(action);
       setError(undefined);
       try {
-        await fetchJson<PromptCurrent>(`/api/prompts/${promptId}`, {
+        await promptApi.json<PromptCurrent>(`/api/prompts/${promptId}`, {
           body: JSON.stringify({ action, expectedRevisionId: detail.prompt.revisionId }),
           headers: { "content-type": "application/json" },
           method: "PATCH",
@@ -265,7 +272,9 @@ export function PromptEditor({
   }, [detail, dirty, historyAction, navigateHistory, saving]);
 
   const selectedRevisionSummary = detail?.revisions.find(({ id }) => id === selectedRevisionId);
-  const selectedDate = selectedRevisionSummary ? formatDate(selectedRevisionSummary.createdAt) : "";
+  const selectedDate = selectedRevisionSummary
+    ? formatDateTime(selectedRevisionSummary.createdAt)
+    : "";
   const revisionVersions = new Map(
     detail?.revisions.map((revision, index, revisions) => [
       revision.id,
@@ -310,7 +319,8 @@ export function PromptEditor({
             <History aria-hidden="true" className="size-3.5" />v{detail.prompt.revisionNumber} ·{" "}
             {detail.prompt.revisionCount} versions
           </button>
-          <span>Updated {formatDate(detail.prompt.updatedAt)}</span>
+          <span>Updated {formatDateTime(detail.prompt.updatedAt)}</span>
+          <PromptStats markdown={draft} />
         </div>
       </div>
       {error ? (
@@ -430,9 +440,9 @@ export function PromptEditor({
             <div className="relative">
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-0 overflow-hidden"
+                className="pointer-events-none absolute inset-0 overflow-hidden [scrollbar-gutter:stable]"
               >
-                <div className="pt-5 font-mono text-sm leading-6 sm:pt-7" ref={gutterRef}>
+                <div className="py-5 font-mono text-sm leading-6 sm:py-7">
                   {draft.split("\n").map((line, index) => (
                     <div className="grid min-h-6 grid-cols-[3rem_minmax(0,1fr)]" key={index}>
                       <span className="select-none border-r border-border/70 pr-3 text-right text-muted-foreground/55">
@@ -447,13 +457,8 @@ export function PromptEditor({
               </div>
               <Textarea
                 aria-label="Prompt Markdown"
-                className="relative min-h-[32rem] resize-y rounded-none border-0 bg-transparent py-5 pl-16 pr-5 font-mono leading-6 shadow-none focus-visible:outline-none sm:py-7 sm:pl-16 sm:pr-7"
+                className="relative min-h-[max(32rem,calc(100dvh-22rem))] resize-none overflow-hidden rounded-none border-0 bg-transparent py-5 pl-16 pr-5 font-mono leading-6 shadow-none [field-sizing:content] [scrollbar-gutter:stable] focus-visible:outline-none sm:py-7 sm:pl-16 sm:pr-7"
                 onChange={(event) => setDraft(event.target.value)}
-                onScroll={(event) => {
-                  if (gutterRef.current) {
-                    gutterRef.current.style.transform = `translateY(-${event.currentTarget.scrollTop}px)`;
-                  }
-                }}
                 ref={textareaRef}
                 value={draft}
               />
@@ -612,7 +617,7 @@ function RevisionButton({
           ) : null}
         </span>
         <span className="shrink-0 text-[11px] text-muted-foreground">
-          {formatDate(revision.createdAt)}
+          {formatDateTime(revision.createdAt)}
         </span>
       </div>
       <div className="mt-1.5 truncate text-foreground">
@@ -627,27 +632,8 @@ function RevisionButton({
   );
 }
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(value),
-  );
-}
-
 function revisionAuthorLabel(source: PromptRevisionSummary["source"]): string {
   return source === "ai" ? "AI" : "Human";
-}
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, { cache: "no-store", ...init });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: unknown };
-    throw new Error(typeof body.error === "string" ? body.error : "Prompt request failed.");
-  }
-  return (await response.json()) as T;
-}
-
-function readError(error: unknown): string {
-  return error instanceof Error ? error.message : "Prompt request failed.";
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

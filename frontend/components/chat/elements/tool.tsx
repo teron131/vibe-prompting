@@ -4,7 +4,7 @@
 
 import { ChevronRight, CircleAlert, ExternalLink, LoaderCircle, Wrench } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ResponseText } from "@/components/chat/elements/response";
 import { cn } from "@/components/ui/utils";
@@ -13,18 +13,8 @@ import type { MessagePart } from "@/contracts/chat";
 type ToolPart = Extract<MessagePart, { type: "tool" }>;
 
 export function Tool({ nested = false, part }: { nested?: boolean; part: ToolPart }) {
-  const running = part.state === "running";
-  const [open, setOpen] = useState(running);
+  const [open, setOpen] = useState(false);
   const artifact = readArtifact(part.output);
-
-  useEffect(() => {
-    if (running) {
-      setOpen(true);
-      return;
-    }
-    const timer = window.setTimeout(() => setOpen(false), 500);
-    return () => window.clearTimeout(timer);
-  }, [running]);
 
   return (
     <details

@@ -89,7 +89,7 @@ function addInlineDiffs(lines: RawDiffLine[]): RawDiffLine[] {
     for (let pairIndex = 0; pairIndex < pairCount; pairIndex += 1) {
       const removed = result[removedStart + pairIndex]!;
       const added = result[addedStart + pairIndex]!;
-      const [removedSegments, addedSegments] = diffCharacters(removed.text, added.text);
+      const [removedSegments, addedSegments] = diffWords(removed.text, added.text);
       removed.segments = removedSegments;
       added.segments = addedSegments;
     }
@@ -97,9 +97,9 @@ function addInlineDiffs(lines: RawDiffLine[]): RawDiffLine[] {
   return result;
 }
 
-function diffCharacters(before: string, after: string): [PromptDiffSegment[], PromptDiffSegment[]] {
-  const left = Array.from(before);
-  const right = Array.from(after);
+function diffWords(before: string, after: string): [PromptDiffSegment[], PromptDiffSegment[]] {
+  const left = tokenizeInlineDiff(before);
+  const right = tokenizeInlineDiff(after);
   if (left.length * right.length > INLINE_DIFF_MATRIX_LIMIT) {
     return [changedSegment(before), changedSegment(after)];
   }
@@ -133,6 +133,10 @@ function diffCharacters(before: string, after: string): [PromptDiffSegment[], Pr
   while (leftIndex < left.length) appendSegment(removed, "changed", left[leftIndex++]!);
   while (rightIndex < right.length) appendSegment(added, "changed", right[rightIndex++]!);
   return [removed, added];
+}
+
+function tokenizeInlineDiff(text: string): string[] {
+  return text.match(/\s+|[\p{L}\p{N}_]+|[^\p{L}\p{N}_\s]+/gu) ?? [];
 }
 
 function appendSegment(

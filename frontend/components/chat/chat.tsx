@@ -28,12 +28,15 @@ import type {
 } from "@/contracts/chat";
 import type { PromptsResponse, PromptSummary } from "@/contracts/prompts";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
+import { createApiRequester, createErrorReader, readResponseError } from "@/shared/api";
 
 import { AssistantMessage } from "./assistant-message";
 import { ChatComposer } from "./chat-composer";
 import { ChatHistoryIcon } from "./history-icon";
 
 const DEFAULT_TOOLS: ChatToolId[] = ["prompt-library", "evaluations", "web-search"];
+const chatApi = createApiRequester({ cache: "no-store" });
+const readError = createErrorReader("The request failed.");
 
 type WorkspaceDraft = {
   activePromptId: string | null;
@@ -61,12 +64,15 @@ type UseChatRunInput = {
   onAttachmentsChange(value: Attachment[]): void;
   onInstructionChange(value: string): void;
   onPromptsRefresh(): Promise<unknown>;
+  onPromptRevision(reference: PromptRevisionReference): void;
   onQuotesChange(value: PromptQuote[]): void;
   panelOpen: boolean;
   quotes: PromptQuote[];
   reasoningEffort: ChatReasoningEffort;
   selectedModelId: string;
 };
+
+type PromptRevisionReference = { promptId: string; revisionId: string };
 
 export function Chat({
   chatId: initialChatId,
@@ -84,6 +90,7 @@ export function Chat({
   const [activePromptId, setActivePromptId] = useState<string | null>(initialPromptId ?? null);
   const [quotes, setQuotes] = useState<PromptQuote[]>([]);
   const [highlightedQuote, setHighlightedQuote] = useState<PromptQuote>();
+  const [reviewRevision, setReviewRevision] = useState<PromptRevisionReference>();
   const [panelOpen, setPanelOpen] = useState(Boolean(initialPromptId));
   const [instruction, setInstruction] = useState("");
   const [loading, setLoading] = useState(true);
@@ -91,9 +98,15 @@ export function Chat({
   const panelWasOpen = useRef(panelOpen);
 
   const loadPrompts = useCallback(async () => {
-    const data = await fetchJson<PromptsResponse>("/api/prompts");
+    const data = await chatApi.json<PromptsResponse>("/api/prompts");
     setPrompts(data.prompts);
     return data.prompts;
+  }, []);
+  const handlePromptRevision = useCallback((reference: PromptRevisionReference) => {
+    setActivePromptId(reference.promptId);
+    setHighlightedQuote(undefined);
+    setReviewRevision(reference);
+    setPanelOpen(true);
   }, []);
 
   const {
@@ -117,6 +130,7 @@ export function Chat({
     onAttachmentsChange: setAttachments,
     onInstructionChange: setInstruction,
     onPromptsRefresh: loadPrompts,
+    onPromptRevision: handlePromptRevision,
     onQuotesChange: setQuotes,
     panelOpen,
     quotes,
@@ -139,7 +153,7 @@ export function Chat({
     let active = true;
     setLoading(true);
     Promise.all([
-      fetchJson<ConfiguredModelsResponse>("/api/config"),
+      chatApi.json<ConfiguredModelsResponse>("/api/config"),
       loadPrompts(),
       chatId ? loadConversation(chatId) : Promise.resolve(undefined),
     ])
@@ -208,6 +222,7 @@ export function Chat({
   function activatePrompt(prompt: PromptSummary, showPanel: boolean) {
     setActivePromptId(prompt.id);
     setHighlightedQuote(undefined);
+    setReviewRevision(undefined);
     window.history.replaceState(
       null,
       "",
@@ -222,6 +237,7 @@ export function Chat({
   function detachPrompt() {
     setActivePromptId(null);
     setHighlightedQuote(undefined);
+    setReviewRevision(undefined);
     window.history.replaceState(null, "", chatId ? `/chat/${chatId}` : "/");
   }
 
@@ -247,7 +263,11 @@ export function Chat({
     });
   }
 
-  function openPromptReference(reference: { promptId: string; quote?: PromptQuote }) {
+  function openPromptReference(reference: {
+    promptId: string;
+    quote?: PromptQuote;
+    revisionId?: string;
+  }) {
     const prompt = prompts.find(({ id }) => id === reference.promptId);
     if (!prompt) {
       toast.error("The referenced prompt is no longer available.");
@@ -255,6 +275,11 @@ export function Chat({
     }
     setActivePromptId(prompt.id);
     setHighlightedQuote(undefined);
+    setReviewRevision(
+      reference.revisionId
+        ? { promptId: reference.promptId, revisionId: reference.revisionId }
+        : undefined,
+    );
     if (reference.quote) {
       window.requestAnimationFrame(() => setHighlightedQuote(reference.quote));
     }
@@ -262,7 +287,7 @@ export function Chat({
   }
 
   return (
-    <main className="flex h-screen min-h-0 flex-col">
+    <main className="flex h-screen min-h-0 flex-col overflow-hidden">
       <FeaturePageHeader
         icon={
           <ChatHistoryIcon
@@ -307,7 +332,10 @@ export function Chat({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <section className="flex min-w-0 flex-1 flex-col" aria-label="Agent conversation">
+          <section
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            aria-label="Agent conversation"
+          >
             <ConversationView containerRef={containerRef} onScroll={onScroll}>
               {messages.length === 0 ? (
                 <EmptyState onSelect={setInstruction} />
@@ -335,8 +363,11 @@ export function Chat({
                 })
               )}
               {error ? (
-                <div className="mb-5 flex gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                  <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                <div
+                  className="mb-2 flex w-fit max-w-xl items-center gap-1.5 text-xs text-destructive"
+                  role="alert"
+                >
+                  <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
                   {error}
                 </div>
               ) : null}
@@ -379,6 +410,7 @@ export function Chat({
             onSelectPrompt={(prompt) => activatePrompt(prompt, true)}
             open={panelOpen}
             prompts={prompts}
+            reviewRevision={reviewRevision}
           />
         </div>
       )}
@@ -395,6 +427,7 @@ function useChatRun({
   onAttachmentsChange,
   onInstructionChange,
   onPromptsRefresh,
+  onPromptRevision,
   onQuotesChange,
   panelOpen,
   quotes,
@@ -414,19 +447,24 @@ function useChatRun({
     [conversation, liveMessage],
   );
 
-  const loadConversation = useCallback(async (id: string) => {
-    const data = await fetchJson<ChatResponse>(`/api/chat?id=${encodeURIComponent(id)}`);
-    setConversation(data.conversation);
-    setRunning(data.active);
-    if (!data.active) {
-      setDetached(false);
-      setLiveMessage(undefined);
-    } else if (ownedRunIdRef.current !== id) {
-      setDetached(true);
-      setLiveMessage(replayLiveMessage(id, data.conversation.chat.modelId, data.events));
-    }
-    return data;
-  }, []);
+  const loadConversation = useCallback(
+    async (id: string) => {
+      const data = await chatApi.json<ChatResponse>(`/api/chat?id=${encodeURIComponent(id)}`);
+      setConversation(data.conversation);
+      setRunning(data.active);
+      if (!data.active) {
+        setDetached(false);
+        setLiveMessage(undefined);
+      } else if (ownedRunIdRef.current !== id) {
+        setDetached(true);
+        setLiveMessage(replayLiveMessage(id, data.conversation.chat.modelId, data.events));
+      }
+      const revision = findLatestPromptRevision(data.conversation.messages);
+      if (revision) onPromptRevision(revision);
+      return data;
+    },
+    [onPromptRevision],
+  );
 
   useEffect(() => {
     if (!chatId || !detached) return;
@@ -556,7 +594,6 @@ function useChatRun({
         onAttachmentsChange(requestAttachments);
         onQuotesChange(requestQuotes);
       }
-      toast.error(message);
       try {
         await loadConversation(runChatId);
       } catch {
@@ -584,7 +621,7 @@ function useChatRun({
     onInstructionChange("");
     setError(undefined);
     try {
-      await fetchJson<SteerChatResponse>("/api/chat", {
+      await chatApi.json<SteerChatResponse>("/api/chat", {
         body: JSON.stringify({
           chatId: runChatId,
           instruction: steeringInstruction,
@@ -604,7 +641,6 @@ function useChatRun({
       );
       onInstructionChange(steeringInstruction);
       setError(message);
-      toast.error(message);
     }
   }
 
@@ -624,6 +660,7 @@ function useChatRun({
       window.dispatchEvent(new Event("vibe:history"));
       return;
     }
+    if (event.type === "prompt-revision") onPromptRevision(event);
     setLiveMessage((current) =>
       addLiveEvent(current ?? createLiveMessage(chatId ?? "pending", selectedModelId), event),
     );
@@ -632,7 +669,7 @@ function useChatRun({
   async function stop() {
     if (!chatId) return;
     try {
-      await fetchJson<StopChatResponse>("/api/chat", {
+      await chatApi.json<StopChatResponse>("/api/chat", {
         body: JSON.stringify({ chatId }),
         headers: { "content-type": "application/json" },
         method: "PATCH",
@@ -727,6 +764,17 @@ function createLiveMessage(chatId: string, modelId?: string): ChatMessage {
   };
 }
 
+function findLatestPromptRevision(messages: ChatMessage[]): PromptRevisionReference | undefined {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = messages[messageIndex];
+    for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = message.parts[partIndex];
+      if (part.type === "prompt-revision") return part;
+    }
+  }
+  return undefined;
+}
+
 function addLiveEvent(
   message: ChatMessage,
   event: Exclude<RunEvent, { type: "chat-metadata" | "error" | "finish" | "stopped" }>,
@@ -773,10 +821,7 @@ function addLiveEvent(
       (part) => part.type === "reasoning" && part.streaming,
     );
     if (streamingIndex >= 0) parts[streamingIndex] = event;
-    else {
-      const textIndex = parts.findIndex((part) => part.type === "text");
-      parts.splice(textIndex >= 0 ? textIndex : parts.length, 0, event);
-    }
+    else parts.push(event);
     return { ...message, parts };
   }
   if (event.type === "tool") {
@@ -825,24 +870,6 @@ async function consumeRunStream(
     if (done) break;
   }
   if (buffer.trim()) onEvent(JSON.parse(buffer) as RunEvent);
-}
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, { cache: "no-store", ...init });
-  if (!response.ok) throw new Error(await readResponseError(response));
-  return (await response.json()) as T;
-}
-
-async function readResponseError(response: Response): Promise<string> {
-  try {
-    const value = (await response.json()) as { error?: unknown };
-    if (typeof value.error === "string") return value.error;
-  } catch {}
-  return `Request failed with status ${response.status}.`;
-}
-
-function readError(error: unknown): string {
-  return error instanceof Error ? error.message : "The request failed.";
 }
 
 function workspaceStorageKey(chatId: string | undefined): string {

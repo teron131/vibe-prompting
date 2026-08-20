@@ -1,14 +1,10 @@
 /** Presents the session-agnostic prompt workspace inside the application shell. */
 
-import { Sparkles } from "lucide-react";
-
-import { PromptChatLink, PromptStudio } from "@/components/prompts/studio";
-import { FeaturePageHeader } from "@/components/shell/header";
+import { PromptStudio } from "@/components/prompts/studio";
 
 export default function PromptsPage() {
   return (
     <main className="flex h-screen min-h-0 flex-col overflow-hidden">
-      <FeaturePageHeader icon={Sparkles} rightContent={<PromptChatLink />} title="Prompts" />
       <PromptStudio />
     </main>
   );

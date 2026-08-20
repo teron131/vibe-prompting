@@ -1,9 +1,6 @@
-/** Presents prompt-bound evaluation configuration and recent durable attempts. */
+/** Routes the evaluation workspace entry to scalable result inspection. */
 
-import { FlaskConical } from "lucide-react";
-
-import { EvaluationWorkbench } from "@/components/evaluations/workbench";
-import { FeaturePageHeader } from "@/components/shell/header";
+import { redirect } from "next/navigation";
 
 export default async function EvaluationsPage({
   searchParams,
@@ -11,10 +8,9 @@ export default async function EvaluationsPage({
   searchParams: Promise<{ prompt?: string | string[] }>;
 }) {
   const { prompt } = await searchParams;
-  return (
-    <main className="min-h-screen">
-      <FeaturePageHeader icon={FlaskConical} title="Evaluations" />
-      <EvaluationWorkbench initialPromptId={typeof prompt === "string" ? prompt : undefined} />
-    </main>
+  redirect(
+    typeof prompt === "string"
+      ? `/evaluations/run?prompt=${encodeURIComponent(prompt)}`
+      : "/evaluations/results",
   );
 }

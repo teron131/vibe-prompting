@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { PromptSearchResponse, PromptSearchResult, PromptSummary } from "@/contracts/prompts";
+import { requestJson } from "@/shared/api";
 
 type PromptSearchState = {
   error: string | null;
@@ -45,14 +46,11 @@ export function usePromptSearch({
     setServerState({ error: null, loading: true, query: normalizedQuery, results: [] });
     const timeout = window.setTimeout(async () => {
       try {
-        const response = await fetch(
+        const payload = await requestJson<PromptSearchResponse>(
           `/api/prompt-search?q=${encodeURIComponent(normalizedQuery)}`,
           { signal: controller.signal },
+          "Prompt search is unavailable.",
         );
-        const payload = (await response.json()) as PromptSearchResponse & { error?: string };
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Prompt search is unavailable.");
-        }
         setServerState({
           error: null,
           loading: false,

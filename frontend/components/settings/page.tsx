@@ -19,6 +19,10 @@ import type {
   SettingsResponse,
   UpdateSettingsRequest,
 } from "@/contracts/settings";
+import { createApiRequester, createErrorReader } from "@/shared/api";
+
+const settingsApi = createApiRequester({}, "Request failed.");
+const readError = createErrorReader("Unable to load settings.");
 
 const PLATFORM_OPTIONS: Array<{ label: string; value: SettingsPlatformId }> = [
   { label: "CLIProxyAPI", value: "cliproxy" },
@@ -81,7 +85,7 @@ export function SettingsPage() {
         const patch = draft && toProviderPatch(provider, draft);
         return patch ? [patch] : [];
       });
-      const updated = await fetchJson<SettingsResponse>("/api/settings", {
+      const updated = await settingsApi.json<SettingsResponse>("/api/settings", {
         body: JSON.stringify({ models, providers } satisfies UpdateSettingsRequest),
         headers: { "content-type": "application/json" },
         method: "PUT",
@@ -453,25 +457,5 @@ function credentialDescription(provider: ProviderSettings): string {
 }
 
 async function fetchSettings(): Promise<SettingsResponse> {
-  return fetchJson<SettingsResponse>("/api/settings");
-}
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
-  const payload: unknown = await response.json();
-  if (!response.ok) {
-    const error =
-      payload &&
-      typeof payload === "object" &&
-      "error" in payload &&
-      typeof payload.error === "string"
-        ? payload.error
-        : "Request failed.";
-    throw new Error(error);
-  }
-  return payload as T;
-}
-
-function readError(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "Unable to load settings.";
+  return settingsApi.json<SettingsResponse>("/api/settings");
 }

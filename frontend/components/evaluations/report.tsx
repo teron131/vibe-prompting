@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { ModelIdentityLabel } from "@/components/chat/model-selector";
 import { MarkdownPreview } from "@/components/prompts/artifact";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
@@ -25,9 +26,19 @@ import type {
   EvaluationRunSummary,
 } from "@/contracts/evaluations";
 import type { PromptDetail } from "@/contracts/prompts";
+import { createApiRequester, createErrorReader } from "@/shared/api";
+import { formatDateTime } from "@/shared/date";
 
+import { EvaluationMarkdownValue } from "./markdown-value";
 import { RevisionTrend } from "./revision-trend";
 import { ScoreGrid } from "./score-grid";
+import { RunScoreOverview } from "./score-visualization";
+
+const evaluationReportApi = createApiRequester(
+  { cache: "no-store" },
+  "Evaluation report request failed.",
+);
+const readError = createErrorReader("Evaluation report request failed.");
 
 export function EvaluationReport({ runId }: { runId: string }) {
   const [run, setRun] = useState<EvaluationRun>();
@@ -37,7 +48,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
   const [error, setError] = useState<string>();
 
   const load = useCallback(async () => {
-    const data = await fetchJson<EvaluationRunResponse>(`/api/evaluations/${runId}`);
+    const data = await evaluationReportApi.json<EvaluationRunResponse>(`/api/evaluations/${runId}`);
     setRun(data.run);
     setTrend(data.trend);
     setError(undefined);
@@ -68,10 +79,11 @@ export function EvaluationReport({ runId }: { runId: string }) {
   async function retry() {
     if (!run) return;
     try {
-      const prompt = await fetchJson<PromptDetail>(`/api/prompts/${run.promptId}`);
-      const next = await fetchJson<EvaluationRunSummary>("/api/evaluations", {
+      const prompt = await evaluationReportApi.json<PromptDetail>(`/api/prompts/${run.promptId}`);
+      const next = await evaluationReportApi.json<EvaluationRunSummary>("/api/evaluations", {
         body: JSON.stringify({
           cases: run.cases.map(({ criteria, input }) => ({ criteria, input })),
+          isSyntheticExample: run.isSyntheticExample,
           judges: run.judgeModelIds,
           promptId: run.promptId,
           promptRevisionId: prompt.prompt.revisionId,
@@ -105,67 +117,130 @@ export function EvaluationReport({ runId }: { runId: string }) {
     );
 
   return (
-    <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <Link
-            className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            href="/evaluations"
-          >
-            <ArrowLeft aria-hidden="true" className="size-3.5" />
-            Evaluation workbench
-          </Link>
-          <h2 className="text-xl font-semibold">{run.promptTitle}</h2>
-          <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <Status status={run.status} />
-            <span>{run.source === "ai" ? "AI" : "Human"}</span>
-            <span>{run.targetProfileName ?? "Legacy runtime"}</span>
-            {run.targetProfileRevisionId ? (
-              <span className="font-mono">Runtime {run.targetProfileRevisionId.slice(0, 8)}</span>
+    <main className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-7">
+      <header className="border-b pb-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <Link
+              className="mb-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              href="/evaluations/results"
+            >
+              <ArrowLeft aria-hidden="true" className="size-3.5" />
+              Results
+            </Link>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h2 className="min-w-0 truncate text-xl font-semibold tracking-tight sm:text-2xl">
+                {run.promptTitle}
+              </h2>
+              {run.isSyntheticExample ? (
+                <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Synthetic example
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
+              Attributed results for one durable prompt revision, target, case set, and judge set.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {run.chatId ? (
+              <Link
+                className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-accent"
+                href={`/chat/${run.chatId}`}
+              >
+                <MessageSquareText aria-hidden="true" className="size-4" />
+                Producing chat
+              </Link>
             ) : null}
-            <span className="font-mono">Revision {run.promptRevisionId.slice(0, 8)}</span>
-            <span>{formatDate(run.completedAt ?? run.createdAt)}</span>
+            {run.status === "failed" || run.status === "interrupted" ? (
+              <Button onClick={retry} variant="outline">
+                <RotateCcw aria-hidden="true" className="size-4" />
+                Retry current revision
+              </Button>
+            ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {run.chatId ? (
-            <Link
-              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-accent"
-              href={`/chat/${run.chatId}`}
-            >
-              <MessageSquareText aria-hidden="true" className="size-4" />
-              Producing chat
-            </Link>
-          ) : null}
-          {run.status === "failed" || run.status === "interrupted" ? (
-            <Button onClick={retry} variant="outline">
-              <RotateCcw aria-hidden="true" className="size-4" />
-              Retry current revision
-            </Button>
-          ) : null}
+        <div className="mt-5 grid grid-cols-[5rem_minmax(0,1fr)] border-y text-xs sm:grid-cols-[auto_1fr] lg:grid-cols-[auto_1fr_auto_1fr]">
+          <ProvenanceDatum label="State">
+            <Status status={run.status} />
+          </ProvenanceDatum>
+          <ProvenanceDatum label="Evaluated">
+            <span className="font-mono">{formatDateTime(run.completedAt ?? run.createdAt)}</span>
+          </ProvenanceDatum>
+          <ProvenanceDatum label="Target">
+            <ModelIdentityLabel labelClassName="font-mono" modelId={run.targetModelId} />
+          </ProvenanceDatum>
+          <ProvenanceDatum label="Prompt revision">
+            <span className="break-all font-mono">{run.promptRevisionId}</span>
+          </ProvenanceDatum>
+          <ProvenanceDatum label="Cases">
+            <span className="font-mono">
+              {run.cases.filter(({ output }) => output !== null).length}/{run.caseCount} completed
+            </span>
+          </ProvenanceDatum>
+          <ProvenanceDatum label="Score facts">
+            <span className="font-mono">
+              {scoreCounts.length
+                ? scoreCounts.map(([type, count]) => `${type.toLowerCase()} ${count}`).join(" · ")
+                : "None yet"}
+            </span>
+          </ProvenanceDatum>
+          <ProvenanceDatum label="Runtime">
+            <span className="font-mono">
+              {run.targetProfileName ?? "Legacy runtime"}
+              {run.targetProfileRevisionId ? ` · ${run.targetProfileRevisionId}` : ""}
+            </span>
+          </ProvenanceDatum>
+          <ProvenanceDatum label="Judges">
+            {run.judgeModelIds.length ? (
+              <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
+                {run.judgeModelIds.map((modelId) => (
+                  <ModelIdentityLabel labelClassName="font-mono" key={modelId} modelId={modelId} />
+                ))}
+              </span>
+            ) : (
+              <span className="font-mono">None</span>
+            )}
+          </ProvenanceDatum>
         </div>
-      </div>
-      <section className="mb-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric label="Status" value={run.status} />
-        <Metric
-          label="Completed cases"
-          value={`${run.cases.filter(({ output }) => output !== null).length}/${run.caseCount}`}
-        />
-        <Metric label="Judges" value={String(run.judgeModelIds.length)} />
-        <Metric
-          label="Score facts"
-          value={
-            scoreCounts.length
-              ? scoreCounts.map(([type, count]) => `${type.toLowerCase()} ${count}`).join(" · ")
-              : "None yet"
-          }
-        />
-      </section>
-      <div className="mb-5 flex border-b">
+        <details className="group border-b text-xs">
+          <summary className="flex cursor-pointer list-none items-center justify-between py-2.5 text-muted-foreground hover:text-foreground">
+            <span>Exact provenance</span>
+            <span className="font-mono group-open:hidden">Run {run.id.slice(0, 8)}</span>
+            <span className="hidden font-mono group-open:inline">Close</span>
+          </summary>
+          <dl className="grid gap-x-6 gap-y-3 pb-4 sm:grid-cols-2 lg:grid-cols-3">
+            <ExactDatum label="Run ID" value={run.id} />
+            <ExactDatum
+              label="Source"
+              value={run.source === "ai" ? "AI-authored" : "Human-authored"}
+            />
+            <ExactDatum label="Prompt ID" value={run.promptId} />
+            <ExactDatum label="Configuration fingerprint" value={run.configurationFingerprint} />
+            <ExactDatum
+              label="Effective instructions hash"
+              value={run.effectiveInstructionsHash ?? "Not recorded"}
+            />
+            <ExactDatum label="Target profile ID" value={run.targetProfileId ?? "Legacy runtime"} />
+            <ExactDatum
+              label="Target configuration"
+              value={
+                run.targetConfiguration ? JSON.stringify(run.targetConfiguration) : "Not recorded"
+              }
+            />
+            <ExactDatum label="Created at" value={run.createdAt} />
+            <ExactDatum label="Completed at" value={run.completedAt ?? "Not completed"} />
+          </dl>
+        </details>
+      </header>
+      <nav
+        aria-label="Report view"
+        className="sticky top-0 z-10 -mx-4 flex border-b bg-background/95 px-4 backdrop-blur sm:-mx-6 sm:px-6"
+      >
         <button
           className={cn(
-            "border-b-2 px-4 py-2 text-sm font-medium",
-            view === "results" ? "border-primary" : "border-transparent text-muted-foreground",
+            "border-b-2 px-1 py-3 text-sm font-medium",
+            view === "results" ? "border-foreground" : "border-transparent text-muted-foreground",
           )}
           onClick={() => setView("results")}
           type="button"
@@ -175,8 +250,8 @@ export function EvaluationReport({ runId }: { runId: string }) {
         </button>
         <button
           className={cn(
-            "border-b-2 px-4 py-2 text-sm font-medium",
-            view === "prompt" ? "border-primary" : "border-transparent text-muted-foreground",
+            "ml-6 border-b-2 px-1 py-3 text-sm font-medium",
+            view === "prompt" ? "border-foreground" : "border-transparent text-muted-foreground",
           )}
           onClick={() => setView("prompt")}
           type="button"
@@ -184,101 +259,158 @@ export function EvaluationReport({ runId }: { runId: string }) {
           <FileText aria-hidden="true" className="mr-2 inline size-4" />
           Prompt artifact
         </button>
-      </div>
-      {view === "prompt" ? (
-        <section className="rounded-xl border bg-card">
-          <div className="flex items-center justify-between border-b px-4 py-2">
-            <div className="text-sm font-medium">Exact evaluated revision</div>
-            <div className="flex gap-2">
-              <Link
-                className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs hover:bg-accent"
-                href={`/prompts/${run.promptId}`}
-              >
-                Prompt detail
-                <ExternalLink aria-hidden="true" className="size-3" />
-              </Link>
-              <Button onClick={() => setSource((value) => !value)} size="sm" variant="ghost">
-                {source ? "Preview" : "Source"}
-              </Button>
+      </nav>
+      <div className="pt-6">
+        {view === "prompt" ? (
+          <section>
+            <div className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold">Exact evaluated revision</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  This immutable artifact, not the current prompt revision, produced the results.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Link
+                  className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs hover:bg-accent"
+                  href={`/prompts/${run.promptId}`}
+                >
+                  Prompt detail
+                  <ExternalLink aria-hidden="true" className="size-3" />
+                </Link>
+                <Button onClick={() => setSource((value) => !value)} size="sm" variant="ghost">
+                  {source ? "Preview" : "Source"}
+                </Button>
+              </div>
             </div>
-          </div>
-          {source ? (
-            <pre className="min-h-96 whitespace-pre-wrap break-words p-5 font-mono text-sm leading-6 sm:p-7">
-              {run.promptMarkdown}
-            </pre>
-          ) : (
-            <MarkdownPreview className="min-h-96 p-5 sm:p-7" markdown={run.promptMarkdown} />
-          )}
-        </section>
-      ) : (
-        <Results run={run} trend={trend} />
-      )}
-    </div>
+            {source ? (
+              <pre className="min-h-96 whitespace-pre-wrap break-words py-6 font-mono text-sm leading-6 sm:py-8">
+                {run.promptMarkdown}
+              </pre>
+            ) : (
+              <MarkdownPreview className="min-h-96 py-6 sm:py-8" markdown={run.promptMarkdown} />
+            )}
+          </section>
+        ) : (
+          <Results run={run} trend={trend} />
+        )}
+      </div>
+    </main>
   );
 }
 
 function Results({ run, trend }: { run: EvaluationRun; trend: BooleanTrendPoint[] }) {
   if (run.status === "running")
     return (
-      <div className="rounded-xl border border-dashed p-10 text-center">
-        <LoaderCircle
-          aria-hidden="true"
-          className="mx-auto size-5 animate-spin text-muted-foreground"
-        />
-        <h3 className="mt-3 font-medium">Evaluation is running</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          The durable attempt is safe to leave; this report will continue polling.
-        </p>
-      </div>
+      <section className="border-y py-10">
+        <div className="flex max-w-2xl items-start gap-3">
+          <LoaderCircle
+            aria-hidden="true"
+            className="mt-0.5 size-5 shrink-0 animate-spin text-muted-foreground"
+          />
+          <div>
+            <h2 className="font-medium">Evaluation is running</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The durable attempt is safe to leave; this report will continue polling.
+            </p>
+          </div>
+        </div>
+      </section>
     );
   if (run.status === "failed" || run.status === "interrupted")
     return (
-      <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-5">
-        <h3 className="font-medium capitalize">{run.status} evaluation</h3>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {run.errorMessage ?? "No provider result or score was persisted."}
-        </p>
-      </div>
+      <section className="border-y border-destructive/40 py-6">
+        <div>
+          <h2 className="font-medium capitalize text-destructive">{run.status} evaluation</h2>
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+            {run.errorMessage ?? "No provider result or score was persisted."}
+          </p>
+        </div>
+      </section>
     );
   return (
-    <div className="space-y-5">
-      <RevisionTrend points={trend} />
-      {run.cases.map((testCase) => (
-        <section className="rounded-xl border bg-card p-4 sm:p-5" key={testCase.id}>
-          <h3 className="font-semibold">Case {testCase.position + 1}</h3>
-          <div className="mt-3 grid gap-4 lg:grid-cols-2">
-            <ValueBlock label="Input" value={testCase.input} />
-            <ValueBlock label="Target output" value={testCase.output} />
-          </div>
-          <div className="mt-5">
-            <ScoreGrid judges={run.judgeModelIds} testCase={testCase} />
-          </div>
+    <div>
+      <section aria-labelledby="criterion-overview-heading">
+        <div className="mb-3 flex items-baseline justify-between gap-4">
+          <h2
+            className="text-xs font-semibold uppercase tracking-wide"
+            id="criterion-overview-heading"
+          >
+            Criterion overview
+          </h2>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {run.caseCount} {run.caseCount === 1 ? "case" : "cases"} · {run.judgeModelIds.length}{" "}
+            {run.judgeModelIds.length === 1 ? "judge" : "judges"}
+          </span>
+        </div>
+        <RunScoreOverview run={run} />
+      </section>
+      {trend.length >= 2 ? (
+        <section className="mt-8 border-t pt-6">
+          <RevisionTrend points={trend} />
         </section>
-      ))}
+      ) : null}
+      <section className="mt-8 border-t" aria-labelledby="case-evidence-heading">
+        <div className="flex items-baseline justify-between gap-4 py-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide" id="case-evidence-heading">
+            Case evidence
+          </h2>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {run.cases.length} persisted
+          </span>
+        </div>
+        {run.cases.map((testCase) => (
+          <article className="border-t" key={testCase.id}>
+            <header className="flex items-center justify-between gap-4 py-3">
+              <h3 className="font-semibold">Case {testCase.position + 1}</h3>
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {testCase.scores.length}{" "}
+                {testCase.scores.length === 1 ? "score fact" : "score facts"}
+              </span>
+            </header>
+            <div className="grid border-t lg:grid-cols-2">
+              <EvaluationMarkdownValue className="lg:pr-6" label="Input" value={testCase.input} />
+              <EvaluationMarkdownValue
+                className="border-t lg:border-t-0 lg:border-l lg:pl-6"
+                label="Target output"
+                value={testCase.output}
+              />
+            </div>
+            <div className="border-t py-5">
+              <div className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Attributed score evidence
+              </div>
+              <ScoreGrid judges={run.judgeModelIds} testCase={testCase} />
+            </div>
+          </article>
+        ))}
+      </section>
     </div>
   );
 }
 
-function ValueBlock({ label, value }: { label: string; value: unknown }) {
+function ProvenanceDatum({ children, label }: { children: React.ReactNode; label: string }) {
   return (
-    <div>
-      <div className="mb-1 text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-secondary/60 p-3 text-sm">
-        {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+    <div className="contents">
+      <div className="border-b py-2 pr-4 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:border-b-0 sm:border-r sm:px-3 sm:first:pl-0 lg:border-b lg:[&:nth-last-child(-n+4)]:border-b-0">
+        {label}
+      </div>
+      <div className="min-w-0 border-b py-2 text-foreground sm:border-b-0 sm:px-3 lg:border-b lg:[&:nth-last-child(-n+4)]:border-b-0">
+        {children}
       </div>
     </div>
   );
 }
-function Metric({ label, value }: { label: string; value: string }) {
+
+function ExactDatum({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border bg-card p-3">
-      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words text-sm font-medium capitalize leading-5" title={value}>
-        {value}
-      </div>
+    <div className="min-w-0">
+      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-all font-mono text-[11px] text-foreground">{value}</dd>
     </div>
   );
 }
+
 function Status({ status }: { status: EvaluationRun["status"] }) {
   return (
     <span
@@ -292,22 +424,4 @@ function Status({ status }: { status: EvaluationRun["status"] }) {
       {status}
     </span>
   );
-}
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(value),
-  );
-}
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, { cache: "no-store", ...init });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: unknown };
-    throw new Error(
-      typeof body.error === "string" ? body.error : "Evaluation report request failed.",
-    );
-  }
-  return (await response.json()) as T;
-}
-function readError(error: unknown): string {
-  return error instanceof Error ? error.message : "Evaluation report request failed.";
 }

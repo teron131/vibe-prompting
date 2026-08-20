@@ -20,6 +20,7 @@ import type {
   EvaluationRunStatus,
   EvaluationRunSummary,
 } from "@/contracts/evaluations";
+import { formatDateTime } from "@/shared/date";
 
 export function PromptEvaluationView({
   error,
@@ -103,7 +104,7 @@ export function PromptEvaluationView({
                   <span className="mt-0.5 block text-xs text-muted-foreground">
                     {revisionLabel(run.promptRevisionId, revisionVersions)} · {run.caseCount}{" "}
                     {run.caseCount === 1 ? "case" : "cases"} ·{" "}
-                    {formatDate(run.completedAt ?? run.createdAt)}
+                    {formatDateTime(run.completedAt ?? run.createdAt)}
                   </span>
                 </span>
                 <Status status={run.status} />
@@ -138,7 +139,7 @@ function LatestResult({
           <p className="mt-1 text-xs text-muted-foreground">
             Tested {revisionLabel(run.promptRevisionId, revisionVersions)} · {run.caseCount}{" "}
             {run.caseCount === 1 ? "case" : "cases"} ·{" "}
-            {formatDate(run.completedAt ?? run.createdAt)}
+            {formatDateTime(run.completedAt ?? run.createdAt)}
           </p>
         </div>
         <Link
@@ -237,10 +238,4 @@ function Status({ status }: { status: EvaluationRunStatus }) {
 function revisionLabel(revisionId: string, versions: ReadonlyMap<string, number>): string {
   const version = versions.get(revisionId);
   return `${version ? `v${version}` : "revision"} · ${revisionId.slice(0, 7)}`;
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(value),
-  );
 }

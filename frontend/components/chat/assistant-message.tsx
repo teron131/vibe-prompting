@@ -32,6 +32,7 @@ import { ModelIcon } from "./model-selector";
 type PromptReference = {
   promptId: string;
   quote?: Extract<MessagePart, { type: "prompt-quote" }>;
+  revisionId?: string;
 };
 
 export function AssistantMessage({
@@ -130,10 +131,12 @@ function MessageParts({
   role: ChatMessage["role"];
 }) {
   const rendered: ReactNode[] = [];
+  const revisions = parts.filter((part) => part.type === "prompt-revision");
+  const chronologicalParts = parts.filter((part) => part.type !== "prompt-revision");
   let index = 0;
 
-  while (index < parts.length) {
-    const part = parts[index];
+  while (index < chronologicalParts.length) {
+    const part = chronologicalParts[index];
     if (part.type !== "reasoning" && part.type !== "tool") {
       rendered.push(
         <MessagePartView
@@ -149,8 +152,8 @@ function MessageParts({
 
     const start = index;
     const activity: ActivityPart[] = [];
-    while (index < parts.length) {
-      const candidate = parts[index];
+    while (index < chronologicalParts.length) {
+      const candidate = chronologicalParts[index];
       if (candidate.type !== "reasoning" && candidate.type !== "tool") break;
       activity.push(candidate);
       index += 1;
@@ -158,22 +161,28 @@ function MessageParts({
     rendered.push(<ActivityGroup key={`activity-${start}`} parts={activity} />);
   }
 
+  for (const [revisionIndex, revision] of revisions.entries()) {
+    rendered.push(
+      <MessagePartView
+        key={`prompt-revision-${revisionIndex}`}
+        onPromptReference={onPromptReference}
+        part={revision}
+        role={role}
+      />,
+    );
+  }
+
   return rendered;
 }
 
 function ActivityGroup({ parts }: { parts: ActivityPart[] }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const toolCount = parts.filter((part) => part.type === "tool").length;
   const reasoningCount = parts.filter((part) => part.type === "reasoning").length;
-  const running = parts.some((part) => part.type === "tool" && part.state === "running");
   const summary = activitySummary(
     reasoningCount,
     parts.filter((part): part is ToolPart => part.type === "tool"),
   );
-
-  useEffect(() => {
-    if (running) setOpen(true);
-  }, [running]);
 
   return (
     <details
@@ -189,7 +198,7 @@ function ActivityGroup({ parts }: { parts: ActivityPart[] }) {
             <Brain aria-hidden="true" className="size-3.5" strokeWidth={1.7} />
           )}
         </span>
-        <span className="min-w-0 truncate">{summary}</span>
+        <span className="min-w-0 flex-1 truncate">{summary}</span>
         <ChevronRight
           aria-hidden="true"
           className="size-4 shrink-0 transition-transform duration-200 group-open/activity:rotate-90"
@@ -224,7 +233,7 @@ function activitySummary(reasoningCount: number, tools: ToolPart[]) {
 function toolAction(name: string) {
   if (name === "web_search_exa") return "web-search";
   if (name === "read_prompt") return "read-prompt";
-  if (name === "patch_prompt" || name === "apply_patch") return "edit-prompt";
+  if (name === "edit_prompt") return "edit-prompt";
   if (name === "create_prompt") return "create-prompt";
   if (name === "evaluate") return "evaluate";
   if (name === "search_prompts") return "search-prompts";
@@ -300,11 +309,10 @@ function MessagePartView({
     return (
       <button
         className="mt-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium hover:bg-accent"
-        onClick={() => onPromptReference({ promptId: part.promptId })}
+        onClick={() => onPromptReference({ promptId: part.promptId, revisionId: part.revisionId })}
         type="button"
       >
-        <GitCommitHorizontal aria-hidden="true" className="size-3.5" /> Revision{" "}
-        {part.revisionId.slice(0, 8)}
+        <GitCommitHorizontal aria-hidden="true" className="size-3.5" /> Review changes
       </button>
     );
   return (

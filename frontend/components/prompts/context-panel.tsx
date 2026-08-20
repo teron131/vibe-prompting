@@ -10,6 +10,7 @@ import {
   Eye,
   FileText,
   FlaskConical,
+  GitCompareArrows,
   LoaderCircle,
   Pencil,
   Quote,
@@ -30,6 +31,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { MarkdownPreview } from "@/components/prompts/artifact";
+import { PromptDiff } from "@/components/prompts/diff";
+import { PromptStats } from "@/components/prompts/stats";
 import { usePromptSearch } from "@/components/prompts/use-search";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +47,7 @@ import type {
   PromptSearchResult,
   PromptSummary,
 } from "@/contracts/prompts";
+import { createErrorReader, requestJson } from "@/shared/api";
 
 const DEFAULT_PANEL_WIDTH = 384;
 const MAX_PANEL_WIDTH = 768;
@@ -51,8 +55,9 @@ const MIN_CHAT_WIDTH = 480;
 const MIN_PANEL_WIDTH = 320;
 const PANEL_RESIZE_STEP = 16;
 const PANEL_WIDTH_STORAGE_KEY = "vibe-prompting:prompt-panel-width";
+const readError = createErrorReader("Prompt update failed.");
 
-type PanelMode = "edit" | "preview" | "read";
+type PanelMode = "changes" | "edit" | "preview" | "read";
 
 export function PromptContextPanel({
   activePrompt,
@@ -63,6 +68,7 @@ export function PromptContextPanel({
   onSelectPrompt,
   open,
   prompts,
+  reviewRevision,
 }: {
   activePrompt?: PromptSummary;
   highlightedQuote?: PromptQuote;
@@ -72,6 +78,7 @@ export function PromptContextPanel({
   onSelectPrompt(prompt: PromptSummary): void;
   open: boolean;
   prompts: PromptSummary[];
+  reviewRevision?: { promptId: string; revisionId: string };
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLElement>(null);
@@ -98,6 +105,8 @@ export function PromptContextPanel({
   const [historicalRevision, setHistoricalRevision] = useState<PromptRevision>();
   const [historicalState, setHistoricalState] = useState<"error" | "idle" | "loading">("idle");
   const [dismissedHistoryKey, setDismissedHistoryKey] = useState<string>();
+  const [reviewedRevision, setReviewedRevision] = useState<PromptRevisionResponse>();
+  const [reviewState, setReviewState] = useState<"error" | "idle" | "loading">("idle");
   const hasSearchQuery = Boolean(query.trim());
   const {
     error: searchError,
@@ -112,12 +121,17 @@ export function PromptContextPanel({
   const explorerPrompts: PromptSearchResult[] = hasSearchQuery
     ? searchResults
     : prompts.map((prompt) => ({ ...prompt, passages: [] }));
+  const activePromptId = activePrompt?.id;
 
   const historicalQuoteKey =
-    activePrompt &&
-    highlightedQuote?.promptId === activePrompt.id &&
-    highlightedQuote.revisionId !== activePrompt.revisionId
+    activePromptId &&
+    highlightedQuote?.promptId === activePromptId &&
+    highlightedQuote.revisionId !== activePrompt?.revisionId
       ? `${highlightedQuote.promptId}:${highlightedQuote.revisionId}`
+      : undefined;
+  const reviewRevisionKey =
+    activePromptId && reviewRevision?.promptId === activePromptId
+      ? `${reviewRevision.promptId}:${reviewRevision.revisionId}`
       : undefined;
   const showingHistorical = Boolean(
     historicalQuoteKey && historicalQuoteKey !== dismissedHistoryKey,
@@ -139,10 +153,11 @@ export function PromptContextPanel({
   const displayedRevisionId = displayedRevision?.id ?? currentPrompt?.revisionId;
   const displayedPrompt = currentPrompt ?? activePrompt;
   const dirty = Boolean(currentPrompt && draft !== currentPrompt.markdown);
+  const changesAvailable = Boolean(currentPrompt?.canUndo);
   const compactToolbar = panelWidth < 380;
   const matchingHighlight =
-    activePrompt &&
-    highlightedQuote?.promptId === activePrompt.id &&
+    activePromptId &&
+    highlightedQuote?.promptId === activePromptId &&
     highlightedQuote.revisionId === displayedRevisionId
       ? highlightedQuote
       : undefined;
@@ -186,22 +201,21 @@ export function PromptContextPanel({
   useEffect(() => {
     setCurrentPrompt(undefined);
     setCurrentState("idle");
-    if (!open || !activePrompt) return;
+    if (!open || !activePromptId) return;
 
     const controller = new AbortController();
     setCurrentState("loading");
-    void fetch(`/api/prompts/${encodeURIComponent(activePrompt.id)}`, {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Prompt request failed.");
-        return (await response.json()) as PromptDetail;
-      })
+    void requestJson<PromptDetail>(
+      `/api/prompts/${encodeURIComponent(activePromptId)}`,
+      { cache: "no-store", signal: controller.signal },
+      "Prompt request failed.",
+    )
       .then(({ prompt }) => {
         setCurrentPrompt(prompt);
         setDraft(prompt.markdown);
-        setMode(historicalQuoteKey ? "read" : "edit");
+        setMode(
+          reviewRevisionKey && prompt.canUndo ? "changes" : historicalQuoteKey ? "read" : "edit",
+        );
         setEditError(undefined);
         setCurrentState("idle");
       })
@@ -210,10 +224,33 @@ export function PromptContextPanel({
         setCurrentState("error");
       });
     return () => controller.abort();
-  }, [activePrompt, historicalQuoteKey, open]);
+  }, [activePromptId, historicalQuoteKey, open, reviewRevisionKey]);
 
   useEffect(() => {
-    if (!activePrompt) {
+    setReviewedRevision(undefined);
+    setReviewState("idle");
+    if (!open || !activePromptId || !currentPrompt?.canUndo) return;
+
+    const controller = new AbortController();
+    setReviewState("loading");
+    void requestJson<PromptRevisionResponse>(
+      `/api/prompts/${encodeURIComponent(activePromptId)}/revisions/${encodeURIComponent(currentPrompt.revisionId)}`,
+      { cache: "no-store", signal: controller.signal },
+      "Prompt revision request failed.",
+    )
+      .then((revision) => {
+        setReviewedRevision(revision);
+        setReviewState("idle");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setReviewState("error");
+      });
+    return () => controller.abort();
+  }, [activePromptId, currentPrompt?.canUndo, currentPrompt?.revisionId, open]);
+
+  useEffect(() => {
+    if (!activePromptId) {
       setLatestRun(undefined);
       setRunState("idle");
       return;
@@ -222,14 +259,11 @@ export function PromptContextPanel({
     const controller = new AbortController();
     setLatestRun(undefined);
     setRunState("loading");
-    void fetch(`/api/evaluations?promptId=${encodeURIComponent(activePrompt.id)}`, {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Evaluation request failed.");
-        return (await response.json()) as EvaluationRunsResponse;
-      })
+    void requestJson<EvaluationRunsResponse>(
+      `/api/evaluations?promptId=${encodeURIComponent(activePromptId)}`,
+      { cache: "no-store", signal: controller.signal },
+      "Evaluation request failed.",
+    )
       .then(({ runs }) => {
         setLatestRun(runs[0]);
         setRunState("idle");
@@ -239,7 +273,7 @@ export function PromptContextPanel({
         setRunState("error");
       });
     return () => controller.abort();
-  }, [activePrompt]);
+  }, [activePromptId]);
 
   useEffect(() => {
     setHistoricalRevision(undefined);
@@ -247,24 +281,21 @@ export function PromptContextPanel({
     if (
       !historicalQuoteKey ||
       historicalQuoteKey === dismissedHistoryKey ||
-      !activePrompt ||
+      !activePromptId ||
       !highlightedQuote
     )
       return;
 
     const controller = new AbortController();
     setHistoricalState("loading");
-    void fetch(
-      `/api/prompts/${encodeURIComponent(activePrompt.id)}/revisions/${encodeURIComponent(highlightedQuote.revisionId)}`,
+    void requestJson<PromptRevisionResponse>(
+      `/api/prompts/${encodeURIComponent(activePromptId)}/revisions/${encodeURIComponent(highlightedQuote.revisionId)}`,
       {
         cache: "no-store",
         signal: controller.signal,
       },
+      "Prompt revision request failed.",
     )
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Prompt revision request failed.");
-        return (await response.json()) as PromptRevisionResponse;
-      })
       .then(({ revision }) => {
         setHistoricalRevision(revision);
         setHistoricalState("idle");
@@ -274,7 +305,7 @@ export function PromptContextPanel({
         setHistoricalState("error");
       });
     return () => controller.abort();
-  }, [activePrompt, dismissedHistoryKey, highlightedQuote, historicalQuoteKey]);
+  }, [activePromptId, dismissedHistoryKey, highlightedQuote, historicalQuoteKey]);
 
   useEffect(() => {
     if (!historicalQuoteKey) setDismissedHistoryKey(undefined);
@@ -330,6 +361,7 @@ export function PromptContextPanel({
 
   function selectMode(nextMode: PanelMode) {
     if (nextMode === mode) return;
+    if (nextMode === "changes" && !changesAvailable) return;
     if (nextMode === "edit" && (displayedRevision || currentState !== "idle")) return;
     if (nextMode === "read" && dirty) {
       if (!window.confirm("Discard the unsaved prompt draft?")) return;
@@ -414,7 +446,7 @@ export function PromptContextPanel({
         action,
         expectedRevisionId: currentPrompt.revisionId,
       });
-      applyPromptUpdate(prompt);
+      applyPromptUpdate(prompt, mode === "changes" && !prompt.canUndo ? "edit" : mode);
     } catch (error) {
       const message = readError(error);
       setEditError(message);
@@ -424,10 +456,10 @@ export function PromptContextPanel({
     }
   }
 
-  function applyPromptUpdate(prompt: PromptCurrent) {
+  function applyPromptUpdate(prompt: PromptCurrent, nextMode: PanelMode = "edit") {
     setCurrentPrompt(prompt);
     setDraft(prompt.markdown);
-    setMode("edit");
+    setMode(nextMode);
     onPromptUpdated(prompt);
   }
 
@@ -441,7 +473,7 @@ export function PromptContextPanel({
   return (
     <aside
       aria-labelledby={titleId}
-      className="relative z-auto hidden w-[var(--prompt-panel-width)] max-w-none shrink-0 flex-col border-l bg-background shadow-none md:flex"
+      className="relative z-auto hidden min-h-0 w-[var(--prompt-panel-width)] max-w-none shrink-0 flex-col overflow-hidden border-l bg-background shadow-none md:flex"
       onKeyDown={savePromptWithKeyboard}
       ref={panelRef}
       style={{ "--prompt-panel-width": `${panelWidth}px` } as CSSProperties}
@@ -479,13 +511,16 @@ export function PromptContextPanel({
         )}
         <div className="min-w-0 flex-1 px-1">
           {panelView === "prompt" && displayedPrompt ? (
-            <div className="flex min-w-0 items-baseline gap-2">
-              <h2 className="truncate text-sm font-semibold" id={titleId}>
-                {displayedPrompt.title}
-              </h2>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                v{displayedPrompt.revisionNumber}
-              </span>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-baseline gap-2">
+                <h2 className="truncate text-sm font-semibold" id={titleId}>
+                  {displayedPrompt.title}
+                </h2>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  v{displayedPrompt.revisionNumber}
+                </span>
+              </div>
+              <PromptStats className="block truncate text-[11px] leading-4" markdown={draft} />
             </div>
           ) : (
             <>
@@ -603,9 +638,20 @@ export function PromptContextPanel({
           <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2">
             <div
               aria-label="Prompt view mode"
-              className={`grid h-8 shrink-0 grid-cols-3 ${compactToolbar ? "w-56" : "w-[17.25rem]"}`}
+              className={`grid h-8 shrink-0 ${changesAvailable ? "grid-cols-4" : "grid-cols-3"} ${compactToolbar ? "w-64" : changesAvailable ? "w-[22rem]" : "w-[17.25rem]"}`}
               role="group"
             >
+              {changesAvailable ? (
+                <button
+                  aria-pressed={mode === "changes"}
+                  className={`inline-flex h-8 min-w-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${compactToolbar ? "gap-1 px-1 text-[11px]" : "gap-2 px-2 text-xs"} ${mode === "changes" ? "bg-primary font-semibold text-primary-foreground" : "font-medium text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => selectMode("changes")}
+                  type="button"
+                >
+                  <GitCompareArrows aria-hidden="true" className="size-3.5 shrink-0" />
+                  Changes
+                </button>
+              ) : null}
               <button
                 aria-pressed={mode === "read"}
                 className={`inline-flex h-8 min-w-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${compactToolbar ? "gap-1 px-1.5 text-[11px]" : "gap-2 px-3 text-xs"} ${mode === "read" ? "bg-primary font-semibold text-primary-foreground" : "font-medium text-muted-foreground hover:text-foreground"}`}
@@ -635,7 +681,7 @@ export function PromptContextPanel({
                 Preview
               </button>
             </div>
-            {mode !== "edit" && !dirty ? (
+            {!dirty ? (
               <>
                 <Button
                   aria-label="Undo last saved change"
@@ -721,11 +767,54 @@ export function PromptContextPanel({
                 </Button>
               </div>
             ) : null}
-            {mode === "edit" ? (
+            {mode === "changes" ? (
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                {reviewState === "loading" ? (
+                  <div className="flex min-h-40 items-center justify-center gap-2 text-xs text-muted-foreground">
+                    <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+                    Loading revision changes…
+                  </div>
+                ) : reviewState === "error" || !reviewedRevision ? (
+                  <div className="grid min-h-40 place-items-center text-center text-xs text-muted-foreground">
+                    This revision diff is unavailable.
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-3 flex items-start justify-between gap-3 px-1">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-semibold">
+                            {reviewedRevision.revision.source === "ai"
+                              ? "Agent changes"
+                              : "Manual changes"}
+                          </p>
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                            v{currentPrompt?.revisionNumber} vs v
+                            {(currentPrompt?.revisionNumber ?? 1) - 1}
+                          </span>
+                        </div>
+                        {reviewedRevision.revision.changeRequest ? (
+                          <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted-foreground">
+                            {reviewedRevision.revision.changeRequest}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                        {reviewedRevision.revision.id.slice(0, 8)}
+                      </span>
+                    </div>
+                    <PromptDiff
+                      after={reviewedRevision.revision.markdown}
+                      before={reviewedRevision.parentMarkdown ?? ""}
+                    />
+                  </>
+                )}
+              </div>
+            ) : mode === "edit" ? (
               <div className="relative min-h-0 flex-1 overflow-hidden">
                 <div
                   aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 overflow-hidden"
+                  className="pointer-events-none absolute inset-0 overflow-hidden [scrollbar-gutter:stable]"
                 >
                   <div className="py-4 font-mono text-xs leading-6" ref={editorGutterRef}>
                     {draft.split("\n").map((line, index) => (
@@ -742,7 +831,7 @@ export function PromptContextPanel({
                 </div>
                 <Textarea
                   aria-label="Edit prompt Markdown"
-                  className="relative h-full min-h-full resize-none rounded-none border-0 bg-transparent py-4 pl-14 pr-4 font-mono text-xs leading-6 shadow-none focus-visible:outline-none"
+                  className="relative h-full min-h-full resize-none rounded-none border-0 bg-transparent py-4 pl-14 pr-4 font-mono text-xs leading-6 shadow-none [scrollbar-gutter:stable] focus-visible:outline-none"
                   onChange={(event) => setDraft(event.target.value)}
                   onScroll={(event) => {
                     if (editorGutterRef.current) {
@@ -880,20 +969,15 @@ async function updatePrompt(
     | { action: "redo" | "undo"; expectedRevisionId: string }
     | { expectedRevisionId: string; markdown: string },
 ): Promise<PromptCurrent> {
-  const response = await fetch(`/api/prompts/${encodeURIComponent(promptId)}`, {
-    body: JSON.stringify(body),
-    headers: { "content-type": "application/json" },
-    method: "PATCH",
-  });
-  if (!response.ok) {
-    const value = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
-    throw new Error(value?.error ?? "Prompt update failed.");
-  }
-  return (await response.json()) as PromptCurrent;
-}
-
-function readError(error: unknown): string {
-  return error instanceof Error ? error.message : "Prompt update failed.";
+  return requestJson<PromptCurrent>(
+    `/api/prompts/${encodeURIComponent(promptId)}`,
+    {
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json" },
+      method: "PATCH",
+    },
+    "Prompt update failed.",
+  );
 }
 
 function getPanelMaxWidth(): number {

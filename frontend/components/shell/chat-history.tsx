@@ -18,6 +18,10 @@ import type {
   ChatSummary,
   DeleteChatResponse,
 } from "@/contracts/chat";
+import { createApiRequester, createErrorReader } from "@/shared/api";
+
+const chatHistoryApi = createApiRequester({ cache: "no-store" }, "Chat history request failed.");
+const readError = createErrorReader("Chat history request failed.");
 
 export function ChatHistory() {
   const pathname = usePathname();
@@ -35,7 +39,7 @@ export function ChatHistory() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const page = await fetchJson<ChatPage>("/api/chats?limit=30");
+      const page = await chatHistoryApi.json<ChatPage>("/api/chats?limit=30");
       setChats(page.chats);
       setNextCursor(page.nextCursor);
     } catch (error) {
@@ -58,9 +62,10 @@ export function ChatHistory() {
     }
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      void fetchJson<ChatSearchResponse>(`/api/chat-search?q=${encodeURIComponent(query)}`, {
-        signal: controller.signal,
-      })
+      void chatHistoryApi
+        .json<ChatSearchResponse>(`/api/chat-search?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal,
+        })
         .then(({ chats: results }) => setSearchResults(results))
         .catch((error) => {
           if (!controller.signal.aborted) toast.error(readError(error));
@@ -90,7 +95,7 @@ export function ChatHistory() {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await fetchJson<ChatPage>(
+      const page = await chatHistoryApi.json<ChatPage>(
         `/api/chats?limit=30&cursor=${encodeURIComponent(nextCursor)}`,
       );
       setChats((current) => [...current, ...page.chats]);
@@ -110,7 +115,7 @@ export function ChatHistory() {
     setSearchResults((current) => current.filter(({ id }) => id !== chat.id));
     if (pathname === `/chat/${chat.id}`) router.push("/");
     try {
-      await fetchJson<DeleteChatResponse>(`/api/chat?id=${encodeURIComponent(chat.id)}`, {
+      await chatHistoryApi.json<DeleteChatResponse>(`/api/chat?id=${encodeURIComponent(chat.id)}`, {
         method: "DELETE",
       });
       router.refresh();
@@ -279,17 +284,4 @@ function groupChats(chats: ChatSummary[]) {
 
 function startOfDay(value: Date): Date {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
-}
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, { cache: "no-store", ...init });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: unknown };
-    throw new Error(typeof body.error === "string" ? body.error : "Chat history request failed.");
-  }
-  return (await response.json()) as T;
-}
-
-function readError(error: unknown): string {
-  return error instanceof Error ? error.message : "Chat history request failed.";
 }

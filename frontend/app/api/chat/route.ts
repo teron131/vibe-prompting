@@ -144,6 +144,7 @@ export async function POST(request: Request) {
           chatId: input.chatId,
           enabledTools: input.workspace.enabledTools,
           evaluations: services.evaluations,
+          evaluationResults: services.evaluationResults,
           history,
           instruction: formatWorkspaceInstruction(input.instruction, activePrompt, quotes),
           modelId: input.modelId,
@@ -241,21 +242,30 @@ export async function DELETE(request: Request) {
 }
 
 class CollectedAssistantParts {
-  readonly #reasoning: StoredMessagePart[] = [];
+  #activity: StoredMessagePart[] = [];
+  readonly #revisions = new Map<string, Extract<StoredMessagePart, { type: "prompt-revision" }>>();
   readonly #tools = new Map<string, Extract<StoredMessagePart, { type: "tool" }>>();
 
   add(event: AgentStreamEvent): void {
     if (event.type === "response-reset") {
-      this.#reasoning.length = 0;
+      this.#activity = this.#activity.filter((part) => part.type !== "reasoning");
     } else if (event.type === "reasoning") {
-      this.#reasoning.push({ type: "reasoning", summary: event.summary });
+      this.#activity.push({ type: "reasoning", summary: event.summary });
     } else if (event.type === "tool") {
-      this.#tools.set(event.callId, { ...this.#tools.get(event.callId), ...event });
+      const existing = this.#tools.get(event.callId);
+      if (existing) Object.assign(existing, event);
+      else {
+        const tool = { ...event };
+        this.#tools.set(event.callId, tool);
+        this.#activity.push(tool);
+      }
+    } else if (event.type === "prompt-revision") {
+      this.#revisions.set(`${event.promptId}:${event.revisionId}`, event);
     }
   }
 
   finish(message: string): StoredMessagePart[] {
-    return [...this.#reasoning, ...this.#tools.values(), { type: "text", text: message }];
+    return [...this.#activity, { type: "text", text: message }, ...this.#revisions.values()];
   }
 }
 
