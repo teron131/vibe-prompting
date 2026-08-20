@@ -35,10 +35,37 @@ const MIGRATIONS = [
       readFile(new URL("../../migrations/006_prompt_deletion.sql", import.meta.url), "utf8"),
     version: 6,
   },
+  {
+    load: () =>
+      readFile(new URL("../../migrations/007_evaluation_provenance.sql", import.meta.url), "utf8"),
+    version: 7,
+  },
+  {
+    load: () =>
+      readFile(
+        new URL("../../migrations/008_evaluation_workspace_indexes.sql", import.meta.url),
+        "utf8",
+      ),
+    version: 8,
+  },
+  {
+    load: () =>
+      readFile(
+        new URL("../../migrations/009_evaluation_criteria_profiles.sql", import.meta.url),
+        "utf8",
+      ),
+    version: 9,
+  },
+  {
+    load: () =>
+      readFile(new URL("../../migrations/010_search_embeddings.sql", import.meta.url), "utf8"),
+    version: 10,
+  },
 ];
 
 export type DatabaseClient = postgres.Sql | postgres.TransactionSql;
 
+/** Owns one application pool and keeps schema migration and transaction boundaries explicit to stores. */
 export class Database {
   readonly #sql: postgres.Sql;
 
@@ -53,6 +80,7 @@ export class Database {
     });
   }
 
+  /** Applies each numbered migration once while holding a database-wide advisory lock. */
   async initialize(): Promise<void> {
     await this.#sql.begin(async (sql) => {
       await sql`SELECT pg_advisory_xact_lock(${SCHEMA_MIGRATION_LOCK})`;
@@ -79,14 +107,17 @@ export class Database {
     });
   }
 
+  /** Drains the pool so server shutdown does not leave database work behind. */
   async close(): Promise<void> {
     await this.#sql.end({ timeout: 5 });
   }
 
+  /** Runs one read or write operation using the shared pool without opening an implicit transaction. */
   async run<T>(operation: (sql: postgres.Sql) => Promise<T>): Promise<T> {
     return operation(this.#sql);
   }
 
+  /** Runs one operation in a transaction and rolls it back when the callback rejects. */
   async transaction<T>(operation: (sql: postgres.TransactionSql) => Promise<T>): Promise<T> {
     return (await this.#sql.begin(operation)) as T;
   }
@@ -99,6 +130,7 @@ export function createDatabase(
   return new Database(databaseUrl);
 }
 
+/** Initializes the configured database and creates it first when the server reports a missing database. */
 export async function setupDatabase(
   databaseUrl: string | undefined = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL,
 ): Promise<boolean> {

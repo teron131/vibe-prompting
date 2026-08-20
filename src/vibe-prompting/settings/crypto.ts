@@ -5,10 +5,10 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { z } from "zod";
 
 const encryptedSecretSchema = z.object({
-  ciphertext: z.string().min(1),
-  iv: z.string().min(1),
-  tag: z.string().min(1),
   version: z.literal(1),
+  iv: z.string().min(1),
+  ciphertext: z.string().min(1),
+  tag: z.string().min(1),
 });
 
 export type EncryptedSecret = z.infer<typeof encryptedSecretSchema>;
@@ -22,10 +22,10 @@ export function encryptSecret(value: string, secret: string): EncryptedSecret {
   const cipher = createCipheriv("aes-256-gcm", deriveKey(secret), iv);
   const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   return {
-    ciphertext: ciphertext.toString("base64"),
-    iv: iv.toString("base64"),
-    tag: cipher.getAuthTag().toString("base64"),
     version: 1,
+    iv: iv.toString("base64"),
+    ciphertext: ciphertext.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
   };
 }
 

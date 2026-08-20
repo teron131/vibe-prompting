@@ -8,7 +8,7 @@ const modelsDevCatalogSchema = z.record(z.string(), modelsDevModelSchema);
 
 type ModelsDevCatalog = z.infer<typeof modelsDevCatalogSchema>;
 
-export type ModelIdentity = { known: boolean; label: string; provider: string };
+export type ModelIdentity = { provider: string; label: string; known: boolean };
 
 let catalogPromise: Promise<ModelsDevCatalog> | undefined;
 
@@ -45,15 +45,15 @@ function resolveModelIdentity(id: string, catalog: ModelsDevCatalog | undefined)
   const match = catalog ? findCatalogModel(id, catalog) : undefined;
   if (match) {
     return {
-      known: true,
-      label: match.model.name,
       provider: match.catalogId.split("/", 1)[0],
+      label: match.model.name,
+      known: true,
     };
   }
   return {
-    known: false,
-    label: humanizeModelId(id),
     provider: id.includes("/") ? id.split("/", 1)[0] : "model",
+    label: humanizeModelId(id),
+    known: false,
   };
 }
 

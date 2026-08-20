@@ -14,9 +14,11 @@ import { resolveModelIdentities } from "../clients/llm/models-dev.ts";
 import { createModel } from "../clients/llm/openai-agents.ts";
 import { readChatCompletionsReasoning } from "../clients/llm/reasoning.ts";
 import { loadRuntimeConfig, type ModelConfig } from "../config/index.ts";
-import type { EvaluationRuns } from "../evaluation/runs.ts";
+import type { EvaluationResults } from "../evaluation/results/index.ts";
+import type { EvaluationRuns } from "../evaluation/runs/index.ts";
 import type { PromptSystem } from "../prompt-system/index.ts";
 import { AGENT_INSTRUCTIONS } from "./instructions.ts";
+import { createEvaluationDataTools } from "./tools/evaluation-search.ts";
 import { createEvaluationTool } from "./tools/evaluation.ts";
 import { createPromptLibraryTools } from "./tools/prompt-library.ts";
 import { createPromptWorkspace, createScopedFsTools } from "./tools/scoped-fs.ts";
@@ -41,6 +43,7 @@ export type AgentStreamEvent =
       summary?: string;
       type: "tool";
     }
+  | { promptId: string; revisionId: string; type: "prompt-revision" }
   | { summary: string; type: "reasoning" };
 
 export type PromptEdit = {
@@ -84,6 +87,7 @@ export type ChatRunInput = {
   chatId: string;
   enabledTools: ChatToolId[];
   evaluations: EvaluationRuns;
+  evaluationResults: EvaluationResults;
   history: ChatConversationMessage[];
   instruction: string;
   modelId: string;
@@ -105,6 +109,7 @@ export type ChatRunResult = {
   model: ModelConfig;
 };
 
+/** Builds one agent runner with provider-specific reasoning settings and scoped tools. */
 export function createAgentRuntime(
   modelId: string,
   tools: Tool[] = [],
@@ -150,6 +155,7 @@ export function createAgentRuntime(
   };
 }
 
+/** Runs a detached chat stream, preserving steering retries and tool event projections. */
 export async function streamChatRun(
   input: ChatRunInput,
   onEvent: (event: AgentStreamEvent) => void,
@@ -160,7 +166,10 @@ export async function streamChatRun(
   const evaluationsEnabled = enabled.has("evaluations");
   if (promptToolsEnabled) tools.push(...createPromptLibraryTools(input.prompts));
   if (evaluationsEnabled)
-    tools.push(createEvaluationTool(input.evaluations, input.chatId, getEvaluationModelReferences));
+    tools.push(
+      createEvaluationTool(input.evaluations, input.chatId, getEvaluationModelReferences),
+      ...createEvaluationDataTools(input.evaluationResults),
+    );
   let exaServer: MCPServer | undefined;
 
   try {
@@ -218,16 +227,19 @@ export async function streamChatRun(
   }
 }
 
+/** Loads canonical model labels for the evaluation tool without exposing provider metadata. */
 async function getEvaluationModelReferences() {
   const { models } = loadRuntimeConfig();
   const identities = await resolveModelIdentities(models.map(({ id }) => id));
   return models.map(({ id }, index) => ({ id, label: identities[index]?.label ?? id }));
 }
 
+/** Runs a prompt-edit request while discarding stream events for the non-streaming facade. */
 export async function editPrompt(input: PromptEditInput): Promise<PromptEdit> {
   return streamPromptEdit(input, () => undefined);
 }
 
+/** Runs a prompt-edit stream and disposes both the temporary workspace and MCP server. */
 export async function streamPromptEdit(
   input: PromptEditInput,
   onEvent: (event: AgentStreamEvent) => void,
@@ -268,6 +280,7 @@ export async function streamPromptEdit(
   }
 }
 
+/** Projects provider stream events into the small event contract consumed by the frontend. */
 function projectEvent(event: RunStreamEvent, toolNames: Map<string, string>): AgentStreamEvent[] {
   if (event.type === "raw_model_stream_event") {
     if (event.data.type === "output_text_delta") {
@@ -315,18 +328,29 @@ function projectEvent(event: RunStreamEvent, toolNames: Map<string, string>): Ag
         : undefined);
     if (!callId) return [];
     const name = identity?.name ?? toolNames.get(callId) ?? "tool";
-    return [
-      {
-        type: "tool",
-        callId,
-        name,
-        output: normalizeEventValue("output" in event.item ? event.item.output : undefined),
-        state: "completed",
-        summary: summarizeTool(name, "output" in event.item ? event.item.output : undefined),
-      },
-    ];
+    const output = normalizeEventValue("output" in event.item ? event.item.output : undefined);
+    const toolEvent: AgentStreamEvent = {
+      type: "tool",
+      callId,
+      name,
+      output,
+      state: "completed",
+      summary: summarizeTool(name, output),
+    };
+    const revisionEvent = projectPromptRevision(name, output);
+    return revisionEvent ? [toolEvent, revisionEvent] : [toolEvent];
   }
   return [];
+}
+
+function projectPromptRevision(
+  toolName: string,
+  output: unknown,
+): Extract<AgentStreamEvent, { type: "prompt-revision" }> | undefined {
+  if (toolName !== "edit_prompt" || !isRecord(output) || !isRecord(output.prompt)) return undefined;
+  const { id, revisionId } = output.prompt;
+  if (typeof id !== "string" || typeof revisionId !== "string") return undefined;
+  return { promptId: id, revisionId, type: "prompt-revision" };
 }
 
 function getReasoningSummary(value: unknown): string | undefined {
@@ -402,8 +426,10 @@ function summarizeTool(name: string, output: unknown): string {
   if (name === "list_prompts") return "Listed saved prompts.";
   if (name === "create_prompt") return "Created a prompt.";
   if (name === "read_prompt") return "Read the current prompt.";
-  if (name === "apply_patch" || name === "patch_prompt") return "Updated the working prompt.";
+  if (name === "edit_prompt") return "Updated the working prompt.";
   if (name === "evaluate") return "Started an evaluation run.";
+  if (name === "search_evaluations") return "Searched persisted evaluation cases.";
+  if (name === "get_evaluation_analytics") return "Analyzed persisted evaluation data.";
   if (name === "web_search_exa") return "Completed web research.";
   if (typeof output === "string" && output.length <= 120) return output;
   return "Completed.";
@@ -449,6 +475,7 @@ function decodeDataUrl(dataUrl: string): string {
     : decodeURIComponent(payload);
 }
 
+/** Closes external run resources and always disposes the temporary workspace. */
 async function closeRunResources(
   exaServer: MCPServer | undefined,
   disposeWorkspace: () => Promise<void>,

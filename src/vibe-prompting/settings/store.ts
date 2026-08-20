@@ -26,10 +26,10 @@ import {
 const providerIds = ["cliproxy", "gemini", "llm"] as const satisfies readonly PlatformId[];
 const providerPatchSchema = z
   .object({
-    apiKey: z.string().trim().min(1).optional(),
-    baseURL: z.string().trim().optional(),
-    clearApiKey: z.boolean().optional(),
     id: z.enum(providerIds),
+    apiKey: z.string().trim().min(1).optional(),
+    clearApiKey: z.boolean().optional(),
+    baseURL: z.string().trim().optional(),
   })
   .strict()
   .superRefine((patch, context) => {
@@ -56,18 +56,18 @@ type ProviderOverrides = Partial<Record<PlatformId, ProviderOverride>>;
 type SettingsRow = { modelCatalog: unknown; providerOverrides: unknown };
 
 export type ProviderSettings = {
+  id: PlatformId;
+  label: string;
   baseURL: string;
   configured: boolean;
   credentialSource: "byok" | "deployment" | "missing";
-  id: PlatformId;
-  label: string;
 };
 
 export type ApplicationSettings = {
-  canSaveCredentials: boolean;
-  models: ModelConfig[];
   modelStorage: ModelStorage;
+  models: ModelConfig[];
   providers: ProviderSettings[];
+  canSaveCredentials: boolean;
 };
 
 export type UpdateApplicationSettings = z.infer<typeof updateSettingsSchema>;
@@ -105,13 +105,14 @@ export class ApplicationSettingsStore {
     const effective = loadRuntimeConfig(this.#environment);
     const base = loadBaseRuntimeConfig(this.#environment);
     return {
-      canSaveCredentials: Boolean(readEncryptionSecret(this.#environment)),
-      models: this.#models,
       modelStorage: getModelStorage(this.#environment),
+      models: this.#models,
       providers: providerIds.map((id) => {
         const platform = effective.platforms[id];
         const override = this.#providerOverrides[id];
         return {
+          id,
+          label: platform.label,
           baseURL: platform.baseURL,
           configured: Boolean(platform.apiKey && platform.baseURL),
           credentialSource: override?.apiKey
@@ -119,10 +120,9 @@ export class ApplicationSettingsStore {
             : base.platforms[id].apiKey
               ? "deployment"
               : "missing",
-          id,
-          label: platform.label,
         };
       }),
+      canSaveCredentials: Boolean(readEncryptionSecret(this.#environment)),
     };
   }
 

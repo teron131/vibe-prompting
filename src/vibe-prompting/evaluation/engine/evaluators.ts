@@ -59,6 +59,7 @@ const JudgeState = new StateSchema({
   ),
 });
 
+/** Fans one normalized case out to one graph branch per configured judge model. */
 function dispatchJudges(state: typeof JudgeState.State): Send[] {
   return getJudgeModels(state.judges).map(
     (judgeModel) =>
@@ -70,16 +71,16 @@ function dispatchJudges(state: typeof JudgeState.State): Send[] {
 }
 
 const evaluateJudge: typeof JudgeState.Node = async (state, config) => {
-  const model = state.judgeModel;
-  if (!model) throw new Error("Judge model was not dispatched.");
+  const judgeModelId = state.judgeModel;
+  if (!judgeModelId) throw new Error("Judge model was not dispatched.");
   const report = await evaluateCriteria(
-    createModel({ model }),
+    createModel({ model: judgeModelId, reasoningEffort: "low" }),
     state.criteria,
     state.subject,
     config,
   );
   return {
-    evaluations: [{ model, report }],
+    evaluations: [{ model: judgeModelId, report }],
   };
 };
 
@@ -93,11 +94,13 @@ export const judgesGraph = new StateGraph({
   .addEdge("evaluateJudge", END)
   .compile();
 
+/** Normalizes the single-model and multi-model judge input accepted by the public contract. */
 export function getJudgeModels(judges: Judges): string[] {
   const { model } = judgesSchema.parse(judges);
   return Array.isArray(model) ? model : [model];
 }
 
+/** Runs one low-effort structured judge call against the complete configured criterion set. */
 async function evaluateCriteria(
   model: BaseChatModel,
   criteria: EvaluationCriteria,

@@ -1,52 +1,32 @@
-/** Owns the isolated prompt workspace and the only filesystem tools exposed to the editing agent. */
-
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+/** Owns the in-memory prompt workspace and the only document tools exposed to the editing agent. */
 
 import { tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 
-import { applySingleFilePatch } from "./apply-patch.ts";
-
-const RUNS_ROOT = resolve(".cache/prompt-agent-runs");
-const PROMPT_PATH = "prompt.md";
+import {
+  applyPromptHashlineEdits,
+  formatPromptHashlines,
+  type PromptHashlineEdit,
+  promptHashlineEditsSchema,
+} from "./hashline.ts";
 
 export type PromptWorkspace = {
-  applyPatch(patch: string): Promise<string>;
+  applyEdits(edits: PromptHashlineEdit[]): Promise<string>;
   dispose(): Promise<void>;
   read(): Promise<string>;
 };
 
 export async function createPromptWorkspace(markdown: string): Promise<PromptWorkspace> {
-  const runDirectory = resolve(RUNS_ROOT, randomUUID());
-  if (!runDirectory.startsWith(`${RUNS_ROOT}/`)) {
-    throw new Error("Unable to create a safe prompt workspace.");
-  }
-
-  await mkdir(RUNS_ROOT, { recursive: true });
-  await mkdir(runDirectory);
-  const promptPath = resolve(runDirectory, PROMPT_PATH);
-  await writeFile(promptPath, markdown, { encoding: "utf8", flag: "wx" });
+  let currentMarkdown = markdown;
 
   return {
-    async applyPatch(patch) {
-      const originalText = await readFile(promptPath, "utf8");
-      const updatedText = applySingleFilePatch({
-        originalText,
-        patchText: patch,
-        targetPath: PROMPT_PATH,
-      });
-      const temporaryPath = resolve(runDirectory, `.prompt-${randomUUID()}.tmp`);
-      await writeFile(temporaryPath, updatedText, { encoding: "utf8", flag: "wx" });
-      await rename(temporaryPath, promptPath);
-      return updatedText;
+    async applyEdits(edits) {
+      currentMarkdown = applyPromptHashlineEdits(currentMarkdown, edits);
+      return currentMarkdown;
     },
-    async dispose() {
-      await rm(runDirectory, { recursive: true, force: true });
-    },
+    async dispose() {},
     async read() {
-      return readFile(promptPath, "utf8");
+      return currentMarkdown;
     },
   };
 }
@@ -55,21 +35,23 @@ export function createScopedFsTools(workspace: PromptWorkspace): Tool[] {
   return [
     tool({
       name: "read_prompt",
-      description: "Read the complete current contents of prompt.md before deciding what to patch.",
+      description:
+        "Read the complete current prompt as LINE#HASH:content physical lines before deciding what to edit.",
       parameters: z.object({}),
       async execute() {
-        return workspace.read();
+        return formatPromptHashlines(await workspace.read());
       },
     }),
     tool({
-      name: "apply_patch",
-      description: "Apply one single-file *** Begin Patch update to prompt.md.",
+      name: "edit_prompt",
+      description:
+        "Update the working prompt after read_prompt with structured replace_range, insert_before, insert_after, or append operations. Copy LINE#HASH refs exactly and send replacement content as complete physical lines without refs. All edits apply atomically against the latest read result. Never send diff or patch syntax.",
       parameters: z.object({
-        patch: z.string().min(1).describe("Patch text whose only update-file target is prompt.md."),
+        edits: promptHashlineEditsSchema,
       }),
-      async execute({ patch }) {
-        await workspace.applyPatch(patch);
-        return "Patched prompt.md. Read it again before making another change.";
+      async execute({ edits }) {
+        await workspace.applyEdits(edits);
+        return "Updated the working prompt.";
       },
     }),
   ];

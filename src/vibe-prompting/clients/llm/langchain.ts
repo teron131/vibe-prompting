@@ -19,16 +19,23 @@ export type ModelOptions = Omit<
 > & {
   model: string;
   configuration?: Omit<ClientConfiguration, "apiKey" | "baseURL">;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh";
 };
 
-export function createModel({ model, configuration, ...options }: ModelOptions): NativeChatOpenAI {
+/** Creates a configured LangChain model and applies the requested provider-native reasoning level. */
+export function createModel({
+  model,
+  configuration,
+  reasoningEffort = "medium",
+  ...options
+}: ModelOptions): NativeChatOpenAI {
   const modelId = model.trim();
   if (!modelId) throw new Error("Model ID must not be empty.");
 
   const runtime = loadRuntimeConfig();
   const modelConfig =
     runtime.models.find((candidate) => candidate.id === modelId) ??
-    (runtime.metadataModel.id === modelId ? runtime.metadataModel : undefined);
+    [runtime.helperModel, runtime.metadataModel].find((candidate) => candidate.id === modelId);
   if (!modelConfig) throw new Error(`Model is not configured: ${modelId}.`);
 
   const platform = resolveModelPlatform(modelConfig, runtime);
@@ -38,6 +45,20 @@ export function createModel({ model, configuration, ...options }: ModelOptions):
     apiKey: platform.apiKey,
     configuration: { ...configuration, baseURL: platform.baseURL },
     useResponsesApi: modelId.startsWith("gpt-"),
+    ...(reasoningEffort &&
+      (platform.id === "gemini"
+        ? {
+            modelKwargs: {
+              extra_body: {
+                google: {
+                  thinking_config: {
+                    thinking_level: reasoningEffort === "xhigh" ? "high" : reasoningEffort,
+                  },
+                },
+              },
+            },
+          }
+        : { reasoning: { effort: reasoningEffort } })),
   };
   return new SpendLimitedChatOpenAI({
     ...fields,
@@ -48,6 +69,7 @@ export function createModel({ model, configuration, ...options }: ModelOptions):
   });
 }
 
+/** Records usage around every LangChain generation while leaving request execution to the native client. */
 class SpendLimitedChatOpenAI extends NativeChatOpenAI {
   readonly #modelConfig: ModelConfig;
 

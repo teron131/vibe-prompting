@@ -1,13 +1,17 @@
-/** Generates the native Gemini embeddings used by hybrid saved-prompt search. */
+/** Generates the native Gemini embeddings used by shared hybrid search. */
 
 import { loadRuntimeConfig } from "../config/index.ts";
 
-export const PROMPT_SEARCH_EMBEDDING_MODEL = "gemini-embedding-2";
+export const SEARCH_EMBEDDING_MODEL = "gemini-embedding-2";
 
 const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
-export const PROMPT_SEARCH_EMBEDDING_DIMENSIONS = 768;
+export const SEARCH_EMBEDDING_DIMENSIONS = 768;
 const EMBEDDING_BATCH_SIZE = 32;
+const EMBEDDING_BATCH_CONCURRENCY = 4;
+const QUERY_CACHE_MAX_ENTRIES = 100;
 const REQUEST_TIMEOUT_MS = 30_000;
+
+const queryEmbeddings = new Map<string, Promise<number[]>>();
 
 type GeminiBatchEmbeddingResponse = {
   embeddings?: Array<{ values?: unknown }>;
@@ -25,39 +29,81 @@ export class EmbeddingError extends Error {
 
 /** Embeds retrieval documents in bounded batches while preserving input order. */
 export async function embedSearchDocuments(documents: Array<{ text: string; title: string }>) {
-  const embeddings: number[][] = [];
+  if (documents.length === 0) return [];
+
+  const apiKey = loadEmbeddingApiKey();
+  const batches: string[][] = [];
   for (let index = 0; index < documents.length; index += EMBEDDING_BATCH_SIZE) {
-    const batch = documents.slice(index, index + EMBEDDING_BATCH_SIZE);
-    embeddings.push(
-      ...(await embedBatch(batch.map(({ text, title }) => `title: ${title} | text: ${text}`))),
+    batches.push(
+      documents
+        .slice(index, index + EMBEDDING_BATCH_SIZE)
+        .map(({ text, title }) => `title: ${title} | text: ${text}`),
     );
   }
-  return embeddings;
+
+  const embeddings: number[][][] = new Array(batches.length);
+  let nextBatch = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(EMBEDDING_BATCH_CONCURRENCY, batches.length) }, async () => {
+      while (nextBatch < batches.length) {
+        const index = nextBatch++;
+        embeddings[index] = await embedBatch(batches[index]!, apiKey);
+      }
+    }),
+  );
+  return embeddings.flat();
 }
 
 /** Embeds one asymmetric retrieval query using Gemini Embedding 2's search format. */
 export async function embedSearchQuery(query: string) {
-  const [embedding] = await embedBatch([`task: search result | query: ${query}`]);
-  if (!embedding) throw new EmbeddingError("Gemini returned no query embedding.");
-  return embedding;
+  const apiKey = loadEmbeddingApiKey();
+  const normalizedQuery = query.trim().replace(/\s+/g, " ");
+  const cacheKey = `${SEARCH_EMBEDDING_MODEL}:${normalizedQuery}`;
+  const cached = queryEmbeddings.get(cacheKey);
+  if (cached) {
+    queryEmbeddings.delete(cacheKey);
+    queryEmbeddings.set(cacheKey, cached);
+    return cached;
+  }
+
+  const pending = embedBatch([`task: search result | query: ${normalizedQuery}`], apiKey).then(
+    ([embedding]) => {
+      if (!embedding) throw new EmbeddingError("Gemini returned no query embedding.");
+      return embedding;
+    },
+  );
+  queryEmbeddings.set(cacheKey, pending);
+  if (queryEmbeddings.size > QUERY_CACHE_MAX_ENTRIES) {
+    const oldest = queryEmbeddings.keys().next().value;
+    if (oldest) queryEmbeddings.delete(oldest);
+  }
+  try {
+    return await pending;
+  } catch (error) {
+    if (queryEmbeddings.get(cacheKey) === pending) queryEmbeddings.delete(cacheKey);
+    throw error;
+  }
 }
 
-async function embedBatch(contents: string[]): Promise<number[][]> {
-  if (contents.length === 0) return [];
-
+function loadEmbeddingApiKey() {
   const config = loadRuntimeConfig();
   if (
-    config.embeddingModel.id !== PROMPT_SEARCH_EMBEDDING_MODEL ||
+    config.embeddingModel.id !== SEARCH_EMBEDDING_MODEL ||
     config.embeddingModel.platform !== "gemini"
   ) {
     throw new EmbeddingError(
-      `Set embeddingModel to ${PROMPT_SEARCH_EMBEDDING_MODEL} on the gemini platform to enable semantic prompt search.`,
+      `Set embeddingModel to ${SEARCH_EMBEDDING_MODEL} on the gemini platform to enable semantic search.`,
     );
   }
   const apiKey = config.platforms.gemini.apiKey;
-  if (!apiKey) throw new EmbeddingError("Set GEMINI_API_KEY to enable semantic prompt search.");
+  if (!apiKey) throw new EmbeddingError("Set GEMINI_API_KEY to enable semantic search.");
+  return apiKey;
+}
 
-  const model = `models/${PROMPT_SEARCH_EMBEDDING_MODEL}`;
+async function embedBatch(contents: string[], apiKey: string): Promise<number[][]> {
+  if (contents.length === 0) return [];
+
+  const model = `models/${SEARCH_EMBEDDING_MODEL}`;
   let response: Response;
   try {
     response = await fetch(`${GEMINI_API_BASE_URL}/${model}:batchEmbedContents`, {
@@ -65,7 +111,7 @@ async function embedBatch(contents: string[]): Promise<number[][]> {
         requests: contents.map((content) => ({
           content: { parts: [{ text: content }] },
           embedContentConfig: {
-            outputDimensionality: PROMPT_SEARCH_EMBEDDING_DIMENSIONS,
+            outputDimensionality: SEARCH_EMBEDDING_DIMENSIONS,
           },
           model,
         })),
@@ -104,7 +150,7 @@ async function embedBatch(contents: string[]): Promise<number[][]> {
     embeddings.some(
       (embedding) =>
         !Array.isArray(embedding) ||
-        embedding.length !== PROMPT_SEARCH_EMBEDDING_DIMENSIONS ||
+        embedding.length !== SEARCH_EMBEDDING_DIMENSIONS ||
         embedding.some((value) => typeof value !== "number" || !Number.isFinite(value)),
     )
   ) {

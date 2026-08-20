@@ -8,13 +8,17 @@ import {
   type PromptSystem,
   type StoredPrompt,
 } from "../../prompt-system/index.ts";
-import { applySingleFilePatch } from "./apply-patch.ts";
+import {
+  applyPromptHashlineEdits,
+  formatPromptHashlines,
+  promptHashlineEditsSchema,
+} from "./hashline.ts";
 
-const promptPatchSchema = z.object({
+const promptEditRequestSchema = z.object({
   promptId: z.uuid(),
-  changeRequest: z.string().trim().min(1),
   expectedRevisionId: z.uuid(),
-  patch: z.string().min(1),
+  changeRequest: z.string().trim().min(1),
+  edits: promptHashlineEditsSchema,
 });
 
 export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
@@ -30,10 +34,15 @@ export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
     }),
     tool({
       name: "read_prompt",
-      description: "Read one saved prompt and its current revision before editing it.",
+      description:
+        "Read one saved prompt revision as LINE#HASH:content physical lines before editing it.",
       parameters: z.object({ promptId: z.uuid() }),
       async execute({ promptId }) {
-        return projectStoredPrompt(await prompts.getPrompt(promptId), true);
+        const prompt = await prompts.getPrompt(promptId);
+        return {
+          ...projectStoredPrompt(prompt),
+          content: formatPromptHashlines(prompt.markdown),
+        };
       },
     }),
     tool({
@@ -50,8 +59,8 @@ export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
       name: "create_prompt",
       description: "Create a saved prompt when the user asks to draft or store markdown.",
       parameters: z.object({
-        markdown: z.string().min(1),
         title: z.string().trim().min(1),
+        markdown: z.string().min(1),
       }),
       async execute(input) {
         const prompt = await prompts.createPrompt(input);
@@ -59,28 +68,25 @@ export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
       },
     }),
     tool({
-      name: "patch_prompt",
-      description: "Apply one single-file *** Begin Patch update to the current saved prompt.",
-      parameters: promptPatchSchema,
+      name: "edit_prompt",
+      description:
+        "Update one saved prompt after read_prompt with structured replace_range, insert_before, insert_after, or append operations. Copy LINE#HASH refs exactly and send content as complete physical lines without refs. The batch persists as one revision only if every ref is current and every edit succeeds. Never send diff or patch syntax.",
+      parameters: promptEditRequestSchema,
       async execute(input) {
-        const saved = await patchStoredPrompt(prompts, input);
+        const saved = await editStoredPrompt(prompts, input);
         return promptResult(saved, "Updated prompt.");
       },
     }),
   ];
 }
 
-async function patchStoredPrompt(
+async function editStoredPrompt(
   prompts: PromptSystem,
-  { changeRequest, expectedRevisionId, patch, promptId }: z.infer<typeof promptPatchSchema>,
+  { changeRequest, edits, expectedRevisionId, promptId }: z.infer<typeof promptEditRequestSchema>,
 ): Promise<StoredPrompt> {
   const current = await prompts.getPrompt(promptId);
   if (current.revisionId !== expectedRevisionId) throw new PromptConflictError();
-  const editedMarkdown = applySingleFilePatch({
-    originalText: current.markdown,
-    patchText: patch,
-    targetPath: "prompt.md",
-  });
+  const editedMarkdown = applyPromptHashlineEdits(current.markdown, edits);
   return prompts.appendAiEdit({
     promptId,
     editedMarkdown,

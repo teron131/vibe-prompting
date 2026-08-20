@@ -6,34 +6,40 @@ import { loadModelSpendLimits, loadRuntimeConfig } from "./config/index.ts";
 import { ConversationRunRegistry } from "./conversations/runs.ts";
 import { ConversationStore } from "./conversations/store.ts";
 import { createDatabase } from "./database.ts";
-import { EvaluationRuns } from "./evaluation/runs.ts";
+import { CriteriaProfiles } from "./evaluation/criteria-profiles.ts";
+import { EvaluationResults } from "./evaluation/results/index.ts";
+import { EvaluationRuns } from "./evaluation/runs/index.ts";
 import { PromptSystem } from "./prompt-system/index.ts";
+import { HybridSearch } from "./search.ts";
 import { ApplicationSettingsStore } from "./settings/index.ts";
 import { TargetSystem } from "./target/index.ts";
 
 export type ConfiguredModel = {
   id: string;
-  known: boolean;
-  label: string;
   provider: string;
+  label: string;
+  known: boolean;
 };
 
 export type ApplicationServices = {
-  close(): Promise<void>;
-  conversations: ConversationStore;
-  evaluations: EvaluationRuns;
   prompts: PromptSystem;
+  targets: TargetSystem;
+  evaluations: EvaluationRuns;
+  evaluationResults: EvaluationResults;
+  criteriaProfiles: CriteriaProfiles;
+  conversations: ConversationStore;
   runs: ConversationRunRegistry;
   settings: ApplicationSettingsStore;
-  targets: TargetSystem;
+  close(): Promise<void>;
 };
 
 const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 7;
+const APPLICATION_SERVICES_VERSION = 13;
 
+/** Resolves configured model identities after the shared services and database are ready. */
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
   await getApplicationServices();
   const { models } = loadRuntimeConfig();
@@ -41,16 +47,19 @@ export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
   return models.map(({ id }, index) => ({ id, ...identities[index] }));
 }
 
+/** Resolves one model identity without changing the configured model catalogue. */
 export async function getModelIdentity(id: string): Promise<ConfiguredModel> {
   const [identity] = await resolveModelIdentities([id]);
   return { id, ...identity };
 }
 
+/** Checks only user-configured target models, excluding helper and metadata-only models. */
 export async function isConfiguredModelId(id: string): Promise<boolean> {
   await getApplicationServices();
   return loadRuntimeConfig().models.some((model) => model.id === id);
 }
 
+/** Builds the application graph with one database, search policy, and lifecycle owner per process. */
 export async function createApplicationServices(
   databaseUrl?: string,
 ): Promise<ApplicationServices> {
@@ -59,20 +68,26 @@ export async function createApplicationServices(
   const settings = new ApplicationSettingsStore(database);
   await settings.initialize();
   configureSpendLimit(database, loadModelSpendLimits());
-  const prompts = new PromptSystem(database);
+  const search = new HybridSearch(database);
+  const prompts = new PromptSystem(database, search);
   const targets = new TargetSystem(database, prompts);
   const evaluations = new EvaluationRuns(database, prompts, targets);
+  const criteriaProfiles = new CriteriaProfiles(database);
+  await criteriaProfiles.initialize();
   return {
-    close: () => database.close(),
-    conversations: new ConversationStore(database),
-    evaluations,
     prompts,
+    targets,
+    evaluations,
+    evaluationResults: new EvaluationResults(database, search),
+    criteriaProfiles,
+    conversations: new ConversationStore(database, search),
     runs: new ConversationRunRegistry(),
     settings,
-    targets,
+    close: () => database.close(),
   };
 }
 
+/** Returns the process-shared services and reconciles interrupted durable evaluations once. */
 export function getApplicationServices(): Promise<ApplicationServices> {
   if (
     !sharedState.vibePromptingServices ||
@@ -98,7 +113,9 @@ export type {
 } from "./agent/runtime.ts";
 export { EmbeddingError } from "./clients/embedding.ts";
 export * from "./conversations/index.ts";
-export * from "./evaluation/runs.ts";
+export * from "./evaluation/runs/index.ts";
+export * from "./evaluation/results/index.ts";
+export * from "./evaluation/criteria-profiles.ts";
 export * from "./prompt-system/index.ts";
 export * from "./settings/index.ts";
 export * from "./target/index.ts";

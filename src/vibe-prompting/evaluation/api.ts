@@ -17,21 +17,21 @@ const categoriesSchema = z
     message: "Criterion categories must be unique.",
   });
 
-const criterionSchema = z.discriminatedUnion("type", [
+export const criterionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("boolean"),
     instruction: instructionSchema,
   }),
   z.object({
     type: z.literal("categorical"),
-    categories: categoriesSchema,
     instruction: instructionSchema,
+    categories: categoriesSchema,
   }),
   z.object({
     type: z.literal("numeric"),
+    instruction: instructionSchema,
     min: z.number(),
     max: z.number(),
-    instruction: instructionSchema,
   }),
   z.object({
     type: z.literal("text"),
@@ -43,9 +43,10 @@ const criterionSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-const criteriaSchema = z
+export const criteriaSchema = z
   .array(criterionSchema)
   .min(1)
+  .max(10)
   .superRefine((criteria, context) => {
     criteria.forEach((criterion, index) => {
       if (criterion.type === "numeric" && criterion.min >= criterion.max) {
@@ -75,7 +76,6 @@ const judgesSchema = z
   });
 
 export const requestSchema = z.object({
-  judges: judgesSchema,
   cases: z
     .array(
       z.object({
@@ -84,6 +84,7 @@ export const requestSchema = z.object({
       }),
     )
     .min(1),
+  judges: judgesSchema,
 });
 
 export type Criterion = z.infer<typeof criterionSchema>;
@@ -94,14 +95,14 @@ export type EvaluationCase<INPUT = unknown> = {
 };
 
 export type EvaluationRequest<INPUT = unknown> = {
-  judges: string | string[];
   cases: EvaluationCase<INPUT>[];
+  judges: string | string[];
 };
 
 export type CriterionEvaluation = {
   criterion: Criterion;
-  value: boolean | number | string;
   judge: string;
+  value: boolean | number | string;
   comment: string;
   evidence: string[];
 };
@@ -121,34 +122,34 @@ export async function evaluate<INPUT, OUTPUT>(
   target: Target<INPUT, OUTPUT>,
   request: EvaluationRequest<INPUT>,
 ): Promise<EvaluationRun<INPUT, OUTPUT>> {
-  const configuredTarget = targetSchema.parse(target) as Target<INPUT, OUTPUT>;
-  const configuredRequest = requestSchema.parse(request) as EvaluationRequest<INPUT>;
-  const configuredCases = configuredRequest.cases.map((testCase) => ({
+  const validatedTarget = targetSchema.parse(target) as Target<INPUT, OUTPUT>;
+  const validatedRequest = requestSchema.parse(request) as EvaluationRequest<INPUT>;
+  const validatedCases = validatedRequest.cases.map((testCase) => ({
     ...testCase,
     internalCriteria: testCase.criteria.map(toInternalCriterion),
   }));
 
   const { results } = await evaluatorGraph.invoke({
     target: {
-      model: configuredTarget.model,
-      invoke: (input: unknown) => configuredTarget.invoke(input as INPUT),
+      model: validatedTarget.model,
+      invoke: (input: unknown) => validatedTarget.invoke(input as INPUT),
     },
-    runName: configuredTarget.model,
-    cases: configuredCases.map(({ input, internalCriteria }) => ({
+    runName: validatedTarget.model,
+    cases: validatedCases.map(({ input, internalCriteria }) => ({
       input,
       criteria: internalCriteria,
     })),
-    judges: { model: configuredRequest.judges },
+    judges: { model: validatedRequest.judges },
   });
 
   const cases = results.map((item, caseIndex) => {
-    const configuredCase = configuredCases[caseIndex];
-    if (!configuredCase) throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
+    const validatedCase = validatedCases[caseIndex];
+    if (!validatedCase) throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
     return {
-      input: configuredCase.input,
+      input: validatedCase.input,
       output: item.output as OUTPUT,
       evaluations: item.evaluations.map((evaluation) =>
-        projectEvaluation(evaluation, configuredCase.criteria, configuredCase.internalCriteria),
+        projectEvaluation(evaluation, validatedCase.criteria, validatedCase.internalCriteria),
       ),
     };
   });
@@ -156,6 +157,7 @@ export async function evaluate<INPUT, OUTPUT>(
   return { cases };
 }
 
+/** Maps the public correction criterion to the engine's reserved output criterion name. */
 function toInternalCriterion(criterion: Criterion, index: number): InternalCriterion {
   const name = criterion.type === "correction" ? "output" : `criterion_${index + 1}`;
   switch (criterion.type) {
@@ -183,15 +185,14 @@ function toInternalCriterion(criterion: Criterion, index: number): InternalCrite
   }
 }
 
+/** Converts one engine score back to the public criterion and validates its typed value. */
 function projectEvaluation(
   evaluation: EvaluatorScore,
-  criteria: Criterion[],
-  internalCriteria: InternalCriteria,
+  publicCriteria: Criterion[],
+  engineCriteria: InternalCriteria,
 ): CriterionEvaluation {
-  const criterionIndex = internalCriteria.findIndex(
-    ({ name }) => name === evaluation.criterionName,
-  );
-  const criterion = criteria[criterionIndex];
+  const criterionIndex = engineCriteria.findIndex(({ name }) => name === evaluation.criterionName);
+  const criterion = publicCriteria[criterionIndex];
   if (!criterion) throw new Error(`Unknown evaluated criterion: ${evaluation.criterionName}.`);
   return {
     criterion,
@@ -202,6 +203,7 @@ function projectEvaluation(
   };
 }
 
+/** Enforces the public criterion type and range before exposing a judge value. */
 function projectValue(
   criterion: Criterion,
   value: boolean | number | string,

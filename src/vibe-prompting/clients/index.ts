@@ -4,8 +4,8 @@ export {
   embedSearchDocuments,
   embedSearchQuery,
   EmbeddingError,
-  PROMPT_SEARCH_EMBEDDING_DIMENSIONS,
-  PROMPT_SEARCH_EMBEDDING_MODEL,
+  SEARCH_EMBEDDING_DIMENSIONS,
+  SEARCH_EMBEDDING_MODEL,
 } from "./embedding.ts";
 export {
   connectAiSdkExaSearch,

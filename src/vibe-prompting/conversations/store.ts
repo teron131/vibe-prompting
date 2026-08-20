@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 
 import type { Database, DatabaseClient } from "../database.ts";
+import type { HybridSearch } from "../search.ts";
 import { type ChatMetadata, validateChatMetadata } from "./metadata.ts";
 
 export type StoredMessagePart =
@@ -74,6 +75,8 @@ type ChatRow = {
   title: string;
   updatedAt: Date;
 };
+
+type ChatSearchRow = ChatRow & { searchText: string };
 
 type MessageRow = {
   chatId: string;
@@ -153,13 +156,17 @@ export class ChatRateLimitError extends Error {
   }
 }
 
+/** Persists chats and messages while keeping search projection and usage limits at their storage boundaries. */
 export class ConversationStore {
   readonly #database: Database;
+  readonly #search: HybridSearch;
 
-  constructor(database: Database) {
+  constructor(database: Database, search: HybridSearch) {
     this.#database = database;
+    this.#search = search;
   }
 
+  /** Creates a chat and its first user turn under one usage-checked transaction. */
   async createWithUserMessage(
     input: Omit<UserMessageInput, "chatId"> & { chatId?: string },
   ): Promise<Conversation> {
@@ -262,10 +269,12 @@ export class ConversationStore {
     });
   }
 
+  /** Loads one chat with its workspace context and ordered message history. */
   async getConversation(chatId: string): Promise<Conversation> {
     return this.#database.run((sql) => requireConversation(sql, chatId));
   }
 
+  /** Lists chats with a stable updated-at cursor instead of offset pagination. */
   async listChats(input: { cursor?: string; limit?: number } = {}): Promise<ChatPage> {
     const limit = Math.min(Math.max(input.limit ?? 30, 1), 100);
     const cursor = input.cursor ? decodeCursor(input.cursor) : undefined;
@@ -297,28 +306,39 @@ export class ConversationStore {
     });
   }
 
+  /** Searches chat titles and message text after releasing the database connection for embedding work. */
   async searchChats(query: string, limit = 30): Promise<ChatSummary[]> {
     const normalized = query.trim();
     if (!normalized) return [];
-    return this.#database.run(async (sql) => {
-      const rows = await sql<ChatRow[]>`
-        SELECT DISTINCT
-          chats.id,
-          chats.title,
-          chats.icon,
-          chats.model_id,
-          chats.created_at,
-          chats.updated_at
-        FROM chats
-        LEFT JOIN chat_messages ON chat_messages.chat_id = chats.id
-        WHERE
-          to_tsvector('simple', chats.title) @@ plainto_tsquery('simple', ${normalized})
-          OR to_tsvector('simple', chat_messages.text_content) @@ plainto_tsquery('simple', ${normalized})
-        ORDER BY chats.updated_at DESC, chats.id DESC
-        LIMIT ${Math.min(Math.max(limit, 1), 100)}
-      `;
-      return rows.map(projectChat);
-    });
+    const rows = await this.#database.run(
+      (sql) => sql<ChatSearchRow[]>`
+      SELECT
+        chats.id,
+        chats.title,
+        chats.icon,
+        chats.model_id,
+        chats.created_at,
+        chats.updated_at,
+        COALESCE(string_agg(chat_messages.text_content, E'\n' ORDER BY chat_messages.created_at, chat_messages.id), '') AS search_text
+      FROM chats
+      LEFT JOIN chat_messages ON chat_messages.chat_id = chats.id
+      GROUP BY chats.id
+      ORDER BY chats.updated_at DESC, chats.id DESC
+    `,
+    );
+    const hits = await this.#search.search(
+      "chat",
+      normalized,
+      rows.map((row) => ({
+        documentId: row.id,
+        ownerId: row.id,
+        title: row.title,
+        text: row.searchText,
+        updatedAt: row.updatedAt.toISOString(),
+        value: projectChat(row),
+      })),
+    );
+    return hits.slice(0, Math.min(Math.max(limit, 1), 100)).map(({ document }) => document.value);
   }
 
   async updateMetadata(input: { chatId: string } & ChatMetadata): Promise<ChatSummary> {

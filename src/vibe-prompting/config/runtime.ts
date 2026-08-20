@@ -21,10 +21,10 @@ const platformIds = ["cliproxy", "gemini", "llm"] as const;
 export type PlatformId = (typeof platformIds)[number];
 
 export type PlatformConfig = {
-  apiKey: string | undefined;
-  baseURL: string;
   id: PlatformId;
   label: string;
+  apiKey: string | undefined;
+  baseURL: string;
 };
 
 export type ConfiguredPlatform = PlatformConfig & { apiKey: string };
@@ -55,9 +55,10 @@ const modelCatalogSchema = z
 
 const fileConfigSchema = z
   .object({
-    embeddingModel: modelConfigSchema,
-    metadataModel: modelConfigSchema,
     models: modelCatalogSchema,
+    helper_model: modelConfigSchema,
+    metadataModel: modelConfigSchema,
+    embeddingModel: modelConfigSchema,
   })
   .strict();
 
@@ -66,13 +67,14 @@ export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export type ModelStorage = "database" | "yaml";
 
 export type RuntimeConfig = {
+  models: ModelConfig[];
+  helperModel: ModelConfig;
+  metadataModel: ModelConfig;
   embeddingModel: ModelConfig;
+  platforms: Record<PlatformId, PlatformConfig>;
   exa: {
     apiKey: string | undefined;
   };
-  metadataModel: ModelConfig;
-  models: ModelConfig[];
-  platforms: Record<PlatformId, PlatformConfig>;
 };
 
 export type RuntimeConfigOverrides = {
@@ -88,13 +90,13 @@ const optionalText = z.preprocess(
 );
 
 const environmentSchema = z.object({
+  LLM_API_KEY: optionalText,
+  LLM_BASE_URL: optionalText,
+  GEMINI_API_KEY: optionalText,
+  GOOGLE_API_KEY: optionalText,
   CLIPROXYAPI_API_KEY: optionalText,
   CLIPROXYAPI_BASE_URL: optionalText,
   EXA_API_KEY: optionalText,
-  GEMINI_API_KEY: optionalText,
-  GOOGLE_API_KEY: optionalText,
-  LLM_API_KEY: optionalText,
-  LLM_BASE_URL: optionalText,
   MODEL_CONFIG_YAML: optionalText,
 });
 
@@ -116,34 +118,35 @@ export function loadBaseRuntimeConfig(
   const geminiApiKey = values.GEMINI_API_KEY ?? values.GOOGLE_API_KEY;
 
   const config: RuntimeConfig = {
-    embeddingModel: fileConfig.embeddingModel,
-    exa: {
-      apiKey: values.EXA_API_KEY,
-    },
-    metadataModel: fileConfig.metadataModel,
     models: fileConfig.models,
+    helperModel: fileConfig.helper_model,
+    metadataModel: fileConfig.metadataModel,
+    embeddingModel: fileConfig.embeddingModel,
     platforms: {
       cliproxy: {
+        id: "cliproxy",
+        label: "CLIProxyAPI",
         apiKey: values.CLIPROXYAPI_API_KEY,
         baseURL: parseHttpUrl(
           values.CLIPROXYAPI_BASE_URL ?? DEFAULT_CLIPROXYAPI_BASE_URL,
           "CLIPROXYAPI_BASE_URL",
         ),
-        id: "cliproxy",
-        label: "CLIProxyAPI",
       },
       gemini: {
-        apiKey: geminiApiKey,
-        baseURL: GEMINI_OPENAI_BASE_URL,
         id: "gemini",
         label: "Gemini API",
+        apiKey: geminiApiKey,
+        baseURL: GEMINI_OPENAI_BASE_URL,
       },
       llm: {
-        apiKey: values.LLM_API_KEY,
-        baseURL: values.LLM_BASE_URL ? parseHttpUrl(values.LLM_BASE_URL, "LLM_BASE_URL") : "",
         id: "llm",
         label: "LLM API",
+        apiKey: values.LLM_API_KEY,
+        baseURL: values.LLM_BASE_URL ? parseHttpUrl(values.LLM_BASE_URL, "LLM_BASE_URL") : "",
       },
+    },
+    exa: {
+      apiKey: values.EXA_API_KEY,
     },
   };
   return config;

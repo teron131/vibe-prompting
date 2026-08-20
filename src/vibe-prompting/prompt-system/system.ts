@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database, DatabaseClient } from "../database.ts";
+import type { HybridSearch } from "../search.ts";
 import {
   createPromptSearch,
   type PromptPassageHit,
@@ -110,19 +111,22 @@ export class PromptHistoryError extends Error {
   }
 }
 
+/** Owns prompt persistence and delegates current-revision retrieval to the shared search policy. */
 export class PromptSystem {
   readonly #database: Database;
   readonly #search: PromptSearch;
 
-  constructor(database: Database) {
+  constructor(database: Database, search: HybridSearch) {
     this.#database = database;
-    this.#search = createPromptSearch(database, () => this.listPrompts());
+    this.#search = createPromptSearch(search, () => this.listPrompts());
   }
 
+  /** Searches saved prompts while preserving prompt-level and passage-level projections. */
   async searchPrompts(query: string): Promise<StoredPromptSearchResult[]> {
     return this.#search.searchPrompts(query);
   }
 
+  /** Searches prompt passages and optionally narrows the result to one prompt. */
   async searchPassages(query: string, promptId?: string): Promise<PromptPassageHit[]> {
     return this.#search.searchPassages(query, promptId);
   }

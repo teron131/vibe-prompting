@@ -30,9 +30,9 @@ const DEFAULT_MAX_CONCURRENCY = 10;
 
 const evaluatorCaseSchema = z.object({
   input: z.unknown().refine((input) => input !== undefined, "Case input is required."),
+  criteria: evaluationCriteriaSchema,
   expectedOutput: z.unknown().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-  criteria: evaluationCriteriaSchema,
 });
 const evaluatedCaseSchema = z.object({
   input: z.unknown(),

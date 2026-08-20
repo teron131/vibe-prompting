@@ -11,6 +11,10 @@ embeddingModel:
   id: gemini-embedding-2
   platform: gemini
 
+helper_model:
+  id: gemini-3.7-flash
+  platform: gemini
+
 metadataModel:
   id: gemini-3.7-flash
   platform: gemini

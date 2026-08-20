@@ -8,6 +8,40 @@ import type {
   ModelRetryAdviceRequest,
   StreamEvent,
 } from "@openai/agents";
+import type { LanguageModelMiddleware } from "ai";
+
+/** Adapts Gemini metadata to the AI SDK OpenAI-compatible encoder's Google continuation contract without changing provider identity. */
+export function preserveAiSdkGeminiToolCallSignatures(): LanguageModelMiddleware {
+  return {
+    specificationVersion: "v3",
+    transformParams: async ({ params }) => ({
+      ...params,
+      prompt: params.prompt.map((message) =>
+        message.role === "assistant"
+          ? {
+              ...message,
+              content: message.content.map((part) => {
+                if (part.type !== "tool-call") return part;
+                const thoughtSignature = part.providerOptions?.gemini?.thoughtSignature;
+                return typeof thoughtSignature === "string" && thoughtSignature
+                  ? {
+                      ...part,
+                      providerOptions: {
+                        ...part.providerOptions,
+                        google: {
+                          ...part.providerOptions?.google,
+                          thoughtSignature,
+                        },
+                      },
+                    }
+                  : part;
+              }),
+            }
+          : message,
+      ),
+    }),
+  };
+}
 
 /** Wraps an Agents SDK provider because its streaming Chat Completions converter drops Gemini's signed tool-call metadata. */
 export function preserveGeminiToolCallSignatures(provider: ModelProvider): ModelProvider {

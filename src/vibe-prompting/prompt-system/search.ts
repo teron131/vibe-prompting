@@ -1,25 +1,12 @@
-/** Builds and caches passage-level hybrid search for the current revisions owned by PromptSystem. */
+/** Projects current prompt revisions into passages and maps shared hybrid-search hits back to prompt results. */
 
-import { createHash } from "node:crypto";
-
-import { cosineSimilarity } from "ai";
-import type postgres from "postgres";
-
-import {
-  embedSearchDocuments,
-  embedSearchQuery,
-  PROMPT_SEARCH_EMBEDDING_DIMENSIONS,
-  PROMPT_SEARCH_EMBEDDING_MODEL,
-} from "../clients/embedding.ts";
-import type { Database } from "../database.ts";
+import type { HybridSearch } from "../search.ts";
 import type { StoredPrompt } from "./system.ts";
 
 const MAX_PASSAGE_CHARACTERS = 1_200;
 const MAX_PASSAGE_RESULTS = 30;
 const MAX_PROMPT_RESULTS = 10;
 const MAX_PASSAGES_PER_PROMPT = 3;
-const MIN_SEMANTIC_SIMILARITY = 0.6;
-const SEMANTIC_SIMILARITY_WINDOW = 0.08;
 
 export type PromptPassage = {
   promptId: string;
@@ -40,27 +27,19 @@ export type StoredPromptSearchResult = StoredPrompt & { passages: PromptPassageH
 type SearchPassage = PromptPassage & {
   prompt: StoredPrompt;
   chunkIndex: number;
-  contentHash: string;
   searchText: string;
 };
 
 type RankedPassage = SearchPassage & { keyword: number; score: number; semantic: number };
 
-type CachedSearchPassage = {
-  chunkIndex: number;
-  contentHash: string;
-  embedding: unknown;
-  model: string;
-  promptId: string;
-  revisionId: string;
-};
-
 export type PromptSearch = ReturnType<typeof createPromptSearch>;
 
+/** Adapts current prompt revisions into shared-search documents and groups passage hits by prompt. */
 export function createPromptSearch(
-  database: Database,
+  hybridSearch: HybridSearch,
   listCurrentPrompts: () => Promise<StoredPrompt[]>,
 ) {
+  /** Returns ranked passage excerpts, optionally restricted to one prompt. */
   async function searchPassages(query: string, promptId?: string): Promise<PromptPassageHit[]> {
     const ranked = await rankCurrentPassages(query);
     return ranked
@@ -69,6 +48,7 @@ export function createPromptSearch(
       .map(projectPassageHit);
   }
 
+  /** Returns the highest-ranked prompts while retaining up to three useful passages per prompt. */
   async function searchPrompts(query: string): Promise<StoredPromptSearchResult[]> {
     const ranked = await rankCurrentPassages(query);
     const results = new Map<string, StoredPromptSearchResult>();
@@ -89,112 +69,30 @@ export function createPromptSearch(
   async function rankCurrentPassages(query: string): Promise<RankedPassage[]> {
     const normalizedQuery = query.replace(/\s+/g, " ").trim();
     if (!normalizedQuery) return [];
-    const [prompts, cachedPassages] = await Promise.all([
-      listCurrentPrompts(),
-      loadCachedPassages(database),
-    ]);
+    const prompts = await listCurrentPrompts();
     const passages = buildSearchPassages(prompts);
     if (passages.length === 0) return [];
-    const embeddingByKey = await refreshEmbeddings(database, passages, cachedPassages);
-    const queryEmbedding = await embedSearchQuery(normalizedQuery);
-    return rankPassages({ embeddingByKey, passages, query: normalizedQuery, queryEmbedding });
+    const hits = await hybridSearch.search(
+      "prompt",
+      normalizedQuery,
+      passages.map((passage) => ({
+        documentId: getPassageKey(passage.promptId, passage.chunkIndex),
+        ownerId: passage.promptId,
+        title: passage.prompt.title,
+        text: passage.searchText,
+        updatedAt: passage.prompt.updatedAt,
+        value: passage,
+      })),
+    );
+    return hits.map(({ document, keyword, score, semantic }) => ({
+      ...document.value,
+      keyword,
+      score,
+      semantic,
+    }));
   }
 
   return { searchPrompts, searchPassages };
-}
-
-async function loadCachedPassages(database: Database): Promise<CachedSearchPassage[]> {
-  return database.run(
-    (sql) => sql<CachedSearchPassage[]>`
-      SELECT prompt_id, chunk_index, revision_id, content_hash, model, embedding
-      FROM prompt_search_embeddings
-    `,
-  );
-}
-
-async function refreshEmbeddings(
-  database: Database,
-  passages: SearchPassage[],
-  cachedPassages: CachedSearchPassage[],
-): Promise<Map<string, number[]>> {
-  const cacheByKey = new Map(
-    cachedPassages.map(
-      (passage) => [getPassageKey(passage.promptId, passage.chunkIndex), passage] as const,
-    ),
-  );
-  const pendingPassages = passages.filter((passage) => {
-    const cached = cacheByKey.get(getPassageKey(passage.promptId, passage.chunkIndex));
-    return (
-      !cached ||
-      cached.revisionId !== passage.revisionId ||
-      cached.contentHash !== passage.contentHash ||
-      cached.model !== PROMPT_SEARCH_EMBEDDING_MODEL ||
-      !isEmbedding(cached.embedding)
-    );
-  });
-  const pendingEmbeddings = await embedSearchDocuments(
-    pendingPassages.map((passage) => ({ text: passage.searchText, title: passage.prompt.title })),
-  );
-  const embeddingByKey = new Map<string, number[]>();
-  for (const cached of cachedPassages) {
-    if (isEmbedding(cached.embedding)) {
-      embeddingByKey.set(getPassageKey(cached.promptId, cached.chunkIndex), cached.embedding);
-    }
-  }
-  for (const [index, passage] of pendingPassages.entries()) {
-    const embedding = pendingEmbeddings[index];
-    if (embedding)
-      embeddingByKey.set(getPassageKey(passage.promptId, passage.chunkIndex), embedding);
-  }
-
-  const currentKeys = new Set(
-    passages.map((passage) => getPassageKey(passage.promptId, passage.chunkIndex)),
-  );
-  const changedPromptIds = new Set(pendingPassages.map((passage) => passage.promptId));
-  for (const cached of cachedPassages) {
-    if (!currentKeys.has(getPassageKey(cached.promptId, cached.chunkIndex))) {
-      changedPromptIds.add(cached.promptId);
-    }
-  }
-  if (changedPromptIds.size > 0) {
-    await replaceCachedPassages(database, passages, changedPromptIds, embeddingByKey);
-  }
-  return embeddingByKey;
-}
-
-async function replaceCachedPassages(
-  database: Database,
-  passages: SearchPassage[],
-  promptIds: Set<string>,
-  embeddingByKey: Map<string, number[]>,
-): Promise<void> {
-  await database.transaction(async (sql) => {
-    const ids = [...promptIds];
-    await sql`DELETE FROM prompt_search_embeddings WHERE prompt_id = ANY(${ids}::uuid[])`;
-    for (const passage of passages) {
-      if (!promptIds.has(passage.promptId)) continue;
-      const embedding = embeddingByKey.get(getPassageKey(passage.promptId, passage.chunkIndex));
-      if (!embedding) throw new Error("A prompt search embedding was not generated.");
-      await sql`
-        INSERT INTO prompt_search_embeddings (
-          prompt_id,
-          chunk_index,
-          revision_id,
-          content_hash,
-          model,
-          embedding
-        )
-        VALUES (
-          ${passage.promptId},
-          ${passage.chunkIndex},
-          ${passage.revisionId},
-          ${passage.contentHash},
-          ${PROMPT_SEARCH_EMBEDDING_MODEL},
-          ${sql.json(embedding as postgres.JSONValue)}
-        )
-      `;
-    }
-  });
 }
 
 function buildSearchPassages(prompts: StoredPrompt[]): SearchPassage[] {
@@ -206,13 +104,11 @@ function buildSearchPassages(prompts: StoredPrompt[]): SearchPassage[] {
         : [{ end: 0, heading: "", start: 0, text: prompt.title }];
     return passages.map((passage, chunkIndex) => {
       const searchText = passage.heading ? `${passage.heading}\n${passage.text}` : passage.text;
-      const document = `title: ${prompt.title} | text: ${searchText}`;
       return {
         ...passage,
         prompt,
         promptId: prompt.id,
         chunkIndex,
-        contentHash: createHash("sha256").update(document).digest("hex"),
         revisionId: prompt.revisionId,
         searchText,
       };
@@ -290,74 +186,6 @@ function getPassageKey(promptId: string, chunkIndex: number): string {
   return `${promptId}:${chunkIndex}`;
 }
 
-function isEmbedding(value: unknown): value is number[] {
-  return (
-    Array.isArray(value) &&
-    value.length === PROMPT_SEARCH_EMBEDDING_DIMENSIONS &&
-    value.every((item) => typeof item === "number" && Number.isFinite(item))
-  );
-}
-
-function rankPassages({
-  embeddingByKey,
-  passages,
-  query,
-  queryEmbedding,
-}: {
-  embeddingByKey: Map<string, number[]>;
-  passages: SearchPassage[];
-  query: string;
-  queryEmbedding: number[];
-}): RankedPassage[] {
-  const tokens = query.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-  const candidates = passages.map((passage) => {
-    const embedding = embeddingByKey.get(getPassageKey(passage.promptId, passage.chunkIndex)) ?? [];
-    return {
-      keyword: getKeywordScore({
-        query,
-        text: passage.searchText,
-        title: passage.prompt.title,
-        tokens,
-      }),
-      passage,
-      semantic:
-        embedding.length === queryEmbedding.length
-          ? cosineSimilarity(queryEmbedding, embedding)
-          : 0,
-    };
-  });
-  const maxKeyword = Math.max(0, ...candidates.map((candidate) => candidate.keyword));
-  const minSemantic = Math.min(...candidates.map((candidate) => candidate.semantic));
-  const maxSemantic = Math.max(...candidates.map((candidate) => candidate.semantic));
-  const ranked = candidates.map((candidate) => {
-    const keyword = maxKeyword > 0 ? candidate.keyword / maxKeyword : 0;
-    const semantic =
-      maxSemantic === minSemantic
-        ? Math.max(0, candidate.semantic)
-        : (candidate.semantic - minSemantic) / (maxSemantic - minSemantic);
-    return {
-      ...candidate.passage,
-      keyword: candidate.keyword,
-      score: maxKeyword > 0 ? keyword * 0.5 + semantic * 0.5 : semantic,
-      semantic: candidate.semantic,
-    };
-  });
-  const hasKeywordMatches = ranked.some((candidate) => candidate.keyword > 0);
-  return ranked
-    .filter((candidate) =>
-      hasKeywordMatches
-        ? candidate.keyword > 0
-        : candidate.semantic >= MIN_SEMANTIC_SIMILARITY &&
-          candidate.semantic >= maxSemantic - SEMANTIC_SIMILARITY_WINDOW,
-    )
-    .sort(
-      (left, right) =>
-        right.score - left.score ||
-        Date.parse(right.prompt.updatedAt) - Date.parse(left.prompt.updatedAt) ||
-        left.start - right.start,
-    );
-}
-
 function projectPassageHit(passage: RankedPassage): PromptPassageHit {
   return {
     promptId: passage.promptId,
@@ -369,36 +197,6 @@ function projectPassageHit(passage: RankedPassage): PromptPassageHit {
     title: passage.prompt.title,
     updatedAt: passage.prompt.updatedAt,
   };
-}
-
-function getKeywordScore({
-  query,
-  text,
-  title,
-  tokens,
-}: {
-  query: string;
-  text: string;
-  title: string;
-  tokens: string[];
-}): number {
-  const normalizedQuery = query.toLocaleLowerCase();
-  const normalizedTitle = title.toLocaleLowerCase();
-  const normalizedText = text.toLocaleLowerCase();
-  let score = 0;
-  if (normalizedTitle === normalizedQuery) score += 12;
-  if (containsWholeTerm(normalizedTitle, normalizedQuery)) score += 6;
-  if (containsWholeTerm(normalizedText, normalizedQuery)) score += 4;
-  for (const token of tokens) {
-    if (containsWholeTerm(normalizedTitle, token)) score += 2;
-    if (containsWholeTerm(normalizedText, token)) score += 0.75;
-  }
-  return score;
-}
-
-function containsWholeTerm(text: string, term: string): boolean {
-  const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapedTerm}($|[^\\p{L}\\p{N}])`, "iu").test(text);
 }
 
 function cleanDisplayText(text: string): string {

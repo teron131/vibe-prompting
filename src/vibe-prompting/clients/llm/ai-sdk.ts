@@ -6,6 +6,7 @@ import type { LanguageModel, LanguageModelMiddleware } from "ai";
 import { wrapLanguageModel } from "ai";
 
 import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../../config/index.ts";
+import { preserveAiSdkGeminiToolCallSignatures } from "./gemini.ts";
 import { type SpendCall, startSpendCall } from "./spend.ts";
 
 export function createModel(modelId: string): LanguageModel {
@@ -16,7 +17,10 @@ export function createModel(modelId: string): LanguageModel {
   const config = runtime.models.find((candidate) => candidate.id === id);
   if (!config) throw new Error(`Model is not configured: ${id}.`);
   const platform = resolveModelPlatform(config, runtime);
-  const middleware = createSpendLimitMiddleware(config);
+  const middleware: LanguageModelMiddleware[] = [
+    ...(platform.id === "gemini" ? [preserveAiSdkGeminiToolCallSignatures()] : []),
+    createSpendLimitMiddleware(config),
+  ];
   if (id.startsWith("gpt-")) {
     const provider = createOpenAI({ apiKey: platform.apiKey, baseURL: platform.baseURL });
     return wrapLanguageModel({ middleware, model: provider.responses(id) });

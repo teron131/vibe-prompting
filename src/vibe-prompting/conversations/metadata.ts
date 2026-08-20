@@ -18,6 +18,7 @@ const generatedMetadataSchema = z.object({
   icons: z.array(z.string().trim().min(1).max(64)).length(3),
 });
 const chatMetadataSchema = z.object({
+  title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
   icon: z
     .string()
     .trim()
@@ -25,7 +26,6 @@ const chatMetadataSchema = z.object({
     .max(64)
     .transform(normalizeLucideIconName)
     .refine(isLucideIconName, "Icon must be a supported Lucide icon name."),
-  title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
 });
 
 export type ChatMetadata = z.output<typeof chatMetadataSchema>;
@@ -70,8 +70,8 @@ export async function generateChatMetadata({
     ]);
 
     return validateChatMetadata({
-      icon: resolveLucideIconCandidates(metadata.icons),
       title: metadata.title,
+      icon: resolveLucideIconCandidates(metadata.icons),
     });
   } catch (error) {
     console.warn("Chat metadata generation failed", error);

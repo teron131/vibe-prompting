@@ -3,25 +3,39 @@
 import { tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 
-import type { EvaluationRuns } from "../../evaluation/runs.ts";
+import type { Criterion } from "../../evaluation/api.ts";
+import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
 
+/** Identifies configured models by either their canonical ID or display label. */
 export type ConfiguredModelReference = { id: string; label: string };
 
 const evaluationCaseSchema = z.object({
   input: z.string().trim().min(1),
-  criteria: z.array(z.string().trim().min(1)).min(1).max(4),
+  criteria: z.array(z.string().trim().min(1)).min(1).max(10),
+});
+const batchConfigurationSchema = z.object({
+  name: z.string().trim().min(1),
+  criteria: z.array(z.string().trim().min(1)).min(1).max(10),
 });
 const evaluationSchema = z.object({
-  cases: z.array(evaluationCaseSchema).min(1).max(3),
+  promptId: z.uuid(),
+  promptRevisionId: z.uuid(),
+  targetModelId: z.string().trim().min(1).describe("Configured target model ID or display label."),
+  targetModelIds: z
+    .array(z.string().trim().min(1).describe("Configured target model ID or display label."))
+    .min(1)
+    .max(6)
+    .optional(),
   judges: z
     .array(z.string().trim().min(1).describe("Configured judge model ID or display label."))
     .min(1)
     .max(3),
-  promptId: z.uuid(),
-  promptRevisionId: z.uuid(),
-  targetModelId: z.string().trim().min(1).describe("Configured target model ID or display label."),
+  batchConfigurations: z.array(batchConfigurationSchema).min(1).max(6).optional(),
+  cases: z.array(evaluationCaseSchema).min(1).max(3),
+  repetitions: z.number().int().min(1).max(5).optional(),
 });
 
+/** Adapts the agent's compact evaluation input into persisted single runs or batches. */
 export function createEvaluationTool(
   evaluations: EvaluationRuns,
   chatId: string,
@@ -29,23 +43,72 @@ export function createEvaluationTool(
 ): Tool {
   return tool({
     name: "evaluate",
-    description: "Start one persisted evaluation run with the supplied target and criteria.",
+    description:
+      "Start one persisted evaluation run, or preview and start a matrix when batchConfigurations, targetModelIds, or repetitions are supplied.",
     parameters: evaluationSchema,
-    async execute({ cases, judges, promptId, promptRevisionId, targetModelId }) {
+    async execute({
+      promptId,
+      promptRevisionId,
+      targetModelId,
+      targetModelIds,
+      judges,
+      batchConfigurations,
+      cases,
+      repetitions,
+    }) {
       const models = await loadModels();
+      if (batchConfigurations || targetModelIds || repetitions) {
+        const inheritedCriteria = cases[0]?.criteria ?? [];
+        if (
+          !batchConfigurations &&
+          cases.some(
+            ({ criteria }) => JSON.stringify(criteria) !== JSON.stringify(inheritedCriteria),
+          )
+        ) {
+          throw new Error(
+            "Batch evaluation cases must share criteria or provide explicit batchConfigurations.",
+          );
+        }
+        const batchInput = {
+          promptId,
+          promptRevisionId,
+          targetModelIds: (targetModelIds ?? [targetModelId]).map((model) =>
+            resolveConfiguredModelId(model, models),
+          ),
+          judges: judges.map((judge) => resolveConfiguredModelId(judge, models)),
+          configurations: (
+            batchConfigurations ?? [{ name: "Default", criteria: inheritedCriteria }]
+          ).map((configuration, index) => ({
+            id: `configuration-${index + 1}`,
+            name: configuration.name,
+            criteria: toBooleanCriteria(configuration.criteria),
+          })),
+          cases: cases.map(({ input }) => ({ input })),
+          repetitions: repetitions ?? 1,
+        };
+        const preview = await evaluations.previewBatch(batchInput);
+        const batch = await evaluations.startAgentBatch(batchInput, chatId);
+        return {
+          artifacts: batch.runs.map((run) => ({
+            href: `/evaluations/${run.id}`,
+            id: run.id,
+            kind: "evaluation",
+          })),
+          preview,
+          runs: batch.runs,
+          summary: `Started ${batch.runs.length} persisted evaluation executions.`,
+        };
+      }
       const run = await evaluations.startAgentRun(
         {
-          cases: cases.map((testCase) => ({
-            criteria: testCase.criteria.map((instruction) => ({
-              type: "boolean" as const,
-              instruction,
-            })),
-            input: testCase.input,
-          })),
-          judges: judges.map((judge) => resolveConfiguredModelId(judge, models)),
           promptId,
           promptRevisionId,
           targetModelId: resolveConfiguredModelId(targetModelId, models),
+          judges: judges.map((judge) => resolveConfiguredModelId(judge, models)),
+          cases: cases.map((testCase) => ({
+            input: testCase.input,
+            criteria: toBooleanCriteria(testCase.criteria),
+          })),
         },
         chatId,
       );
@@ -58,6 +121,12 @@ export function createEvaluationTool(
   });
 }
 
+/** Expands the tool shorthand into the public criterion shape used by evaluation persistence. */
+function toBooleanCriteria(instructions: readonly string[]): Criterion[] {
+  return instructions.map((instruction) => ({ type: "boolean", instruction }));
+}
+
+/** Resolves a model ID or unique display label and rejects unknown or ambiguous references. */
 function resolveConfiguredModelId(
   reference: string,
   models: readonly ConfiguredModelReference[],

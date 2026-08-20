@@ -15,8 +15,8 @@ export type JudgeScoreType = "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC
 export type EvaluatorScore = {
   criterionName: string;
   dataType: JudgeScoreType;
-  value: boolean | number | string;
   judgeModel: string;
+  value: boolean | number | string;
   comment: string;
   evidence: string[];
 };
