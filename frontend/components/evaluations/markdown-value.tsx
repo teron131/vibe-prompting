@@ -26,7 +26,7 @@ export function EvaluationMarkdownValue({
   return (
     <section className={cn("min-w-0 py-5", className)}>
       <header className="flex min-h-8 items-center justify-between gap-3">
-        <div className="font-mono text-[10px] uppercase text-muted-foreground">{label}</div>
+        <div className="font-mono text-[11px] uppercase text-muted-foreground">{label}</div>
         {markdown !== undefined ? (
           <Button onClick={() => setPreview((current) => !current)} size="sm" variant="ghost">
             {preview ? "Source" : "Preview"}

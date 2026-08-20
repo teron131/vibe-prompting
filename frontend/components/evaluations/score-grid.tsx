@@ -22,7 +22,7 @@ export function ScoreGrid({ judges, testCase }: { judges: string[]; testCase: Ev
     <div className="border-y">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[44rem] border-collapse text-xs">
-          <thead className="bg-muted/35 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+          <thead className="bg-muted/35 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="w-72 border-r px-4 py-2 text-left font-medium sm:px-5">Criterion</th>
               {judges.map((judge) => (
@@ -40,7 +40,7 @@ export function ScoreGrid({ judges, testCase }: { judges: string[]; testCase: Ev
             {testCase.criteria.map((criterion, position) => (
               <tr key={`${position}-${criterion.instruction}`}>
                 <th className="border-r px-4 py-3 text-left align-top font-normal sm:px-5">
-                  <span className="font-mono text-[9px] uppercase text-muted-foreground">
+                  <span className="font-mono text-[11px] uppercase text-muted-foreground">
                     C{position + 1} · {criterion.type}
                   </span>
                   <span className="mt-1 block max-w-sm leading-5">{criterion.instruction}</span>
@@ -66,7 +66,7 @@ export function ScoreGrid({ judges, testCase }: { judges: string[]; testCase: Ev
       <section className="border-t">
         <header className="flex items-center justify-between gap-3 border-b bg-muted/20 px-4 py-2.5 sm:px-5">
           <h4 className="text-xs font-semibold">Judge rationale and evidence</h4>
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-[11px] text-muted-foreground">
             {testCase.scores.length} SCORE FACTS
           </span>
         </header>
@@ -86,7 +86,7 @@ export function ScoreGrid({ judges, testCase }: { judges: string[]; testCase: Ev
 }
 
 function ScoreCell({ score }: { score?: EvaluationScore }) {
-  if (!score) return <span className="font-mono text-[10px] text-muted-foreground">NO RESULT</span>;
+  if (!score) return <span className="font-mono text-[11px] text-muted-foreground">NO RESULT</span>;
   const tone = scoreTone(score);
   return (
     <div>
@@ -125,25 +125,27 @@ function CriterionScale({
           ? "negative"
           : "warning";
     return (
-      <span className={cn("mt-2 block font-mono text-[9px] font-semibold", toneTextClass(tone))}>
+      <span className={cn("mt-2 block font-mono text-[11px] font-semibold", toneTextClass(tone))}>
         {label}
       </span>
     );
   }
   if (criterion.type === "numeric")
     return (
-      <span className="mt-2 block font-mono text-[9px] text-muted-foreground">
+      <span className="mt-2 block font-mono text-[11px] text-muted-foreground">
         RANGE {criterion.min}–{criterion.max}
       </span>
     );
   if (criterion.type === "categorical")
     return (
-      <span className="mt-2 block font-mono text-[9px] uppercase text-muted-foreground">
+      <span className="mt-2 block font-mono text-[11px] uppercase text-muted-foreground">
         {criterion.categories.join(" / ")}
       </span>
     );
   return (
-    <span className="mt-2 block font-mono text-[9px] text-muted-foreground">ATTRIBUTED REVIEW</span>
+    <span className="mt-2 block font-mono text-[11px] text-muted-foreground">
+      ATTRIBUTED REVIEW
+    </span>
   );
 }
 
@@ -159,7 +161,7 @@ function NumericRule({ score }: { score: EvaluationScore }) {
           style={{ left: `${Math.max(0, Math.min(100, percent))}%` }}
         />
       </div>
-      <div className="mt-1 flex justify-between font-mono text-[8px] text-muted-foreground">
+      <div className="mt-1 flex justify-between font-mono text-[11px] text-muted-foreground">
         <span>{min}</span>
         <span>{max}</span>
       </div>
@@ -179,7 +181,7 @@ function EvidenceGroup({
   return (
     <div className="grid sm:grid-cols-[12rem_minmax(0,1fr)]">
       <div className="border-b bg-muted/10 px-4 py-3 sm:border-b-0 sm:border-r sm:px-5">
-        <span className="font-mono text-[9px] uppercase text-muted-foreground">
+        <span className="font-mono text-[11px] uppercase text-muted-foreground">
           Criterion {position + 1}
         </span>
         <p className="mt-1 line-clamp-3 text-xs leading-5">{criterion.instruction}</p>
@@ -201,13 +203,13 @@ function ScoreEvidence({ score }: { score: EvaluationScore }) {
       <summary className="flex cursor-pointer list-none items-baseline justify-between gap-4 marker:content-none">
         <ModelIdentityLabel
           className="min-w-0"
-          labelClassName="font-mono text-[10px] font-medium"
+          labelClassName="font-mono text-[11px] font-medium"
           modelId={score.judgeModelId}
           variant="short-id"
         />
         <span
           className={cn(
-            "shrink-0 font-mono text-[10px] font-semibold uppercase",
+            "shrink-0 font-mono text-[11px] font-semibold uppercase",
             toneTextClass(scoreTone(score)),
           )}
         >
@@ -217,7 +219,7 @@ function ScoreEvidence({ score }: { score: EvaluationScore }) {
       <div className="mt-3 max-w-3xl border-l pl-3 text-xs leading-5 text-muted-foreground">
         <p>{score.comment || "No rationale was returned."}</p>
         {score.evidence.length ? (
-          <ol className="mt-2 space-y-1 font-mono text-[10px]">
+          <ol className="mt-2 space-y-1 font-mono text-[11px]">
             {score.evidence.map((item, index) => (
               <li key={index}>
                 <span className="mr-2 text-foreground">{String(index + 1).padStart(2, "0")}</span>
@@ -226,7 +228,7 @@ function ScoreEvidence({ score }: { score: EvaluationScore }) {
             ))}
           </ol>
         ) : (
-          <p className="mt-2 font-mono text-[10px]">NO EVIDENCE EXCERPT RETURNED</p>
+          <p className="mt-2 font-mono text-[11px]">NO EVIDENCE EXCERPT RETURNED</p>
         )}
       </div>
     </details>

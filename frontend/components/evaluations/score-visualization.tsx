@@ -23,7 +23,7 @@ export function RunScoreOverview({ run }: { run: EvaluationRun }) {
             All cases and judges are shown without combining unlike score types.
           </p>
         </div>
-        <p className="font-mono text-[10px] text-muted-foreground">
+        <p className="font-mono text-[11px] text-muted-foreground">
           {run.caseCount} {run.caseCount === 1 ? "CASE" : "CASES"} · {run.judgeModelIds.length}{" "}
           {run.judgeModelIds.length === 1 ? "JUDGE" : "JUDGES"}
           {run.isSyntheticExample ? " · SYNTHETIC EXAMPLE" : ""}
@@ -31,7 +31,7 @@ export function RunScoreOverview({ run }: { run: EvaluationRun }) {
       </header>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[42rem] border-collapse text-xs">
-          <thead className="bg-muted/35 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+          <thead className="bg-muted/35 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="w-12 px-4 py-2 text-left font-medium sm:px-5">No.</th>
               <th className="px-3 py-2 text-left font-medium">Criterion</th>
@@ -43,7 +43,7 @@ export function RunScoreOverview({ run }: { run: EvaluationRun }) {
           <tbody className="divide-y">
             {outcomes.map((outcome, index) => (
               <tr key={`${outcome.position}-${outcome.criterion.instruction}`}>
-                <td className="px-4 py-3 align-top font-mono text-[10px] text-muted-foreground sm:px-5">
+                <td className="px-4 py-3 align-top font-mono text-[11px] text-muted-foreground sm:px-5">
                   {String(index + 1).padStart(2, "0")}
                 </td>
                 <th className="px-3 py-3 text-left align-top font-normal">
@@ -54,13 +54,13 @@ export function RunScoreOverview({ run }: { run: EvaluationRun }) {
                     {outcome.criterion.instruction}
                   </span>
                 </th>
-                <td className="px-3 py-3 align-top font-mono text-[10px] uppercase text-muted-foreground">
+                <td className="px-3 py-3 align-top font-mono text-[11px] uppercase text-muted-foreground">
                   {outcome.criterion.type}
                 </td>
                 <td className="px-3 py-3 align-top">
                   <OutcomeText outcome={outcome} />
                 </td>
-                <td className="px-3 py-3 text-right align-top font-mono text-[10px] text-muted-foreground">
+                <td className="px-3 py-3 text-right align-top font-mono text-[11px] text-muted-foreground">
                   {new Set(outcome.scores.map(({ judgeModelId }) => judgeModelId)).size} JUDGES ·{" "}
                   {outcome.scores.length} FACTS
                 </td>

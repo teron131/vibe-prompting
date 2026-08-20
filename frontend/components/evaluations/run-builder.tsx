@@ -10,8 +10,8 @@ import {
   RotateCcw,
   Save,
   SlidersHorizontal,
-  Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -49,12 +49,7 @@ type SavedConfiguration = {
   targetModelIds: string[];
 };
 
-type LastRunConfiguration = Omit<SavedConfiguration, "name"> & {
-  caseMode: CaseMode;
-  caseSeeds: string;
-  generatedCaseCount: number;
-  promptId: string;
-};
+type LastRunConfiguration = Omit<SavedConfiguration, "name"> & { promptId: string };
 
 type TrackedBatch = {
   request: EvaluationBatchRequest;
@@ -67,7 +62,6 @@ const TRACKED_BATCH_STORAGE_KEY = "vibe-prompting.evaluation-batch.v1";
 const TERMINAL_STATUSES = new Set<EvaluationRunStatus>(["completed", "failed", "interrupted"]);
 const evaluationApi = createApiRequester({}, (status) => `Request failed with ${status}.`);
 const readError = createErrorReader("The evaluation request failed.");
-type CaseMode = "generate" | "manual";
 
 export function EvaluationRunBuilder() {
   const [prompts, setPrompts] = useState<PromptSummary[]>([]);
@@ -80,9 +74,6 @@ export function EvaluationRunBuilder() {
   const [configurationIds, setConfigurationIds] = useState<string[]>([]);
   const [repetitions, setRepetitions] = useState(3);
   const [cases, setCases] = useState<string[]>([""]);
-  const [caseMode, setCaseMode] = useState<CaseMode>("manual");
-  const [caseSeeds, setCaseSeeds] = useState("");
-  const [generatedCaseCount, setGeneratedCaseCount] = useState(3);
   const [preview, setPreview] = useState<EvaluationBatchPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [running, setRunning] = useState(false);
@@ -91,11 +82,13 @@ export function EvaluationRunBuilder() {
   const [savedName, setSavedName] = useState("");
   const [runStateReady, setRunStateReady] = useState(false);
   const [trackedBatch, setTrackedBatch] = useState<TrackedBatch | null>(null);
-  const batchRunIds = startedRuns.map(({ id }) => id).join(",");
+  const [batchStatusError, setBatchStatusError] = useState<string>();
+  const [batchRetry, setBatchRetry] = useState(0);
+  const trackedRunIds = trackedBatch?.runIds.join(",") ?? "";
   const selectedPrompt = prompts.find(({ id }) => id === promptId);
   const request = useMemo(
     () =>
-      selectedPrompt && caseMode === "manual"
+      selectedPrompt
         ? buildRequest({
             cases,
             configurationIds,
@@ -106,16 +99,7 @@ export function EvaluationRunBuilder() {
             targetModelIds,
           })
         : null,
-    [
-      caseMode,
-      cases,
-      configurationIds,
-      judges,
-      profiles,
-      repetitions,
-      selectedPrompt,
-      targetModelIds,
-    ],
+    [cases, configurationIds, judges, profiles, repetitions, selectedPrompt, targetModelIds],
   );
 
   useEffect(() => {
@@ -141,16 +125,8 @@ export function EvaluationRunBuilder() {
         if (lastRun) {
           setCases(lastRun.cases);
           setRepetitions(lastRun.repetitions);
-          setCaseMode(lastRun.caseMode);
-          setCaseSeeds(lastRun.caseSeeds);
-          setGeneratedCaseCount(lastRun.generatedCaseCount);
         }
-        if (lastBatch) {
-          setTrackedBatch(lastBatch);
-          void fetchBatchStatus(lastBatch.runIds)
-            .then(({ runs }) => setStartedRuns(runs))
-            .catch((error) => toast.error(readError(error)));
-        }
+        if (lastBatch) setTrackedBatch(lastBatch);
         setRunStateReady(true);
       })
       .catch((error) => toast.error(readError(error)));
@@ -160,36 +136,15 @@ export function EvaluationRunBuilder() {
   useEffect(() => {
     if (!runStateReady) return;
     const lastRun: LastRunConfiguration = {
-      caseMode,
       cases,
-      caseSeeds,
       configurationIds,
-      generatedCaseCount,
       judges,
       promptId,
       repetitions,
       targetModelIds,
     };
     window.localStorage.setItem(LAST_RUN_STORAGE_KEY, JSON.stringify(lastRun));
-  }, [
-    caseMode,
-    cases,
-    caseSeeds,
-    configurationIds,
-    generatedCaseCount,
-    judges,
-    promptId,
-    repetitions,
-    runStateReady,
-    targetModelIds,
-  ]);
-
-  useEffect(() => {
-    if (!request || !batchRunIds || trackedBatch) return;
-    const recoveredBatch = { request, runIds: batchRunIds.split(",") };
-    window.localStorage.setItem(TRACKED_BATCH_STORAGE_KEY, JSON.stringify(recoveredBatch));
-    setTrackedBatch(recoveredBatch);
-  }, [batchRunIds, request, trackedBatch]);
+  }, [cases, configurationIds, judges, promptId, repetitions, runStateReady, targetModelIds]);
 
   useEffect(() => {
     if (!promptId) return setTargetProfile(undefined);
@@ -209,16 +164,6 @@ export function EvaluationRunBuilder() {
   }, [promptId]);
 
   useEffect(() => {
-    const tracksCurrentRequest = Boolean(
-      request && trackedBatch && sameBatchRequest(request, trackedBatch.request),
-    );
-    if (!tracksCurrentRequest) {
-      setStartedRuns([]);
-      if (trackedBatch) {
-        window.localStorage.removeItem(TRACKED_BATCH_STORAGE_KEY);
-        setTrackedBatch(null);
-      }
-    }
     if (
       !request ||
       request.configurations.length === 0 ||
@@ -255,25 +200,31 @@ export function EvaluationRunBuilder() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [request, trackedBatch]);
+  }, [request]);
 
   useEffect(() => {
-    if (!batchRunIds) return;
+    if (!trackedRunIds) {
+      setStartedRuns([]);
+      setBatchStatusError(undefined);
+      return;
+    }
+    setBatchStatusError(undefined);
     let active = true;
     let timer: number | undefined;
-    const runIds = batchRunIds.split(",");
+    const runIds = trackedRunIds.split(",");
     const refresh = async () => {
       try {
         const result = await fetchBatchStatus(runIds);
         if (!active) return;
         setStartedRuns(result.runs);
+        setBatchStatusError(undefined);
         if (result.runs.every(({ status }) => TERMINAL_STATUSES.has(status)) && timer) {
           window.clearInterval(timer);
         }
       } catch (error) {
         if (active) {
           if (timer) window.clearInterval(timer);
-          toast.error(readError(error));
+          setBatchStatusError(readError(error));
         }
       }
     };
@@ -283,7 +234,7 @@ export function EvaluationRunBuilder() {
       active = false;
       if (timer) window.clearInterval(timer);
     };
-  }, [batchRunIds]);
+  }, [batchRetry, trackedRunIds]);
 
   async function startBatch() {
     if (!request || !preview) return;
@@ -295,6 +246,7 @@ export function EvaluationRunBuilder() {
         method: "POST",
       });
       setStartedRuns(result.runs);
+      setBatchStatusError(undefined);
       const nextTrackedBatch = { request, runIds: result.runs.map(({ id }) => id) };
       window.localStorage.setItem(TRACKED_BATCH_STORAGE_KEY, JSON.stringify(nextTrackedBatch));
       setTrackedBatch(nextTrackedBatch);
@@ -306,9 +258,17 @@ export function EvaluationRunBuilder() {
     }
   }
 
+  function dismissBatch() {
+    window.localStorage.removeItem(TRACKED_BATCH_STORAGE_KEY);
+    setTrackedBatch(null);
+    setStartedRuns([]);
+    setBatchStatusError(undefined);
+  }
+
   function saveConfiguration() {
     const name = savedName.trim();
     if (!name) return toast.error("Name this configuration before saving it.");
+    const replaced = savedConfigurations.some((configuration) => configuration.name === name);
     const next = [
       ...savedConfigurations.filter((configuration) => configuration.name !== name),
       { cases, configurationIds, judges, name, repetitions, targetModelIds },
@@ -316,13 +276,14 @@ export function EvaluationRunBuilder() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     setSavedConfigurations(next);
     setSavedName("");
-    toast.success(`Saved “${name}” in this browser.`);
+    toast.success(
+      replaced ? `Replaced “${name}” in this browser.` : `Saved “${name}” in this browser.`,
+    );
   }
 
   function loadConfiguration(value: string) {
     const saved = savedConfigurations.find(({ name }) => name === value);
     if (!saved) return;
-    setCaseMode("manual");
     setCases(saved.cases);
     setConfigurationIds(
       saved.configurationIds.filter((id) => profiles.some((profile) => profile.id === id)),
@@ -332,18 +293,20 @@ export function EvaluationRunBuilder() {
     setTargetModelIds(saved.targetModelIds.filter((id) => models.some((model) => model.id === id)));
   }
 
+  const trackedRunCount = trackedBatch?.runIds.length ?? 0;
   const finishedRuns = startedRuns.filter(({ status }) => TERMINAL_STATUSES.has(status)).length;
   const completedRuns = startedRuns.filter(({ status }) => status === "completed").length;
   const failedRuns = startedRuns.filter(
     ({ status }) => status === "failed" || status === "interrupted",
   ).length;
   const runningRuns = startedRuns.filter(({ status }) => status === "running").length;
-  const progress = preview ? Math.round((finishedRuns / preview.executionCount) * 100) : 0;
-  const batchFinished = Boolean(
-    preview && startedRuns.length > 0 && finishedRuns === preview.executionCount,
+  const progress = trackedRunCount ? Math.round((finishedRuns / trackedRunCount) * 100) : 0;
+  const batchFinished = trackedRunCount > 0 && finishedRuns === trackedRunCount;
+  const batchRunning = trackedRunCount > 0 && !batchFinished;
+  const tracksCurrentSetup = Boolean(
+    request && trackedBatch && sameBatchRequest(request, trackedBatch.request),
   );
   const missingRequirements = getMissingRequirements({
-    caseMode,
     cases,
     configurationIds,
     judges,
@@ -352,8 +315,8 @@ export function EvaluationRunBuilder() {
   });
 
   return (
-    <div className="mx-auto grid w-full max-w-[1480px] grid-cols-1 bg-muted/15 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_25rem]">
-      <section className="min-w-0 bg-background px-4 py-5 sm:px-6 lg:border-r xl:px-10 xl:py-8">
+    <div className="mx-auto grid w-full max-w-[1480px] grid-cols-1 bg-muted/15 @min-[720px]:grid-cols-[minmax(0,1fr)_18rem] @min-[900px]:grid-cols-[minmax(0,1fr)_20rem] @min-[1200px]:grid-cols-[minmax(0,1fr)_25rem]">
+      <section className="min-w-0 bg-background px-4 py-5 sm:px-6 @min-[720px]:border-r xl:px-10 xl:py-8">
         <div className="mb-6 max-w-2xl xl:mb-8">
           <h2 className="text-xl font-semibold tracking-[-0.02em]">
             Configure an evaluation matrix
@@ -382,15 +345,21 @@ export function EvaluationRunBuilder() {
             <Definition
               label="Target profile"
               value={
-                targetProfile === undefined ? "Loading…" : (targetProfile?.name ?? "AI SDK agent")
+                !promptId
+                  ? "Choose a prompt first"
+                  : targetProfile === undefined
+                    ? "Loading…"
+                    : (targetProfile?.name ?? "AI SDK agent")
               }
             />
             <Definition
               label="Runtime"
               value={
-                targetProfile
-                  ? `${targetProfile.configuration.maxSteps ?? "AI SDK default"} steps · ${targetProfile.configuration.tools?.length ? targetProfile.configuration.tools.join(", ") : "no tools"}`
-                  : "AI SDK defaults"
+                !promptId
+                  ? "—"
+                  : targetProfile
+                    ? `${targetProfile.configuration.maxSteps ?? "AI SDK default"} steps · ${targetProfile.configuration.tools?.length ? targetProfile.configuration.tools.join(", ") : "no tools"}`
+                    : "AI SDK defaults"
               }
             />
           </div>
@@ -435,7 +404,7 @@ export function EvaluationRunBuilder() {
           </div>
           <div className="max-h-64 overflow-auto border">
             <table className="w-full table-fixed text-left text-xs">
-              <thead className="sticky top-0 z-10 bg-background text-[10px] text-muted-foreground">
+              <thead className="sticky top-0 z-10 bg-background text-[11px] text-muted-foreground">
                 <tr className="border-b">
                   <th className="w-10 px-3 py-2 font-medium" scope="col">
                     Use
@@ -455,7 +424,13 @@ export function EvaluationRunBuilder() {
                 {profiles.map((profile) => {
                   const selected = configurationIds.includes(profile.id);
                   return (
-                    <tr className={cn(selected && "bg-accent/60")} key={profile.id}>
+                    <tr
+                      className={cn(
+                        "transition-colors hover:bg-accent/60 focus-within:bg-accent/60",
+                        selected && "bg-accent hover:bg-accent",
+                      )}
+                      key={profile.id}
+                    >
                       <td className="px-3 py-2.5 align-top">
                         <input
                           aria-label={`Use ${profile.name}`}
@@ -467,7 +442,7 @@ export function EvaluationRunBuilder() {
                       </td>
                       <th className="px-2 py-2.5 align-top font-medium" scope="row">
                         <button
-                          className="text-left hover:underline"
+                          className="rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={() => setConfigurationIds(toggle(configurationIds, profile.id))}
                           type="button"
                         >
@@ -484,7 +459,7 @@ export function EvaluationRunBuilder() {
                           ))}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-right align-top font-mono text-[10px] text-muted-foreground">
+                      <td className="px-3 py-2.5 text-right align-top font-mono text-[11px] text-muted-foreground">
                         {profile.criteria.length}
                       </td>
                     </tr>
@@ -511,133 +486,45 @@ export function EvaluationRunBuilder() {
           description="These inputs run once inside every profile, model, and repetition combination."
           title="Cases"
         >
-          <div
-            className="inline-grid grid-cols-2 border p-1"
-            role="group"
-            aria-label="Case input mode"
-          >
-            <button
-              aria-pressed={caseMode === "manual"}
-              className={cn(
-                "h-8 px-3 text-xs font-medium transition-colors",
-                caseMode === "manual"
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => setCaseMode("manual")}
-              type="button"
-            >
-              Manual inputs
-            </button>
-            <button
-              aria-pressed={caseMode === "generate"}
-              className={cn(
-                "flex h-8 items-center justify-center gap-1.5 px-3 text-xs font-medium transition-colors",
-                caseMode === "generate"
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => setCaseMode("generate")}
-              type="button"
-            >
-              <Sparkles aria-hidden="true" className="size-3.5" />
-              Generate inputs
-            </button>
-          </div>
-          {caseMode === "manual" ? (
-            <>
-              <div className="mt-4 divide-y">
-                {cases.map((value, index) => (
-                  <div className="flex gap-2 py-3" key={index}>
-                    <span className="mt-2 w-6 shrink-0 font-mono text-[11px] text-muted-foreground">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <Textarea
-                      aria-label={`Case ${index + 1}`}
-                      className="min-h-20 shadow-none"
-                      onChange={(event) =>
-                        setCases(
-                          cases.map((item, itemIndex) =>
-                            itemIndex === index ? event.target.value : item,
-                          ),
-                        )
-                      }
-                      value={value}
-                    />
-                    <Button
-                      aria-label={`Remove case ${index + 1}`}
-                      disabled={cases.length === 1}
-                      onClick={() => setCases(cases.filter((_, itemIndex) => itemIndex !== index))}
-                      size="icon"
-                      variant="ghost"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-              <Button
-                className="mt-3"
-                onClick={() => setCases([...cases, ""])}
-                size="sm"
-                variant="outline"
-              >
-                <Plus className="size-3.5" />
-                Add case
-              </Button>
-            </>
-          ) : (
-            <div className="mt-4">
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
-                <Field label="Themes or sparse phrases">
-                  <Textarea
-                    className="min-h-24 shadow-none"
-                    onChange={(event) => setCaseSeeds(event.target.value)}
-                    placeholder="Optional; one theme or key phrase per line. Leave blank for freestyle inputs."
-                    value={caseSeeds}
-                  />
-                </Field>
-                <Field label="Input count">
-                  <Input
-                    max={10}
-                    min={1}
-                    onChange={(event) =>
-                      setGeneratedCaseCount(
-                        Math.max(1, Math.min(10, Number(event.target.value) || 1)),
-                      )
-                    }
-                    type="number"
-                    value={generatedCaseCount}
-                  />
-                </Field>
-              </div>
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                Generation will use the pinned prompt, deployed target runtime, selected score
-                profiles, and these optional themes.
-              </p>
-              <div className="mt-3 border">
-                <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
-                  <span className="text-xs font-medium">Generated input preview</span>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    0 of {generatedCaseCount} ready
-                  </span>
-                </div>
-                <div className="px-3 py-5 text-xs leading-5 text-muted-foreground">
-                  Generated inputs will appear here for review and editing before the matrix can
-                  run.
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <Button disabled size="sm">
-                  <Sparkles aria-hidden="true" className="size-3.5" />
-                  Generate inputs
-                </Button>
-                <span className="text-[11px] text-muted-foreground">
-                  Waiting for the evaluation LangGraph generation node.
+          <div className="divide-y">
+            {cases.map((value, index) => (
+              <div className="flex gap-2 py-3" key={index}>
+                <span className="mt-2 w-6 shrink-0 font-mono text-[11px] text-muted-foreground">
+                  {String(index + 1).padStart(2, "0")}
                 </span>
+                <Textarea
+                  aria-label={`Case ${index + 1}`}
+                  className="min-h-20 shadow-none"
+                  onChange={(event) =>
+                    setCases(
+                      cases.map((item, itemIndex) =>
+                        itemIndex === index ? event.target.value : item,
+                      ),
+                    )
+                  }
+                  value={value}
+                />
+                <Button
+                  aria-label={`Remove case ${index + 1}`}
+                  disabled={cases.length === 1}
+                  onClick={() => setCases(cases.filter((_, itemIndex) => itemIndex !== index))}
+                  size="icon"
+                  variant="ghost"
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
+          <Button
+            className="mt-3"
+            onClick={() => setCases([...cases, ""])}
+            size="sm"
+            variant="outline"
+          >
+            <Plus className="size-3.5" />
+            Add case
+          </Button>
         </RunSection>
 
         <RunSection
@@ -692,8 +579,24 @@ export function EvaluationRunBuilder() {
         </RunSection>
       </section>
 
-      <aside className="border-t bg-muted/35 lg:sticky lg:top-0 lg:max-h-[calc(100vh-var(--header-height))] lg:self-start lg:overflow-y-auto lg:border-t-0">
-        <div className="flex min-h-[calc(100vh-var(--header-height))] flex-col px-4 py-5 sm:px-6 lg:px-5 xl:px-6 xl:py-8">
+      <aside className="border-t bg-muted/35 @min-[720px]:border-t-0">
+        <div className="flex min-h-[calc(100vh-var(--header-height))] flex-col px-4 py-5 sm:px-6 @min-[720px]:sticky @min-[720px]:top-0 @min-[720px]:max-h-[calc(100vh-var(--header-height))] @min-[720px]:overflow-y-auto @min-[720px]:px-5 xl:px-6 xl:py-8">
+          {trackedBatch ? (
+            <BatchMonitor
+              completedRuns={completedRuns}
+              dismiss={dismissBatch}
+              error={batchStatusError}
+              failedRuns={failedRuns}
+              finishedRuns={finishedRuns}
+              models={models}
+              progress={progress}
+              retry={() => setBatchRetry((current) => current + 1)}
+              runningRuns={runningRuns}
+              runs={startedRuns}
+              totalRuns={trackedRunCount}
+              tracksCurrentSetup={tracksCurrentSetup}
+            />
+          ) : null}
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold">Execution manifest</h2>
             {previewing && (
@@ -705,97 +608,47 @@ export function EvaluationRunBuilder() {
           </div>
           {preview ? (
             <>
-              <div className="mt-5 grid grid-cols-3 rounded-xl bg-background/70 px-3 py-3 text-center">
-                <ManifestMetric label="Runs" value={preview.executionCount} />
-                <ManifestMetric label="Outputs" value={preview.targetCaseInvocations} />
-                <ManifestMetric label="Judges" value={request?.judges.length ?? 0} />
-              </div>
-              <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                {request?.configurations.length} profiles × {request?.targetModelIds.length} targets
-                × {request?.repetitions} repetitions = {preview.executionCount} durable runs.
-              </p>
-              <div className="mt-5 rounded-xl bg-background/60 p-4">
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <span className="block text-xs font-semibold">Batch progress</span>
-                    <span className="mt-1 block text-[11px] text-muted-foreground">
-                      {startedRuns.length === 0
-                        ? `Ready · 0 of ${preview.executionCount} finished`
-                        : `${finishedRuns} of ${preview.executionCount} finished`}
-                    </span>
-                  </div>
-                  <strong className="font-mono text-lg font-semibold">{progress}%</strong>
-                </div>
-                <div
-                  aria-label="Evaluation batch progress"
-                  aria-valuemax={preview.executionCount}
-                  aria-valuemin={0}
-                  aria-valuenow={finishedRuns}
-                  className="mt-3 h-2 overflow-hidden rounded-full bg-border"
-                  role="progressbar"
-                >
-                  <div
-                    className="h-full rounded-full bg-foreground transition-[width] duration-500"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] text-muted-foreground">
-                  <span>
-                    <strong className="font-mono text-foreground">{completedRuns}</strong> completed
+              <div className="mt-5 rounded-xl bg-background/70 px-4 py-3">
+                <p className="flex items-baseline gap-2">
+                  <strong className="font-mono text-2xl font-semibold tabular-nums">
+                    {preview.targetCaseInvocations.toLocaleString()}
+                  </strong>
+                  <span className="text-sm font-medium">
+                    target output{preview.targetCaseInvocations === 1 ? "" : "s"}
                   </span>
-                  <span className="text-center">
-                    <strong className="font-mono text-foreground">{runningRuns}</strong> running
-                  </span>
-                  <span className="text-right">
-                    <strong
-                      className={cn(
-                        "font-mono",
-                        failedRuns > 0 ? "text-destructive" : "text-foreground",
-                      )}
-                    >
-                      {failedRuns}
-                    </strong>{" "}
-                    failed
-                  </span>
-                </div>
+                </p>
+                <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                  {describeWorkload(request)}
+                </p>
+                <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+                  Saved as {count(preview.executionCount, "run")}
+                </p>
               </div>
               <div className="mt-5 divide-y">
-                {preview.jobs.slice(0, 200).map((job) => {
-                  const started = startedRuns[job.executionNumber - 1];
-                  return (
-                    <div
-                      className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 py-1.5 text-xs"
-                      key={job.id}
-                    >
-                      <span className="font-mono text-[10px] text-muted-foreground">
-                        {String(job.executionNumber).padStart(2, "0")}
+                {preview.jobs.slice(0, 200).map((job) => (
+                  <div
+                    className="grid grid-cols-[2rem_minmax(0,1fr)] items-center gap-2 py-1.5 text-xs"
+                    key={job.id}
+                  >
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {String(job.executionNumber).padStart(2, "0")}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium leading-4">
+                        {job.configurationName}
                       </span>
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium leading-4">
-                          {job.configurationName}
-                        </span>
-                        <span className="flex min-w-0 items-center gap-1 text-[11px] leading-4 text-muted-foreground">
-                          <ModelIdentityLabel
-                            className="min-w-0"
-                            labelClassName="truncate"
-                            model={models.find(({ id }) => id === job.targetModelId)}
-                            modelId={job.targetModelId}
-                          />
-                          <span className="shrink-0">· repetition {job.repetition}</span>
-                        </span>
+                      <span className="flex min-w-0 items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+                        <ModelIdentityLabel
+                          className="min-w-0"
+                          labelClassName="truncate"
+                          model={models.find(({ id }) => id === job.targetModelId)}
+                          modelId={job.targetModelId}
+                        />
+                        <span className="shrink-0">· repetition {job.repetition}</span>
                       </span>
-                      {started ? (
-                        <Link
-                          className="inline-flex items-center gap-1 font-medium hover:underline"
-                          href={`/evaluations/${started.id}`}
-                        >
-                          {statusLabel(started.status)}
-                          <ChevronRight className="size-3" />
-                        </Link>
-                      ) : null}
-                    </div>
-                  );
-                })}
+                    </span>
+                  </div>
+                ))}
               </div>
               {preview.jobs.length > 200 && (
                 <p className="mt-3 text-xs text-muted-foreground">
@@ -805,22 +658,22 @@ export function EvaluationRunBuilder() {
               )}
               <Button
                 className="mt-5 w-full"
-                disabled={running || (startedRuns.length > 0 && !batchFinished)}
+                disabled={running || batchRunning}
                 onClick={startBatch}
               >
                 {running ? (
                   <LoaderCircle className="size-4 animate-spin" />
-                ) : batchFinished ? (
-                  <RotateCcw className="size-4" />
-                ) : startedRuns.length ? (
+                ) : batchRunning ? (
                   <LoaderCircle className="size-4 animate-spin" />
+                ) : batchFinished && tracksCurrentSetup ? (
+                  <RotateCcw className="size-4" />
                 ) : null}
                 {running
                   ? "Starting matrix…"
-                  : batchFinished
-                    ? "Run matrix again"
-                    : startedRuns.length
-                      ? `Running ${runningRuns} of ${preview.executionCount}`
+                  : batchRunning
+                    ? `Running ${runningRuns} of ${trackedRunCount}`
+                    : batchFinished && tracksCurrentSetup
+                      ? "Run matrix again"
                       : `Run ${preview.executionCount} executions`}
               </Button>
             </>
@@ -848,6 +701,152 @@ export function EvaluationRunBuilder() {
   );
 }
 
+/** Reports the batch this browser started, independently of the draft below it, so editing the form never hides work that is still running. */
+function BatchMonitor({
+  completedRuns,
+  dismiss,
+  error,
+  failedRuns,
+  finishedRuns,
+  models,
+  progress,
+  retry,
+  runningRuns,
+  runs,
+  totalRuns,
+  tracksCurrentSetup,
+}: {
+  completedRuns: number;
+  dismiss(): void;
+  error?: string;
+  failedRuns: number;
+  finishedRuns: number;
+  models: ConfiguredModel[];
+  progress: number;
+  retry(): void;
+  runningRuns: number;
+  runs: EvaluationRunSummary[];
+  totalRuns: number;
+  tracksCurrentSetup: boolean;
+}) {
+  const finished = finishedRuns === totalRuns;
+  return (
+    <section aria-label="Batch progress" className="mb-6 rounded-xl bg-background/60 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-xs font-semibold">
+            {error ? "Batch status unavailable" : finished ? "Batch finished" : "Batch running"}
+          </h2>
+          <p aria-live="polite" className="mt-1 text-[11px] text-muted-foreground">
+            {finishedRuns} of {totalRuns} finished
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {error ? (
+            <Button onClick={retry} size="sm" variant="outline">
+              <RotateCcw className="size-3.5" /> Retry
+            </Button>
+          ) : (
+            <strong className="font-mono text-lg font-semibold leading-none">{progress}%</strong>
+          )}
+          {finished || error ? (
+            <Button
+              aria-label="Dismiss batch monitor"
+              onClick={dismiss}
+              size="icon"
+              variant="ghost"
+            >
+              <X className="size-3.5" />
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <div
+        aria-label="Evaluation batch progress"
+        aria-valuemax={totalRuns}
+        aria-valuemin={0}
+        aria-valuenow={finishedRuns}
+        className="mt-3 h-2 overflow-hidden rounded-full bg-border"
+        role="progressbar"
+      >
+        <div
+          className="h-full rounded-full bg-foreground transition-[width] duration-500"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+        <span>
+          <strong className="font-mono text-foreground">{completedRuns}</strong> completed
+        </span>
+        <span className="text-center">
+          <strong className="font-mono text-foreground">{runningRuns}</strong> running
+        </span>
+        <span className="text-right">
+          <strong
+            className={cn("font-mono", failedRuns > 0 ? "text-destructive" : "text-foreground")}
+          >
+            {failedRuns}
+          </strong>{" "}
+          failed
+        </span>
+      </div>
+      {error ? (
+        <p className="mt-3 text-[11px] leading-5 text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {tracksCurrentSetup ? null : (
+        <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
+          This batch used a different setup than the form on the left.
+        </p>
+      )}
+      {runs.length ? (
+        <div className="mt-3 max-h-56 divide-y overflow-y-auto border-t">
+          {runs.map((run, index) => (
+            <div className="py-1.5" key={run.id}>
+              <div className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 text-xs">
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <ModelIdentityLabel
+                  className="min-w-0 text-muted-foreground"
+                  labelClassName="truncate text-[11px]"
+                  model={models.find(({ id }) => id === run.targetModelId)}
+                  modelId={run.targetModelId}
+                />
+                <Link
+                  className="inline-flex items-center gap-1 font-medium hover:underline"
+                  href={`/evaluations/${run.id}`}
+                >
+                  {statusLabel(run.status)}
+                  <ChevronRight className="size-3" />
+                </Link>
+              </div>
+              {run.errorMessage ? (
+                <p className="mt-1 pl-10 text-[11px] leading-4 text-destructive">
+                  {run.errorMessage}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {finished ? (
+        <Link
+          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-input bg-background text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+          href="/evaluations/analytics"
+        >
+          Compare these runs in analytics
+        </Link>
+      ) : (
+        <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
+          These runs are durable. Leaving this page will not stop them.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function RunSection({
   children,
   description,
@@ -858,7 +857,7 @@ function RunSection({
   title: string;
 }) {
   return (
-    <section className="grid gap-4 py-6 min-[1180px]:grid-cols-[11rem_minmax(0,1fr)] min-[1180px]:gap-6 xl:py-7">
+    <section className="grid gap-4 py-6 @min-[860px]:grid-cols-[11rem_minmax(0,1fr)] @min-[860px]:gap-6 xl:py-7">
       <div>
         <h3 className="text-sm font-semibold">{title}</h3>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
@@ -878,7 +877,6 @@ function Field({ children, label }: { children: React.ReactNode; label: string }
 }
 
 function getMissingRequirements(input: {
-  caseMode: CaseMode;
   cases: string[];
   configurationIds: string[];
   judges: string[];
@@ -890,11 +888,7 @@ function getMissingRequirements(input: {
   if (input.targetModelIds.length === 0) missing.push("Select at least one target model.");
   if (input.configurationIds.length === 0) missing.push("Select at least one score profile.");
   if (input.judges.length === 0) missing.push("Select at least one judge model.");
-  if (input.caseMode === "generate") {
-    missing.push("Generate and review the requested inputs.");
-  } else if (input.cases.some((value) => !value.trim())) {
-    missing.push("Complete every manual case input.");
-  }
+  if (input.cases.some((value) => !value.trim())) missing.push("Fill in every case input.");
   return missing.length > 0 ? missing : ["Waiting for the exact manifest to finish loading."];
 }
 
@@ -928,7 +922,7 @@ function ModelPicker({
             <button
               aria-pressed={active}
               className={cn(
-                "inline-flex h-6 items-center justify-center rounded-full border px-2 text-[10px] transition-colors",
+                "inline-flex h-7 items-center justify-center rounded-full border px-2.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 active
                   ? "border-foreground bg-foreground text-background"
                   : "bg-background hover:bg-accent",
@@ -946,13 +940,22 @@ function ModelPicker({
   );
 }
 
-function ManifestMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <strong className="block font-mono text-lg font-semibold">{value.toLocaleString()}</strong>
-      <span className="mt-0.5 block text-[10px] text-muted-foreground">{label}</span>
-    </div>
-  );
+/** Multiplies out only the axes the user actually varied, because an axis left at one contributes nothing and reads as noise next to the ones that do. */
+function describeWorkload(request: EvaluationBatchRequest | null): string {
+  if (!request) return "";
+  const axes = [
+    [request.configurations.length, "profile"],
+    [request.targetModelIds.length, "target"],
+    [request.repetitions, "repetition"],
+    [request.cases.length, "case"],
+  ] as const;
+  const varied = axes.filter(([value]) => value > 1);
+  if (varied.length === 0) return "one case on one target";
+  return varied.map(([value, noun]) => count(value, noun)).join(" × ");
+}
+
+function count(value: number, noun: string): string {
+  return `${value} ${noun}${value === 1 ? "" : "s"}`;
 }
 
 function buildRequest(input: {

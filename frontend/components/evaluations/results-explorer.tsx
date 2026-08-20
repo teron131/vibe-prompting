@@ -2,9 +2,9 @@
 
 "use client";
 
-import { CircleAlert, ExternalLink, LoaderCircle, Search } from "lucide-react";
+import { CircleAlert, ExternalLink, LoaderCircle, Search, X } from "lucide-react";
 import Link from "next/link";
-import { ReactNode, SyntheticEvent, useCallback, useEffect, useState } from "react";
+import { SyntheticEvent, useCallback, useEffect, useState } from "react";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { requestJson } from "@/shared/api";
 import { formatDateTime } from "@/shared/date";
 
 import { EvaluationHelper } from "./evaluation-helper";
+import { ClearFilters, FilterSelect, MoreFilters } from "./filter-controls";
 import { evaluationFilterParams, parseEvaluationFilters } from "./filter-state";
 import { EvaluationMarkdownValue } from "./markdown-value";
 
@@ -94,10 +95,20 @@ export function EvaluationResultsExplorer() {
   }, [filters, load, ready]);
 
   const selected = items.find(({ caseId }) => caseId === selectedCaseId);
+  const search = filters.search?.trim();
+  const searchField = filters.searchField ?? "all";
+  const literalMatches = search
+    ? items.filter((item) => hasVisibleMatch(item, search, searchField)).length
+    : 0;
 
   function submitSearch(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
-    updateFilter("search", draftSearch.trim() || undefined);
+    const nextSearch = draftSearch.trim() || undefined;
+    setFilters((current) => ({
+      ...current,
+      search: nextSearch,
+      searchField: nextSearch ? current.searchField : undefined,
+    }));
   }
 
   function updateFilter<Key extends keyof ResultFilters>(key: Key, value: ResultFilters[Key]) {
@@ -110,26 +121,42 @@ export function EvaluationResultsExplorer() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-var(--header-height))] flex-col min-[840px]:h-[calc(100vh-var(--header-height))] min-[840px]:min-h-[36rem] min-[840px]:overflow-hidden">
+    <div className="flex min-h-[calc(100vh-var(--header-height))] flex-col @min-[560px]:h-[calc(100vh-var(--header-height))] @min-[560px]:min-h-[36rem] @min-[560px]:overflow-hidden">
       <header className="border-b bg-muted/20 px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex items-baseline justify-between gap-4">
           <h1 className="text-base font-semibold tracking-tight">Result explorer</h1>
-          <div className="font-mono text-[10px] uppercase text-muted-foreground">
-            {total.toLocaleString()} matching cases · {items.length.toLocaleString()} loaded
+          <div className="font-mono text-[11px] uppercase text-muted-foreground">
+            {total.toLocaleString()} cases · {items.length.toLocaleString()} loaded
           </div>
         </div>
-        <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(22rem,2fr)]">
-          <form
-            className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[8rem_minmax(0,1fr)_auto]"
-            onSubmit={submitSearch}
-          >
+        <form
+          className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap"
+          onSubmit={submitSearch}
+        >
+          <div className="relative col-span-2 min-w-0 sm:flex-1 sm:basis-56">
+            <Search
+              aria-hidden="true"
+              className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              aria-label="Search evaluation results"
+              className="h-8 pl-9 text-xs shadow-none"
+              onChange={(event) => setDraftSearch(event.target.value)}
+              placeholder="Find text in cases"
+              value={draftSearch}
+            />
+          </div>
+          <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+            in
             <Select
               aria-label="Search field"
-              className="col-span-2 h-8 text-xs shadow-none sm:col-span-1"
+              className="h-8 w-auto text-xs shadow-none"
               onChange={(event) =>
                 updateFilter(
                   "searchField",
-                  (event.target.value || undefined) as ResultFilters["searchField"],
+                  (event.target.value === "all"
+                    ? undefined
+                    : event.target.value) as ResultFilters["searchField"],
                 )
               }
               value={filters.searchField ?? "all"}
@@ -140,24 +167,12 @@ export function EvaluationResultsExplorer() {
               <option value="comment">Rationale</option>
               <option value="evidence">Evidence</option>
             </Select>
-            <div className="relative min-w-0 flex-1">
-              <Search
-                aria-hidden="true"
-                className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
-              />
-              <Input
-                className="h-8 pl-9 text-xs shadow-none"
-                onChange={(event) => setDraftSearch(event.target.value)}
-                placeholder="Search input, output, rationale, or evidence"
-                value={draftSearch}
-              />
-            </div>
-            <Button size="sm" type="submit">
-              Search
-            </Button>
-          </form>
-          <EvaluationHelper />
-        </div>
+          </label>
+          <Button size="sm" type="submit">
+            Search
+          </Button>
+        </form>
+        <EvaluationHelper className="mt-2 rounded-md border bg-accent/40 p-2" />
         <ResultFiltersToolbar
           clearFilters={clearFilters}
           facets={facets}
@@ -166,12 +181,13 @@ export function EvaluationResultsExplorer() {
         />
       </header>
 
-      <div className="grid min-[840px]:min-h-0 min-[840px]:flex-1 min-[840px]:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[23rem_minmax(0,1fr)]">
-        <div className="border-b min-[840px]:hidden">
+      <div className="grid @min-[560px]:min-h-0 @min-[560px]:flex-1 @min-[560px]:grid-cols-[16rem_minmax(0,1fr)] @min-[760px]:grid-cols-[20rem_minmax(0,1fr)] @min-[1200px]:grid-cols-[23rem_minmax(0,1fr)]">
+        <div className="border-b @min-[560px]:hidden">
           <div className="grid grid-cols-2">
             <button
+              aria-pressed={mobilePane === "results"}
               className={cn(
-                "border-b-2 py-2.5 text-xs font-medium",
+                "border-b-2 py-2.5 text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                 mobilePane === "results"
                   ? "border-foreground"
                   : "border-transparent text-muted-foreground",
@@ -182,8 +198,9 @@ export function EvaluationResultsExplorer() {
               Results {items.length}
             </button>
             <button
+              aria-pressed={mobilePane === "detail"}
               className={cn(
-                "border-b-2 py-2.5 text-xs font-medium",
+                "border-b-2 py-2.5 text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
                 mobilePane === "detail"
                   ? "border-foreground"
                   : "border-transparent text-muted-foreground",
@@ -200,7 +217,7 @@ export function EvaluationResultsExplorer() {
         <section
           aria-label="Evaluation result list"
           className={cn(
-            "min-h-0 border-r bg-muted/15 min-[840px]:block min-[840px]:overflow-y-auto",
+            "min-h-0 border-r bg-muted/15 @min-[560px]:block @min-[560px]:overflow-y-auto",
             mobilePane === "results" ? "block" : "hidden",
           )}
         >
@@ -210,6 +227,12 @@ export function EvaluationResultsExplorer() {
             <ErrorState message={error} retry={() => void load()} />
           ) : items.length ? (
             <>
+              {search && literalMatches === 0 ? (
+                <p className="border-b bg-background/60 px-4 py-3 text-xs leading-5 text-muted-foreground">
+                  Nothing contains “{search}” word for word. These cases are the closest by meaning,
+                  so the text below is not highlighted.
+                </p>
+              ) : null}
               <div className="divide-y">
                 {items.map((item) => (
                   <ResultRow
@@ -219,7 +242,10 @@ export function EvaluationResultsExplorer() {
                       setSelectedCaseId(item.caseId);
                       setMobilePane("detail");
                     }}
-                    search={filters.search}
+                    related={Boolean(
+                      search && literalMatches > 0 && !hasVisibleMatch(item, search, searchField),
+                    )}
+                    search={searchForField(filters.search, searchField, "input")}
                     selected={item.caseId === selectedCaseId}
                   />
                 ))}
@@ -248,12 +274,17 @@ export function EvaluationResultsExplorer() {
         <section
           aria-label="Selected evaluation result"
           className={cn(
-            "min-w-0 bg-background min-[840px]:block min-[840px]:overflow-y-auto",
+            "min-w-0 bg-background @min-[560px]:block @min-[560px]:overflow-y-auto",
             mobilePane === "detail" ? "block" : "hidden",
           )}
         >
           {selected ? (
-            <ResultDetailPane item={selected} search={filters.search} />
+            <>
+              <p aria-live="polite" className="sr-only">
+                Case {selected.position + 1} selected, {selected.promptTitle}, {selected.status}.
+              </p>
+              <ResultDetailPane item={selected} search={filters.search} searchField={searchField} />
+            </>
           ) : items.length ? (
             <div className="grid min-h-72 place-items-center p-6 text-sm text-muted-foreground">
               Select a case to inspect its output and attributed score evidence.
@@ -276,60 +307,77 @@ function ResultFiltersToolbar({
   filters: ResultFilters;
   updateFilter<Key extends keyof ResultFilters>(key: Key, value: ResultFilters[Key]): void;
 }) {
+  const hiddenActive = [filters.status, filters.dataType].filter(Boolean).length;
+  const activeCount = [
+    filters.promptId,
+    filters.promptRevisionId,
+    filters.targetModelId,
+    filters.judgeModelId,
+    filters.status,
+    filters.dataType,
+    filters.criterion,
+    filters.search,
+    filters.from,
+    filters.runId,
+    filters.to,
+  ].filter(Boolean).length;
+  const hasLinkedScope = Boolean(
+    filters.promptRevisionId || filters.from || filters.runId || filters.to,
+  );
+
   return (
-    <section
-      aria-labelledby="result-scope-heading"
-      className="relative mt-2 grid gap-2 pt-1 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-end"
-    >
-      <h2 className="pb-1 text-xs font-semibold" id="result-scope-heading">
+    <section aria-labelledby="result-scope-heading" className="mt-2">
+      <h2 className="sr-only" id="result-scope-heading">
         Scope
       </h2>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <FilterField label="Prompt">
-          <Select
-            className="h-8 text-xs shadow-none"
-            onChange={(event) => updateFilter("promptId", event.target.value || undefined)}
-            value={filters.promptId ?? ""}
-          >
-            <option value="">All prompts</option>
-            {facets.prompts.map((facet) => (
-              <option key={facet.id} value={facet.id}>
-                {facet.label} ({facet.count})
-              </option>
-            ))}
-          </Select>
-        </FilterField>
-        <FilterField label="Target model">
-          <Select
-            className="h-8 text-xs shadow-none"
-            onChange={(event) => updateFilter("targetModelId", event.target.value || undefined)}
-            value={filters.targetModelId ?? ""}
-          >
-            <option value="">All target models</option>
-            {facets.targetModels.map((facet) => (
-              <option key={facet.value} value={facet.value}>
-                {facet.value} ({facet.count})
-              </option>
-            ))}
-          </Select>
-        </FilterField>
-        <FilterField label="Judge">
-          <Select
-            className="h-8 text-xs shadow-none"
-            onChange={(event) => updateFilter("judgeModelId", event.target.value || undefined)}
-            value={filters.judgeModelId ?? ""}
-          >
-            <option value="">All judges</option>
-            {facets.judges.map((facet) => (
-              <option key={facet.value} value={facet.value}>
-                {facet.value} ({facet.count})
-              </option>
-            ))}
-          </Select>
-        </FilterField>
-        <FilterField label="Run status">
-          <Select
-            className="h-8 text-xs shadow-none"
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterSelect
+          className="w-auto max-w-[14rem] flex-1 basis-40"
+          label="Prompt"
+          onChange={(event) => updateFilter("promptId", event.target.value || undefined)}
+          value={filters.promptId ?? ""}
+        >
+          <option value="">All prompts</option>
+          {facets.prompts.map((facet) => (
+            <option key={facet.id} value={facet.id}>
+              {facet.label} ({facet.count})
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect
+          className="w-auto max-w-[14rem] flex-1 basis-40"
+          label="Target model"
+          onChange={(event) => updateFilter("targetModelId", event.target.value || undefined)}
+          value={filters.targetModelId ?? ""}
+        >
+          <option value="">All target models</option>
+          {facets.targetModels.map((facet) => (
+            <option key={facet.value} value={facet.value}>
+              {facet.value} ({facet.count})
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect
+          className="w-auto max-w-[14rem] flex-1 basis-40"
+          label="Judge"
+          onChange={(event) => updateFilter("judgeModelId", event.target.value || undefined)}
+          value={filters.judgeModelId ?? ""}
+        >
+          <option value="">All judges</option>
+          {facets.judges.map((facet) => (
+            <option key={facet.value} value={facet.value}>
+              {facet.value} ({facet.count})
+            </option>
+          ))}
+        </FilterSelect>
+        <MoreFilters
+          activeCount={hiddenActive}
+          contentClassName="flex flex-wrap gap-2"
+          hint="status · type"
+        >
+          <FilterSelect
+            className="w-auto max-w-[14rem] flex-1 basis-40"
+            label="Run status"
             onChange={(event) =>
               updateFilter(
                 "status",
@@ -344,11 +392,10 @@ function ResultFiltersToolbar({
                 {facet.value} ({facet.count})
               </option>
             ))}
-          </Select>
-        </FilterField>
-        <FilterField label="Score type">
-          <Select
-            className="h-8 text-xs shadow-none"
+          </FilterSelect>
+          <FilterSelect
+            className="w-auto max-w-[14rem] flex-1 basis-40"
+            label="Score type"
             onChange={(event) =>
               updateFilter(
                 "dataType",
@@ -363,41 +410,95 @@ function ResultFiltersToolbar({
                 {facet.value} ({facet.count})
               </option>
             ))}
-          </Select>
-        </FilterField>
+          </FilterSelect>
+        </MoreFilters>
+        <ClearFilters count={activeCount} onClear={clearFilters} />
       </div>
       {filters.criterion ? (
-        <div className="col-span-full flex min-w-0 items-center gap-2 pt-1 text-xs lg:col-start-2">
-          <span className="shrink-0 font-mono text-[9px] text-muted-foreground">Criterion</span>
-          <span className="min-w-0 flex-1 truncate">{filters.criterion}</span>
+        <div className="mt-2 flex min-w-0 items-center gap-2 rounded-md border bg-accent/50 px-2 py-1 text-xs">
+          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">Criterion</span>
+          <span className="min-w-0 flex-1 truncate font-medium">{filters.criterion}</span>
           <button
+            aria-label="Remove criterion filter"
             className="shrink-0 font-medium text-muted-foreground hover:text-foreground"
             onClick={() => updateFilter("criterion", undefined)}
             type="button"
           >
-            Remove
+            <X aria-hidden="true" className="size-3.5" />
           </button>
         </div>
       ) : null}
+      {hasLinkedScope ? (
+        <div aria-label="Linked result scope" className="mt-2 flex flex-wrap gap-2" role="group">
+          {filters.promptRevisionId ? (
+            <ScopeFilter
+              label="Revision"
+              onRemove={() => updateFilter("promptRevisionId", undefined)}
+              value={filters.promptRevisionId.slice(0, 8)}
+            />
+          ) : null}
+          {filters.from ? (
+            <ScopeFilter
+              label="From"
+              onRemove={() => updateFilter("from", undefined)}
+              value={filters.from.slice(0, 10)}
+            />
+          ) : null}
+          {filters.to ? (
+            <ScopeFilter
+              label="To"
+              onRemove={() => updateFilter("to", undefined)}
+              value={filters.to.slice(0, 10)}
+            />
+          ) : null}
+          {filters.runId ? (
+            <ScopeFilter
+              label="Run"
+              onRemove={() => updateFilter("runId", undefined)}
+              value={filters.runId.slice(0, 8)}
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ScopeFilter({
+  label,
+  onRemove,
+  value,
+}: {
+  label: string;
+  onRemove(): void;
+  value: string;
+}) {
+  return (
+    <span className="inline-flex h-7 items-center gap-1.5 rounded-md border bg-accent/50 px-2 text-xs">
+      <span className="font-mono text-[11px] uppercase text-muted-foreground">{label}</span>
+      <span className="font-medium">{value}</span>
       <button
-        className="absolute top-0 right-0 h-7 px-2 text-xs text-muted-foreground hover:text-foreground lg:static lg:h-8"
-        onClick={clearFilters}
+        aria-label={`Remove ${label.toLocaleLowerCase()} filter`}
+        className="-mr-1 inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+        onClick={onRemove}
         type="button"
       >
-        Clear
+        <X aria-hidden="true" className="size-3.5" />
       </button>
-    </section>
+    </span>
   );
 }
 
 function ResultRow({
   item,
   onSelect,
+  related,
   search,
   selected,
 }: {
   item: EvaluationResultItem;
   onSelect(): void;
+  related: boolean;
   search?: string;
   selected: boolean;
 }) {
@@ -406,38 +507,39 @@ function ResultRow({
     <button
       aria-pressed={selected}
       className={cn(
-        "relative block w-full px-4 py-3 text-left transition-colors",
-        selected ? "bg-accent/70" : "hover:bg-background/70",
+        "block w-full px-4 py-3 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        selected && "bg-accent hover:bg-accent",
       )}
       onClick={onSelect}
       type="button"
     >
-      {selected ? (
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-3 left-0 w-px rounded-r-full bg-foreground"
-        />
-      ) : null}
       <div className="flex items-center justify-between gap-3">
         <span
           className={cn("min-w-0 truncate text-sm", selected ? "font-semibold" : "font-medium")}
         >
           {item.promptTitle}
         </span>
-        <Status status={item.status} />
+        <span className="flex shrink-0 items-center gap-1.5">
+          {related ? (
+            <span className="rounded-sm border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+              Related
+            </span>
+          ) : null}
+          <Status status={item.status} />
+        </span>
       </div>
       <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
         <HighlightedText search={search} value={stringify(item.input)} />
       </p>
       <div className="mt-2 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 gap-2 font-mono text-[10px]">
+        <div className="flex min-w-0 gap-2 font-mono text-[11px]">
           {marks.map((mark) => (
             <span className={scoreColor(mark)} key={mark}>
               {mark}
             </span>
           ))}
         </div>
-        <time className="shrink-0 font-mono text-[9px] text-muted-foreground">
+        <time className="shrink-0 font-mono text-[11px] text-muted-foreground">
           {formatShortDateTime(item.createdAt)}
         </time>
       </div>
@@ -445,7 +547,15 @@ function ResultRow({
   );
 }
 
-function ResultDetailPane({ item, search }: { item: EvaluationResultItem; search?: string }) {
+function ResultDetailPane({
+  item,
+  search,
+  searchField,
+}: {
+  item: EvaluationResultItem;
+  search?: string;
+  searchField: NonNullable<ResultFilters["searchField"]>;
+}) {
   return (
     <article className="px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
       <header className="border-b pb-5">
@@ -454,7 +564,7 @@ function ResultDetailPane({ item, search }: { item: EvaluationResultItem; search
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold">Case {item.position + 1}</h2>
               {item.isSyntheticExample ? (
-                <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[9px] font-medium uppercase text-muted-foreground">
+                <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[11px] font-medium uppercase text-muted-foreground">
                   Synthetic
                 </span>
               ) : null}
@@ -479,21 +589,37 @@ function ResultDetailPane({ item, search }: { item: EvaluationResultItem; search
             value={item.completedAt ? formatDateTime(item.completedAt) : "—"}
           />
         </dl>
+        {item.errorMessage ? (
+          <div className="mt-4 flex items-start gap-2 border-t pt-4 text-xs leading-relaxed text-destructive">
+            <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+            <span className="min-w-0">{item.errorMessage}</span>
+          </div>
+        ) : null}
       </header>
 
-      <div className="grid lg:grid-cols-2">
+      <div className="grid @min-[900px]:grid-cols-2">
         <EvaluationMarkdownValue
-          className="lg:pr-5"
+          className="@min-[900px]:pr-5"
           key={`${item.caseId}-input`}
           label="Input"
-          source={<HighlightedText search={search} value={stringify(item.input)} />}
+          source={
+            <HighlightedText
+              search={searchForField(search, searchField, "input")}
+              value={stringify(item.input)}
+            />
+          }
           value={item.input}
         />
         <EvaluationMarkdownValue
-          className="border-t lg:border-t-0 lg:border-l lg:pl-5"
+          className="border-t @min-[900px]:border-t-0 @min-[900px]:border-l @min-[900px]:pl-5"
           key={`${item.caseId}-output`}
           label="Target output"
-          source={<HighlightedText search={search} value={stringify(item.output)} />}
+          source={
+            <HighlightedText
+              search={searchForField(search, searchField, "output")}
+              value={stringify(item.output)}
+            />
+          }
           value={item.output}
         />
       </div>
@@ -501,7 +627,7 @@ function ResultDetailPane({ item, search }: { item: EvaluationResultItem; search
       <section className="pt-5">
         <div className="flex items-baseline justify-between gap-4 pb-3">
           <h3 className="text-sm font-semibold">Attributed score evidence</h3>
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-[11px] text-muted-foreground">
             {item.scores.length} score facts
           </span>
         </div>
@@ -510,7 +636,7 @@ function ResultDetailPane({ item, search }: { item: EvaluationResultItem; search
             {item.scores.map((score) => (
               <div className="grid gap-4 py-4 xl:grid-cols-[14rem_minmax(0,1fr)]" key={score.id}>
                 <div>
-                  <div className="font-mono text-[9px] uppercase text-muted-foreground">
+                  <div className="font-mono text-[11px] uppercase text-muted-foreground">
                     C{score.criterionPosition + 1} · {score.dataType}
                   </div>
                   <div className="mt-1 text-sm font-medium">{score.criterion.instruction}</div>
@@ -526,18 +652,24 @@ function ResultDetailPane({ item, search }: { item: EvaluationResultItem; search
                 <div className="min-w-0">
                   <ModelIdentityLabel
                     className="text-muted-foreground"
-                    labelClassName="font-mono text-[10px]"
+                    labelClassName="font-mono text-[11px]"
                     modelId={score.judgeModelId}
                     variant="short-id"
                   />
                   <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                    <HighlightedText search={search} value={score.comment} />
+                    <HighlightedText
+                      search={searchForField(search, searchField, "comment")}
+                      value={score.comment}
+                    />
                   </p>
                   {score.evidence.length ? (
                     <ul className="mt-3 space-y-1.5 text-xs leading-relaxed">
                       {score.evidence.map((evidence) => (
                         <li className="border-l pl-3" key={evidence}>
-                          <HighlightedText search={search} value={evidence} />
+                          <HighlightedText
+                            search={searchForField(search, searchField, "evidence")}
+                            value={evidence}
+                          />
                         </li>
                       ))}
                     </ul>
@@ -556,20 +688,11 @@ function ResultDetailPane({ item, search }: { item: EvaluationResultItem; search
   );
 }
 
-function FilterField({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-[10px] font-medium text-muted-foreground">{label}</span>
-      {children}
-    </label>
-  );
-}
-
 function Metadata({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 truncate font-mono text-[10px]">{value}</dd>
+      <dd className="mt-0.5 truncate font-mono text-[11px]">{value}</dd>
     </div>
   );
 }
@@ -583,7 +706,7 @@ function ModelMetadata({ label, modelIds }: { label: string; modelIds: string[] 
           <ModelIdentityLabel
             className="max-w-full text-foreground"
             key={modelId}
-            labelClassName="font-mono text-[10px]"
+            labelClassName="font-mono text-[11px]"
             modelId={modelId}
             variant="short-id"
           />
@@ -597,7 +720,7 @@ function Status({ status }: { status: EvaluationRunStatus }) {
   return (
     <span
       className={cn(
-        "rounded-sm px-1.5 py-0.5 text-[9px] font-medium capitalize",
+        "rounded-sm px-1.5 py-0.5 text-[11px] font-medium capitalize",
         status === "completed" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
         status === "running" && "bg-blue-500/10 text-blue-700 dark:text-blue-400",
         (status === "failed" || status === "interrupted") && "bg-destructive/10 text-destructive",
@@ -614,7 +737,10 @@ function HighlightedText({ search, value }: { search?: string; value: string }) 
   const pattern = new RegExp(`(${escapeRegExp(query)})`, "gi");
   return value.split(pattern).map((part, index) =>
     part.toLocaleLowerCase() === query.toLocaleLowerCase() ? (
-      <mark className="bg-amber-200 px-0.5 text-amber-950" key={`${part}-${index}`}>
+      <mark
+        className="bg-amber-200 px-0.5 text-amber-950 dark:bg-amber-400/30 dark:text-amber-100"
+        key={`${part}-${index}`}
+      >
         {part}
       </mark>
     ) : (
@@ -646,6 +772,38 @@ function ErrorState({ message, retry }: { message: string; retry(): void }) {
       </Button>
     </div>
   );
+}
+
+/** Reports whether a case literally contains the query in the selected field, so semantic-only matches are never presented as keyword hits. */
+function hasVisibleMatch(
+  item: EvaluationResultItem,
+  query: string,
+  field: NonNullable<ResultFilters["searchField"]>,
+): boolean {
+  const needle = query.toLocaleLowerCase();
+  const haystacks =
+    field === "input"
+      ? [stringify(item.input)]
+      : field === "output"
+        ? [stringify(item.output)]
+        : field === "comment"
+          ? item.scores.map(({ comment }) => comment)
+          : field === "evidence"
+            ? item.scores.flatMap(({ evidence }) => evidence)
+            : [
+                stringify(item.input),
+                stringify(item.output),
+                ...item.scores.flatMap((score) => [score.comment, ...score.evidence]),
+              ];
+  return haystacks.some((value) => value.toLocaleLowerCase().includes(needle));
+}
+
+function searchForField(
+  search: string | undefined,
+  selectedField: NonNullable<ResultFilters["searchField"]>,
+  field: Exclude<NonNullable<ResultFilters["searchField"]>, "all">,
+): string | undefined {
+  return selectedField === "all" || selectedField === field ? search : undefined;
 }
 
 function scoreMarks(item: EvaluationResultItem): string[] {

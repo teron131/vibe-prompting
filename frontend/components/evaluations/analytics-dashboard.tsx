@@ -13,11 +13,10 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
 import type {
   EvaluationAnalyticsResponse,
@@ -36,6 +35,7 @@ import {
   formatPercent,
 } from "./analytics-model";
 import { EvaluationHelper } from "./evaluation-helper";
+import { ClearFilters, FilterSelect, MoreFilters } from "./filter-controls";
 import { analyticsFilterParams, parseEvaluationFilters } from "./filter-state";
 
 type ComparisonDimension = "promptRevisionId" | "targetModelId";
@@ -56,6 +56,7 @@ export function EvaluationAnalyticsDashboard() {
   const [facetCatalog, setFacetCatalog] = useState<EvaluationWorkspaceFacets>(emptyFacets);
   const [data, setData] = useState<EvaluationAnalyticsResponse>();
   const [baselineData, setBaselineData] = useState<EvaluationAnalyticsResponse>();
+  const [comparisonFacets, setComparisonFacets] = useState<EvaluationWorkspaceFacets>();
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -83,19 +84,29 @@ export function EvaluationAnalyticsDashboard() {
     setLoading(true);
     setError(undefined);
     try {
-      const requests = [fetchAnalytics(filters)];
-      if (hasComparison && comparisonDimension) {
-        requests.push(
-          fetchAnalytics({
-            ...filters,
-            [comparisonDimension]: baselineValue,
-          }),
-        );
-      }
-      const [nextData, nextBaseline] = await Promise.all(requests);
+      const baselineRequest =
+        hasComparison && comparisonDimension
+          ? fetchAnalytics({
+              ...filters,
+              [comparisonDimension]: baselineValue,
+            })
+          : Promise.resolve(undefined);
+      const comparisonFacetRequest =
+        comparisonDimension && currentComparisonValue
+          ? fetchAnalytics({
+              ...filters,
+              [comparisonDimension]: undefined,
+            })
+          : Promise.resolve(undefined);
+      const [nextData, nextBaseline, nextComparisonSource] = await Promise.all([
+        fetchAnalytics(filters),
+        baselineRequest,
+        comparisonFacetRequest,
+      ]);
       if (currentRequestId !== requestId.current) return;
       setData(nextData);
       setBaselineData(nextBaseline);
+      setComparisonFacets(nextComparisonSource?.facets);
       setFacetCatalog((current) =>
         hasFacetValues(current) ? current : (nextData?.facets ?? emptyFacets),
       );
@@ -107,7 +118,7 @@ export function EvaluationAnalyticsDashboard() {
     } finally {
       if (currentRequestId === requestId.current) setLoading(false);
     }
-  }, [baselineValue, comparisonDimension, filters, hasComparison, ready]);
+  }, [baselineValue, comparisonDimension, currentComparisonValue, filters, hasComparison, ready]);
 
   useEffect(() => void load(), [load]);
 
@@ -170,6 +181,7 @@ export function EvaluationAnalyticsDashboard() {
           baselineValue={baselineValue}
           clearScope={clearScope}
           comparisonDimension={comparisonDimension}
+          comparisonFacets={comparisonFacets ?? facetCatalog}
           facets={facetCatalog}
           filters={filters}
           refresh={() => void load()}
@@ -206,7 +218,7 @@ export function EvaluationAnalyticsDashboard() {
             rows={rows}
           />
           <Diagnostics data={data} />
-          <footer className="border-t pt-3 font-mono text-[10px] text-muted-foreground">
+          <footer className="border-t pt-3 font-mono text-[11px] text-muted-foreground">
             Generated {formatDateTime(data.provenance.generatedAt)} · Evaluation storage · Synthetic
             examples included
           </footer>
@@ -220,6 +232,7 @@ function AnalyticsFilters({
   baselineValue,
   clearScope,
   comparisonDimension,
+  comparisonFacets,
   facets,
   filters,
   refresh,
@@ -230,6 +243,7 @@ function AnalyticsFilters({
   baselineValue: string;
   clearScope(): void;
   comparisonDimension?: ComparisonDimension;
+  comparisonFacets: EvaluationWorkspaceFacets;
   facets: EvaluationWorkspaceFacets;
   filters: EvaluationWorkspaceFilters;
   refresh(): void;
@@ -241,11 +255,23 @@ function AnalyticsFilters({
   ): void;
 }) {
   const currentComparisonValue = comparisonDimension ? filters[comparisonDimension] : undefined;
+  const hiddenActiveCount = [filters.status, filters.dataType, filters.from, filters.to].filter(
+    Boolean,
+  ).length;
+  const activeCount =
+    hiddenActiveCount +
+    [
+      filters.promptId,
+      filters.promptRevisionId,
+      filters.targetModelId,
+      filters.judgeModelId,
+      comparisonDimension,
+    ].filter(Boolean).length;
   const baselineOptions =
     comparisonDimension === "targetModelId"
-      ? facets.targetModels.map(({ count, value }) => ({ count, label: value, value }))
+      ? comparisonFacets.targetModels.map(({ count, value }) => ({ count, label: value, value }))
       : comparisonDimension === "promptRevisionId"
-        ? facets.revisions.map(({ count, value }) => ({
+        ? comparisonFacets.revisions.map(({ count, value }) => ({
             count,
             label: shortId(value),
             value,
@@ -259,184 +285,189 @@ function AnalyticsFilters({
           Analysis scope
         </h2>
         <div className="flex items-center gap-1">
-          <button
-            className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-            onClick={clearScope}
-            type="button"
-          >
-            Clear
-          </button>
+          <ClearFilters count={activeCount} onClear={clearScope} />
           <Button aria-label="Refresh analytics" onClick={refresh} size="icon" variant="ghost">
             <RefreshCcw aria-hidden="true" className="size-3.5" />
           </Button>
         </div>
       </div>
-      <div className="mt-1.5 grid gap-x-2 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-4">
-        <FilterField label="Prompt">
-          <Select
-            className="h-9 text-xs shadow-none sm:h-8"
-            onChange={(event) => updateFilter("promptId", event.target.value || undefined)}
-            value={filters.promptId ?? ""}
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <FilterSelect
+          className="w-auto max-w-[14rem] flex-1 basis-40"
+          label="Prompt"
+          onChange={(event) => updateFilter("promptId", event.target.value || undefined)}
+          value={filters.promptId ?? ""}
+        >
+          <option value="">All prompts</option>
+          {facets.prompts.map((facet) => (
+            <option key={facet.id} value={facet.id}>
+              {facet.label} ({facet.count})
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect
+          className="w-auto max-w-[14rem] flex-1 basis-40 font-mono"
+          label="Prompt revision"
+          onChange={(event) => updateFilter("promptRevisionId", event.target.value || undefined)}
+          value={filters.promptRevisionId ?? ""}
+        >
+          <option value="">All revisions</option>
+          {facets.revisions.map((facet) => (
+            <option key={facet.value} value={facet.value}>
+              {shortId(facet.value)} ({facet.count})
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect
+          className="w-auto max-w-[14rem] flex-1 basis-40"
+          label="Target model"
+          onChange={(event) => updateFilter("targetModelId", event.target.value || undefined)}
+          value={filters.targetModelId ?? ""}
+        >
+          <option value="">All target models</option>
+          {facets.targetModels.map((facet) => (
+            <option key={facet.value} value={facet.value}>
+              {facet.value} ({facet.count})
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect
+          className="w-auto max-w-[14rem] flex-1 basis-40"
+          label="Judge"
+          onChange={(event) => updateFilter("judgeModelId", event.target.value || undefined)}
+          value={filters.judgeModelId ?? ""}
+        >
+          <option value="">All judges</option>
+          {facets.judges.map((facet) => (
+            <option key={facet.value} value={facet.value}>
+              {facet.value} ({facet.count})
+            </option>
+          ))}
+        </FilterSelect>
+        <MoreFilters
+          activeCount={hiddenActiveCount}
+          contentClassName="flex flex-wrap gap-2"
+          hint="status · type · dates"
+        >
+          <FilterSelect
+            className="w-auto max-w-[14rem] flex-1 basis-40"
+            label="Run status"
+            onChange={(event) =>
+              updateFilter(
+                "status",
+                (event.target.value || undefined) as EvaluationRunStatus | undefined,
+              )
+            }
+            value={filters.status ?? ""}
           >
-            <option value="">All prompts</option>
-            {facets.prompts.map((facet) => (
-              <option key={facet.id} value={facet.id}>
-                {facet.label} ({facet.count})
-              </option>
-            ))}
-          </Select>
-        </FilterField>
-        <FilterField label="Prompt revision">
-          <Select
-            className="h-9 font-mono text-xs shadow-none sm:h-8"
-            onChange={(event) => updateFilter("promptRevisionId", event.target.value || undefined)}
-            value={filters.promptRevisionId ?? ""}
-          >
-            <option value="">All revisions</option>
-            {facets.revisions.map((facet) => (
-              <option key={facet.value} value={facet.value}>
-                {shortId(facet.value)} ({facet.count})
-              </option>
-            ))}
-          </Select>
-        </FilterField>
-        <FilterField label="Target model">
-          <Select
-            className="h-9 text-xs shadow-none sm:h-8"
-            onChange={(event) => updateFilter("targetModelId", event.target.value || undefined)}
-            value={filters.targetModelId ?? ""}
-          >
-            <option value="">All target models</option>
-            {facets.targetModels.map((facet) => (
+            <option value="">All statuses</option>
+            {facets.statuses.map((facet) => (
               <option key={facet.value} value={facet.value}>
                 {facet.value} ({facet.count})
               </option>
             ))}
-          </Select>
-        </FilterField>
-        <FilterField label="Judge">
-          <Select
-            className="h-9 text-xs shadow-none sm:h-8"
-            onChange={(event) => updateFilter("judgeModelId", event.target.value || undefined)}
-            value={filters.judgeModelId ?? ""}
+          </FilterSelect>
+          <FilterSelect
+            className="w-auto max-w-[14rem] flex-1 basis-40"
+            label="Score type"
+            onChange={(event) =>
+              updateFilter(
+                "dataType",
+                (event.target.value || undefined) as EvaluationDataType | undefined,
+              )
+            }
+            value={filters.dataType ?? ""}
           >
-            <option value="">All judges</option>
-            {facets.judges.map((facet) => (
+            <option value="">All score types</option>
+            {facets.dataTypes.map((facet) => (
               <option key={facet.value} value={facet.value}>
                 {facet.value} ({facet.count})
               </option>
             ))}
-          </Select>
-        </FilterField>
+          </FilterSelect>
+          <DateFilter
+            label="From"
+            onChange={(value) => updateFilter("from", value)}
+            value={dateInputValue(filters.from)}
+          />
+          <DateFilter
+            label="To"
+            onChange={(value) => updateFilter("to", value)}
+            value={dateInputValue(filters.to)}
+          />
+        </MoreFilters>
       </div>
 
-      <div className="mt-2 grid gap-x-2 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2fr]">
-        <FilterField label="Compare by">
-          <Select
-            className="h-9 text-xs shadow-none sm:h-8"
-            onChange={(event) => updateComparison(event.target.value)}
-            value={comparisonDimension ?? ""}
-          >
-            <option value="">No baseline</option>
-            <option value="targetModelId">Target model</option>
-            <option value="promptRevisionId">Prompt revision</option>
-          </Select>
-        </FilterField>
-        <FilterField label="Baseline">
-          <Select
-            className="h-9 text-xs shadow-none sm:h-8"
-            disabled={!comparisonDimension || !currentComparisonValue}
-            onChange={(event) => setBaselineValue(event.target.value)}
-            value={baselineValue}
-          >
-            <option value="">
-              {comparisonDimension && !currentComparisonValue
-                ? "Select the current cohort first"
-                : "Choose a baseline"}
-            </option>
-            {baselineOptions
-              .filter(({ value }) => value !== currentComparisonValue)
-              .map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label} ({option.count})
-                </option>
-              ))}
-          </Select>
-        </FilterField>
-        <details className="group sm:col-span-2 lg:col-span-1">
-          <summary className="flex h-9 cursor-pointer list-none items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground sm:h-8">
-            More filters
-            <span className="font-mono text-[10px] group-open:hidden">status · type · dates</span>
-          </summary>
-          <div className="grid gap-2 pb-1 sm:grid-cols-2 xl:grid-cols-4">
-            <FilterField label="Run status">
-              <Select
-                className="h-9 text-xs shadow-none sm:h-8"
-                onChange={(event) =>
-                  updateFilter(
-                    "status",
-                    (event.target.value || undefined) as EvaluationRunStatus | undefined,
-                  )
-                }
-                value={filters.status ?? ""}
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t pt-2 text-xs">
+        <span className="shrink-0 text-muted-foreground">Compare by</span>
+        <FilterSelect
+          className="w-auto basis-40"
+          label="Compare by"
+          onChange={(event) => updateComparison(event.target.value)}
+          value={comparisonDimension ?? ""}
+        >
+          <option value="">No baseline</option>
+          <option value="targetModelId">Target model</option>
+          <option value="promptRevisionId">Prompt revision</option>
+        </FilterSelect>
+        {comparisonDimension ? (
+          currentComparisonValue ? (
+            <>
+              <span className="shrink-0 text-muted-foreground">against</span>
+              <FilterSelect
+                className="w-auto basis-40"
+                label="Baseline"
+                onChange={(event) => setBaselineValue(event.target.value)}
+                value={baselineValue}
               >
-                <option value="">All statuses</option>
-                {facets.statuses.map((facet) => (
-                  <option key={facet.value} value={facet.value}>
-                    {facet.value} ({facet.count})
-                  </option>
-                ))}
-              </Select>
-            </FilterField>
-            <FilterField label="Score type">
-              <Select
-                className="h-9 text-xs shadow-none sm:h-8"
-                onChange={(event) =>
-                  updateFilter(
-                    "dataType",
-                    (event.target.value || undefined) as EvaluationDataType | undefined,
-                  )
-                }
-                value={filters.dataType ?? ""}
-              >
-                <option value="">All score types</option>
-                {facets.dataTypes.map((facet) => (
-                  <option key={facet.value} value={facet.value}>
-                    {facet.value} ({facet.count})
-                  </option>
-                ))}
-              </Select>
-            </FilterField>
-            <FilterField label="From">
-              <Input
-                className="h-9 text-xs shadow-none sm:h-8"
-                onChange={(event) => updateFilter("from", event.target.value || undefined)}
-                type="date"
-                value={dateInputValue(filters.from)}
-              />
-            </FilterField>
-            <FilterField label="To">
-              <Input
-                className="h-9 text-xs shadow-none sm:h-8"
-                onChange={(event) => updateFilter("to", event.target.value || undefined)}
-                type="date"
-                value={dateInputValue(filters.to)}
-              />
-            </FilterField>
-          </div>
-        </details>
+                <option value="">Choose a baseline</option>
+                {baselineOptions
+                  .filter(({ value }) => value !== currentComparisonValue)
+                  .map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label} ({option.count})
+                    </option>
+                  ))}
+              </FilterSelect>
+            </>
+          ) : (
+            <span className="text-muted-foreground">
+              Choose one {comparisonLabel(comparisonDimension)} above to compare against.
+            </span>
+          )
+        ) : null}
       </div>
     </section>
   );
 }
 
-function FilterField({ children, label }: { children: ReactNode; label: string }) {
+function DateFilter({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange(value: string | undefined): void;
+  value: string;
+}) {
   return (
-    <label className="min-w-0">
-      <span className="mb-0.5 block font-mono text-[9px] text-muted-foreground">{label}</span>
-      {children}
+    <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      {label}
+      <Input
+        className={cn(
+          "h-8 w-auto text-xs shadow-none",
+          value && "border-foreground/40 bg-accent/50 font-medium text-foreground",
+        )}
+        onChange={(event) => onChange(event.target.value || undefined)}
+        type="date"
+        value={value}
+      />
     </label>
   );
+}
+
+function comparisonLabel(dimension: ComparisonDimension): string {
+  return dimension === "targetModelId" ? "target model" : "prompt revision";
 }
 
 function DecisionStrip({
@@ -502,7 +533,7 @@ function SummaryDatum({
       </div>
       <div className="mt-1 font-mono text-lg font-semibold">{value}</div>
       {detail ? (
-        <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{detail}</div>
+        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{detail}</div>
       ) : null}
     </div>
   );
@@ -528,7 +559,7 @@ function CriterionPerformance({
             quality number.
           </p>
         </div>
-        <span className="font-mono text-[10px] text-muted-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           {rows.length} criteria · {baselineLabel ? `vs ${baselineLabel}` : "no baseline"}
         </span>
       </div>
@@ -548,7 +579,7 @@ function CriterionPerformance({
           tabIndex={0}
         >
           <table className="w-full min-w-[64rem] text-left text-xs">
-            <thead className="sticky top-0 z-10 bg-muted font-mono text-[9px] text-muted-foreground">
+            <thead className="sticky top-0 z-10 bg-muted font-mono text-[11px] text-muted-foreground">
               <tr>
                 <th className="w-24 px-3 py-2 font-medium">Type</th>
                 <th className="px-3 py-2 font-medium">Criterion</th>
@@ -582,7 +613,7 @@ function CriterionPerformanceRow({
   return (
     <tr className="align-top transition-colors odd:bg-muted/10 hover:bg-muted/30">
       <td className="px-3 py-3">
-        <span className="inline-flex rounded-sm border bg-background px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
+        <span className="inline-flex rounded-sm border bg-background px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
           {row.dataType}
         </span>
       </td>
@@ -599,7 +630,7 @@ function CriterionPerformanceRow({
           >
             {row.value}
           </span>
-          <span className="text-right font-mono text-[9px] text-muted-foreground">
+          <span className="text-right font-mono text-[11px] text-muted-foreground">
             {row.detail}
           </span>
         </div>

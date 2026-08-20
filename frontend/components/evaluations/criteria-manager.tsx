@@ -32,6 +32,12 @@ export function CriteriaManager() {
   const [draft, setDraft] = useState<Draft>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    setConfirmingDelete(false);
+  }, [draft?.id]);
 
   useEffect(() => {
     void criteriaApi
@@ -83,84 +89,97 @@ export function CriteriaManager() {
 
   async function remove() {
     if (!draft?.id) return;
+    const deletingId = draft.id;
+    const deletingName = draft.name;
+    setDeleting(true);
     try {
       await criteriaApi.empty(
-        `/api/evaluations/criteria-profiles/${encodeURIComponent(draft.id)}`,
+        `/api/evaluations/criteria-profiles/${encodeURIComponent(deletingId)}`,
         {
           method: "DELETE",
         },
       );
-      const next = profiles.filter(({ id }) => id !== draft.id);
+      const next = profiles.filter(({ id }) => id !== deletingId);
       setProfiles(next);
-      setDraft(next[0] ? toDraft(next[0]) : newDraft());
-      toast.success("Criteria profile deleted.");
+      setDraft((current) =>
+        current?.id === deletingId ? (next[0] ? toDraft(next[0]) : newDraft()) : current,
+      );
+      toast.success(`Deleted “${deletingName}”.`);
     } catch (error) {
       toast.error(readError(error));
+    } finally {
+      setDeleting(false);
+      setConfirmingDelete(false);
     }
   }
 
   return (
-    <div className="mx-auto grid min-h-[calc(100vh-var(--header-height))] w-full max-w-[1480px] lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
-      <aside className="border-b bg-muted/25 p-4 sm:p-5 lg:border-r lg:border-b-0 xl:p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-base font-semibold">Criteria profiles</h1>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Reusable score recipes for human and agent runs.
-            </p>
-          </div>
-          <Button
-            aria-label="New criteria profile"
-            onClick={() => setDraft(newDraft())}
-            size="icon"
-            variant="outline"
-          >
-            <Plus className="size-3.5" />
-          </Button>
-        </div>
-        {loading ? (
-          <div className="mt-8 flex items-center gap-2 text-xs text-muted-foreground">
-            <LoaderCircle className="size-3.5 animate-spin" /> Loading profiles…
-          </div>
-        ) : (
-          <div className="mt-4 border-y">
-            <div className="grid grid-cols-[minmax(0,1fr)_3rem] gap-3 px-3 py-2 font-mono text-[9px] uppercase text-muted-foreground">
-              <span>Profile</span>
-              <span className="text-right">Criteria</span>
+    <div className="mx-auto grid min-h-[calc(100vh-var(--header-height))] w-full max-w-[1480px] @min-[620px]:grid-cols-[16rem_minmax(0,1fr)] @min-[900px]:grid-cols-[18rem_minmax(0,1fr)] @min-[1200px]:grid-cols-[20rem_minmax(0,1fr)]">
+      <aside className="border-b bg-muted/25 @min-[620px]:border-r @min-[620px]:border-b-0">
+        <div className="p-4 sm:p-5 @min-[620px]:sticky @min-[620px]:top-0 @min-[620px]:max-h-[calc(100vh-var(--header-height))] @min-[620px]:overflow-y-auto xl:p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h1 className="text-base font-semibold">Criteria profiles</h1>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Reusable score recipes for human and agent runs.
+              </p>
             </div>
-            <div className="divide-y">
-              {profiles.map((profile) => (
-                <button
-                  className={cn(
-                    "grid w-full grid-cols-[minmax(0,1fr)_3rem] items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                    draft?.id === profile.id
-                      ? "bg-background text-foreground"
-                      : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
-                  )}
-                  key={profile.id}
-                  onClick={() => setDraft(toDraft(profile))}
-                  type="button"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{profile.name}</span>
-                    <span className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap font-mono text-[10px] uppercase">
-                      <CriterionTypeSummary criteria={profile.criteria} />
+            <Button
+              aria-label="New criteria profile"
+              disabled={deleting}
+              onClick={() => setDraft(newDraft())}
+              size="icon"
+              variant="outline"
+            >
+              <Plus className="size-3.5" />
+            </Button>
+          </div>
+          {loading ? (
+            <div className="mt-8 flex items-center gap-2 text-xs text-muted-foreground">
+              <LoaderCircle className="size-3.5 animate-spin" /> Loading profiles…
+            </div>
+          ) : (
+            <div className="mt-4 border-y">
+              <div className="grid grid-cols-[minmax(0,1fr)_3rem] gap-3 px-3 py-2 font-mono text-[11px] uppercase text-muted-foreground">
+                <span>Profile</span>
+                <span className="text-right">Criteria</span>
+              </div>
+              <div className="divide-y">
+                {profiles.map((profile) => (
+                  <button
+                    className={cn(
+                      "grid w-full grid-cols-[minmax(0,1fr)_3rem] items-center gap-3 px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                      draft?.id === profile.id
+                        ? "bg-accent text-foreground"
+                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    )}
+                    key={profile.id}
+                    disabled={deleting}
+                    onClick={() => setDraft(toDraft(profile))}
+                    type="button"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{profile.name}</span>
+                      <span className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap font-mono text-[11px] uppercase">
+                        <CriterionTypeSummary criteria={profile.criteria} />
+                      </span>
                     </span>
-                  </span>
-                  <span className="text-right font-mono text-[11px]">
-                    {profile.criteria.length}
-                  </span>
-                </button>
-              ))}
+                    <span className="text-right font-mono text-[11px]">
+                      {profile.criteria.length}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </aside>
 
       <section className="min-w-0 bg-background px-4 py-5 sm:px-6 min-[840px]:px-7 xl:px-10 xl:py-8">
         {draft ? (
           <div className="max-w-4xl">
-            <header className="flex flex-col gap-4 pb-6 sm:flex-row sm:items-end sm:justify-between">
+            <header className="flex flex-col gap-4 pb-6 @min-[820px]:flex-row @min-[820px]:items-end @min-[820px]:justify-between">
               <div className="min-w-0 flex-1">
                 <label className="text-xs font-medium" htmlFor="criteria-profile-name">
                   Profile name
@@ -230,7 +249,7 @@ export function CriteriaManager() {
                 />
               ))}
             </div>
-            <div className="mt-4 flex items-center justify-between gap-4">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
               <Button
                 disabled={draft.criteria.length >= 10}
                 onClick={() =>
@@ -242,14 +261,39 @@ export function CriteriaManager() {
                 <Plus className="size-3.5" /> Add criterion ({draft.criteria.length}/10)
               </Button>
               {draft.id ? (
-                <Button
-                  className="text-destructive hover:text-destructive"
-                  onClick={remove}
-                  size="sm"
-                  variant="ghost"
-                >
-                  <Trash2 className="size-3.5" /> Delete profile
-                </Button>
+                confirmingDelete ? (
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Delete “{draft.name}”? Past runs keep their own score snapshots.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => setConfirmingDelete(false)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Cancel
+                      </Button>
+                      <Button disabled={deleting} onClick={remove} size="sm" variant="destructive">
+                        {deleting ? (
+                          <LoaderCircle className="size-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="size-3.5" />
+                        )}
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setConfirmingDelete(true)}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    <Trash2 className="size-3.5" /> Delete profile
+                  </Button>
+                )
               ) : null}
             </div>
           </div>
@@ -275,12 +319,12 @@ function CriterionEditor({
   update(value: Criterion): void;
 }) {
   return (
-    <article className="grid gap-4 px-3 py-5 transition-colors hover:bg-muted/25 sm:grid-cols-[2.5rem_minmax(0,1fr)]">
-      <div className="font-mono text-[10px] text-muted-foreground">
+    <article className="grid gap-4 px-3 py-5 @min-[620px]:grid-cols-[2.5rem_minmax(0,1fr)]">
+      <div className="font-mono text-[11px] text-muted-foreground">
         {String(index + 1).padStart(2, "0")}
       </div>
       <div className="min-w-0">
-        <div className="grid gap-3 sm:grid-cols-[11rem_minmax(0,1fr)]">
+        <div className="grid gap-3 @min-[820px]:grid-cols-[11rem_minmax(0,1fr)]">
           <label className="block text-xs font-medium">
             Type
             <span className="relative mt-1.5 block">

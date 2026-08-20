@@ -21,13 +21,13 @@ export function RevisionTrend({ points }: { points: BooleanTrendPoint[] }) {
           <h3 className="text-sm font-semibold">Compatible revision trend</h3>
           <p className="mt-1 text-xs text-muted-foreground">{TREND_SCOPE}</p>
         </div>
-        <span className="font-mono text-[10px] text-muted-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           BOOLEAN PASS RATE · {points.length} RUNS
         </span>
       </header>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[46rem] border-collapse text-xs">
-          <thead className="bg-muted/35 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+        <table className="w-full min-w-[50rem] border-collapse text-xs">
+          <thead className="bg-muted/35 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="w-64 border-r px-4 py-2 text-left font-medium sm:px-5">Criterion</th>
               <th className="px-3 py-2 text-left font-medium">Pass rate over time</th>
@@ -48,7 +48,7 @@ export function RevisionTrend({ points }: { points: BooleanTrendPoint[] }) {
               return (
                 <tr key={criterion.criterionPosition}>
                   <th className="border-r px-4 py-3 text-left align-middle font-normal sm:px-5">
-                    <span className="font-mono text-[9px] uppercase text-muted-foreground">
+                    <span className="font-mono text-[11px] uppercase text-muted-foreground">
                       C{criterion.criterionPosition + 1}
                     </span>
                     <span className="mt-1 block max-w-sm leading-5">{criterion.criterion}</span>
@@ -64,7 +64,7 @@ export function RevisionTrend({ points }: { points: BooleanTrendPoint[] }) {
                     <span className="block font-mono text-sm font-semibold text-emerald-700 dark:text-emerald-400">
                       {Math.round(latest.rate * 100)}%
                     </span>
-                    <span className="mt-0.5 block font-mono text-[9px] text-muted-foreground">
+                    <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
                       {latest.passed}/{latest.total} PASS
                     </span>
                   </td>
@@ -75,20 +75,20 @@ export function RevisionTrend({ points }: { points: BooleanTrendPoint[] }) {
         </table>
       </div>
       <div className="overflow-x-auto border-t bg-muted/20">
-        <div className="grid min-w-[46rem] grid-cols-[16rem_minmax(0,1fr)_7rem]">
-          <span className="border-r px-4 py-2 font-mono text-[9px] uppercase text-muted-foreground sm:px-5">
+        <div className="grid min-w-[50rem] grid-cols-[16rem_minmax(0,1fr)_7rem]">
+          <span className="border-r px-4 py-2 font-mono text-[11px] uppercase text-muted-foreground sm:px-5">
             Run chronology
           </span>
           <div className="flex justify-between gap-2 px-3 py-2">
             {points.map((point) => (
               <Link
-                className="min-w-0 text-center font-mono text-[9px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                className="min-w-0 text-center font-mono text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                 href={`/evaluations/${point.runId}`}
                 key={point.runId}
                 title={`${point.revisionId} · ${formatDate(point.completedAt)}`}
               >
-                <span className="block">{point.revisionId.slice(0, 6)}</span>
-                <span className="mt-0.5 block whitespace-nowrap text-[8px]">
+                <span className="block font-medium">{point.revisionId.slice(0, 6)}</span>
+                <span className="mt-0.5 block whitespace-nowrap">
                   {formatDate(point.completedAt)}
                 </span>
               </Link>

@@ -78,7 +78,7 @@ export function EvaluationHelper({ className }: { className?: string }) {
           <p className="min-w-0 flex-1">{result.answer}</p>
           <ModelIdentityLabel
             className="shrink-0 text-muted-foreground"
-            labelClassName="font-mono text-[10px]"
+            labelClassName="font-mono text-[11px]"
             modelId={result.modelId}
             variant="short-id"
           />

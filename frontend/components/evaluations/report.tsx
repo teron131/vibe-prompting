@@ -133,7 +133,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
                 {run.promptTitle}
               </h2>
               {run.isSyntheticExample ? (
-                <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   Synthetic example
                 </span>
               ) : null}
@@ -239,7 +239,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
       >
         <button
           className={cn(
-            "border-b-2 px-1 py-3 text-sm font-medium",
+            "border-b-2 px-1 py-3 text-sm font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             view === "results" ? "border-foreground" : "border-transparent text-muted-foreground",
           )}
           onClick={() => setView("results")}
@@ -250,7 +250,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
         </button>
         <button
           className={cn(
-            "ml-6 border-b-2 px-1 py-3 text-sm font-medium",
+            "ml-6 border-b-2 px-1 py-3 text-sm font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             view === "prompt" ? "border-foreground" : "border-transparent text-muted-foreground",
           )}
           onClick={() => setView("prompt")}
@@ -392,7 +392,7 @@ function Results({ run, trend }: { run: EvaluationRun; trend: BooleanTrendPoint[
 function ProvenanceDatum({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <div className="contents">
-      <div className="border-b py-2 pr-4 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:border-b-0 sm:border-r sm:px-3 sm:first:pl-0 lg:border-b lg:[&:nth-last-child(-n+4)]:border-b-0">
+      <div className="border-b py-2 pr-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:border-b-0 sm:border-r sm:px-3 sm:first:pl-0 lg:border-b lg:[&:nth-last-child(-n+4)]:border-b-0">
         {label}
       </div>
       <div className="min-w-0 border-b py-2 text-foreground sm:border-b-0 sm:px-3 lg:border-b lg:[&:nth-last-child(-n+4)]:border-b-0">
@@ -405,7 +405,7 @@ function ProvenanceDatum({ children, label }: { children: React.ReactNode; label
 function ExactDatum({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="mt-1 break-all font-mono text-[11px] text-foreground">{value}</dd>
     </div>
   );
@@ -415,7 +415,7 @@ function Status({ status }: { status: EvaluationRun["status"] }) {
   return (
     <span
       className={cn(
-        "rounded-full px-2 py-0.5 text-[10px] font-medium capitalize",
+        "rounded-full px-2 py-0.5 text-[11px] font-medium capitalize",
         status === "completed" && "bg-chart-2/15 text-chart-2",
         status === "running" && "bg-chart-4/20 text-foreground",
         (status === "failed" || status === "interrupted") && "bg-destructive/10 text-destructive",
