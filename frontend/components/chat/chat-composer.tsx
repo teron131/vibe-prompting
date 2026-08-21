@@ -347,55 +347,57 @@ export function ChatComposer({
           rows={1}
           value={instruction}
         />
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1">
-            {variant === "agent" ? (
-              <button
-                aria-label="Attach files"
-                className="grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-                disabled={running}
-                onClick={() => fileInputRef.current?.click()}
-                type="button"
-              >
-                <Paperclip aria-hidden="true" className="size-4" />
-              </button>
-            ) : null}
-            {variant === "agent" ? (
-              <button
-                aria-controls={mentionOpen ? "prompt-mention-listbox" : undefined}
-                aria-expanded={mentionOpen}
-                aria-label="Search prompts"
-                className={cn(
-                  "grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground",
-                  mentionOpen && "bg-accent text-foreground",
-                )}
-                disabled={running}
-                onClick={() => {
-                  if (mentionOpen) closeMention();
-                  else setMentionOpen(true);
-                  window.requestAnimationFrame(() => textareaRef.current?.focus());
-                }}
-                type="button"
-              >
-                <AtSign aria-hidden="true" className="size-4" />
-              </button>
-            ) : null}
-            {variant === "agent" ? (
-              <ToolSelector disabled={false} onChange={onToolsChange} value={enabledTools} />
-            ) : null}
-            <ModelSelector
-              disabled={targetModelLocked}
-              models={models}
-              onChange={onModelChange}
-              value={selectedModelId}
-            />
-            {variant === "agent" || variant === "target" ? (
-              <ReasoningSelector
+        <div className="mt-1 flex min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
+            <div className="flex w-max items-center gap-1 pr-1 [&>details]:shrink-0">
+              {variant === "agent" ? (
+                <button
+                  aria-label="Attach files"
+                  className="grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                  disabled={running}
+                  onClick={() => fileInputRef.current?.click()}
+                  type="button"
+                >
+                  <Paperclip aria-hidden="true" className="size-4" />
+                </button>
+              ) : null}
+              {variant === "agent" ? (
+                <button
+                  aria-controls={mentionOpen ? "prompt-mention-listbox" : undefined}
+                  aria-expanded={mentionOpen}
+                  aria-label="Search prompts"
+                  className={cn(
+                    "grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground",
+                    mentionOpen && "bg-accent text-foreground",
+                  )}
+                  disabled={running}
+                  onClick={() => {
+                    if (mentionOpen) closeMention();
+                    else setMentionOpen(true);
+                    window.requestAnimationFrame(() => textareaRef.current?.focus());
+                  }}
+                  type="button"
+                >
+                  <AtSign aria-hidden="true" className="size-4" />
+                </button>
+              ) : null}
+              {variant === "agent" ? (
+                <ToolSelector disabled={false} onChange={onToolsChange} value={enabledTools} />
+              ) : null}
+              <ModelSelector
                 disabled={targetModelLocked}
-                onChange={onReasoningEffortChange}
-                value={reasoningEffort}
+                models={models}
+                onChange={onModelChange}
+                value={selectedModelId}
               />
-            ) : null}
+              {variant === "agent" || variant === "target" ? (
+                <ReasoningSelector
+                  disabled={targetModelLocked}
+                  onChange={onReasoningEffortChange}
+                  value={reasoningEffort}
+                />
+              ) : null}
+            </div>
           </div>
           <Button
             aria-label={running ? "Stop generating" : "Send message"}
