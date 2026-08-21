@@ -18,8 +18,8 @@ export function FeaturePageHeader({
   title: string;
 }) {
   return (
-    <header className="flex h-(--header-height) items-center justify-between border-b px-3 sm:px-5">
-      <div className="flex shrink-0 items-center gap-2">
+    <header className="flex h-(--header-height) min-w-0 items-center justify-between gap-2 border-b px-3 sm:px-5">
+      <div className="flex min-w-0 items-center gap-2">
         <SidebarToggle />
         {href ? (
           <Link className="flex min-w-0 items-center gap-2 hover:text-muted-foreground" href={href}>

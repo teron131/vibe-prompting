@@ -32,6 +32,7 @@ import type {
 import type { PromptSummary } from "@/contracts/prompts";
 import { useDismissibleDetails } from "@/hooks/use-dismissible-details";
 
+import { ComposerMenu } from "./composer-menu";
 import { ModelSelector } from "./model-selector";
 
 const TOOL_OPTIONS: Array<{ description: string; id: ChatToolId; label: string }> = [
@@ -559,7 +560,7 @@ function ReasoningSelector({
           className="size-3 shrink-0 text-muted-foreground transition-transform group-open/effort:rotate-180"
         />
       </summary>
-      <div className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-max rounded-xl border bg-popover p-1 shadow-xl">
+      <ComposerMenu className="p-1">
         <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Reasoning
         </div>
@@ -579,7 +580,7 @@ function ReasoningSelector({
             </span>
           </button>
         ))}
-      </div>
+      </ComposerMenu>
     </details>
   );
 }
@@ -608,7 +609,7 @@ function ToolSelector({
       >
         <Wrench aria-hidden="true" className="size-3.5" />
       </summary>
-      <div className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-72 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl">
+      <ComposerMenu className="p-1.5" width="wide">
         <div className="px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           Tools
         </div>
@@ -635,7 +636,7 @@ function ToolSelector({
             </button>
           );
         })}
-      </div>
+      </ComposerMenu>
     </details>
   );
 }

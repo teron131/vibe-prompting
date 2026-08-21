@@ -120,7 +120,7 @@
 
   /* clip rather than hidden: hidden would make these scroll containers, which silently disables position:sticky for every descendant. */
   body {
-    min-height: 100vh;
+    min-height: 100dvh;
     overflow-x: clip;
     background: var(--background);
     color: var(--foreground);

@@ -251,7 +251,7 @@ export function TargetWorkspace({
                 {runs.length ? (
                   <Select
                     aria-label="Target Run history"
-                    className="h-7 w-36 px-2 text-xs shadow-none"
+                    className="h-7 w-32 px-2 text-xs shadow-none sm:w-36"
                     onChange={(event) => {
                       if (!event.target.value) {
                         startNew();
@@ -271,13 +271,15 @@ export function TargetWorkspace({
                   </Select>
                 ) : null}
                 <Button
-                  className="h-7 shrink-0 px-2.5"
+                  aria-label="New Target chat"
+                  className="size-7 shrink-0 p-0 sm:h-7 sm:w-auto sm:px-2.5"
                   disabled={running}
                   onClick={startNew}
                   size="sm"
                   variant="secondary"
                 >
-                  <Plus aria-hidden="true" className="size-3.5" /> New chat
+                  <Plus aria-hidden="true" className="size-3.5" />
+                  <span className="hidden sm:inline">New chat</span>
                 </Button>
               </div>
             </div>

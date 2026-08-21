@@ -50,6 +50,7 @@ import { ChatHistoryIcon } from "./history-icon";
 import { TargetWorkspace } from "./target/workspace";
 
 const DEFAULT_TOOLS: ChatToolId[] = ["prompt-library", "evaluations", "web-search"];
+const PROMPT_PANEL_MEDIA_QUERY = "(min-width: 1280px)";
 const chatApi = createApiRequester({ cache: "no-store" });
 const readError = createErrorReader("The request failed.");
 
@@ -100,6 +101,7 @@ export function Chat({
   initialTargetRunId?: string;
   initialMode?: "agent" | "target";
 }) {
+  const router = useRouter();
   const [models, setModels] = useState<ConfiguredModel[]>([]);
   const [prompts, setPrompts] = useState<PromptSummary[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
@@ -287,6 +289,14 @@ export function Chat({
     );
   }
 
+  function openPromptWorkspace() {
+    if (window.matchMedia(PROMPT_PANEL_MEDIA_QUERY).matches) {
+      setPanelOpen(true);
+      return;
+    }
+    router.push(activePrompt ? `/prompts/${activePrompt.id}` : "/prompts");
+  }
+
   function addQuote(quote: ChatQuote) {
     if (isPromptQuote(quote)) {
       setActivePromptId(quote.promptId);
@@ -312,6 +322,10 @@ export function Chat({
       toast.error("The referenced prompt is no longer available.");
       return;
     }
+    if (!window.matchMedia(PROMPT_PANEL_MEDIA_QUERY).matches) {
+      router.push(`/prompts/${prompt.id}`);
+      return;
+    }
     setActivePromptId(prompt.id);
     setHighlightedQuote(undefined);
     setReviewRevision(
@@ -326,7 +340,7 @@ export function Chat({
   }
 
   return (
-    <main className="flex h-screen min-h-0 flex-col overflow-hidden">
+    <main className="flex h-dvh min-h-0 flex-col overflow-hidden">
       <FeaturePageHeader
         icon={
           workspaceMode === "target" ? (
@@ -371,10 +385,10 @@ export function Chat({
                     ? `Open ${activePrompt.title}`
                     : "Open prompt workspace"
               }
-              className={`${workspaceMode === "target" ? "hidden sm:inline-flex" : "inline-flex"} h-8 max-w-[min(18rem,45vw)] items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-accent`}
+              className="hidden h-8 max-w-[min(18rem,45vw)] items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-accent xl:inline-flex"
               href={activePrompt ? `/prompts/${activePrompt.id}` : "/prompts"}
               onClick={(event) => {
-                if (!window.matchMedia("(min-width: 768px)").matches) return;
+                if (!window.matchMedia(PROMPT_PANEL_MEDIA_QUERY).matches) return;
                 event.preventDefault();
                 setPanelOpen((open) => !open);
               }}
@@ -407,7 +421,7 @@ export function Chat({
               initialRunId={initialTargetRunId}
               models={models}
               onModelChange={setSelectedModelId}
-              onOpenPrompt={() => setPanelOpen(true)}
+              onOpenPrompt={openPromptWorkspace}
               onPromptResolved={handleTargetPromptResolved}
               onQuoteInAgent={({ promptId, runId, title }) => {
                 setActivePromptId(promptId);
@@ -468,7 +482,7 @@ export function Chat({
                 onAttachmentsChange={setAttachments}
                 onInstructionChange={setInstruction}
                 onModelChange={setSelectedModelId}
-                onOpenPrompt={() => setPanelOpen(true)}
+                onOpenPrompt={openPromptWorkspace}
                 onPromptChange={(prompt) =>
                   prompt ? activatePrompt(prompt, false) : detachPrompt()
                 }

@@ -114,9 +114,9 @@ export function CriteriaManager() {
   }
 
   return (
-    <div className="mx-auto grid min-h-[calc(100vh-var(--header-height))] w-full max-w-[1480px] @min-[620px]:grid-cols-[16rem_minmax(0,1fr)] @min-[900px]:grid-cols-[18rem_minmax(0,1fr)] @min-[1200px]:grid-cols-[20rem_minmax(0,1fr)]">
+    <div className="mx-auto grid min-h-[calc(100dvh-var(--header-height))] w-full max-w-[1480px] @min-[620px]:grid-cols-[16rem_minmax(0,1fr)] @min-[900px]:grid-cols-[18rem_minmax(0,1fr)] @min-[1200px]:grid-cols-[20rem_minmax(0,1fr)]">
       <aside className="border-b bg-muted/25 @min-[620px]:border-r @min-[620px]:border-b-0">
-        <div className="p-4 sm:p-5 @min-[620px]:sticky @min-[620px]:top-0 @min-[620px]:max-h-[calc(100vh-var(--header-height))] @min-[620px]:overflow-y-auto xl:p-6">
+        <div className="p-4 sm:p-5 @min-[620px]:sticky @min-[620px]:top-0 @min-[620px]:max-h-[calc(100dvh-var(--header-height))] @min-[620px]:overflow-y-auto xl:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h1 className="text-base font-semibold">Criteria profiles</h1>

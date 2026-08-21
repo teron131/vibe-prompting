@@ -95,7 +95,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   return (
     <SidebarContext.Provider value={context}>
-      <div className="min-h-screen bg-background">
+      <div className="min-h-dvh bg-background">
         <button
           aria-hidden="true"
           className={cn(
@@ -120,10 +120,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           <AppSidebar closeButtonRef={closeButtonRef} onClose={closeSidebar} />
         </aside>
         <div
-          className={cn(
-            "min-h-screen transition-[padding] duration-200",
-            sidebarOpen && "md:pl-64",
-          )}
+          className={cn("min-h-dvh transition-[padding] duration-200", sidebarOpen && "md:pl-64")}
           inert={sidebarOpen && !sidebarDocked}
         >
           {children}

@@ -538,7 +538,7 @@ function EvaluationBatchRunBuilder() {
       </section>
 
       <aside className="border-t bg-muted/35 @min-[720px]:border-t-0">
-        <div className="flex min-h-[calc(100vh-var(--header-height))] flex-col px-4 py-5 sm:px-6 @min-[720px]:sticky @min-[720px]:top-0 @min-[720px]:max-h-[calc(100vh-var(--header-height))] @min-[720px]:overflow-y-auto @min-[720px]:px-5 xl:px-6 xl:py-8">
+        <div className="flex min-h-[calc(100dvh-var(--header-height))] flex-col px-4 py-5 sm:px-6 @min-[720px]:sticky @min-[720px]:top-0 @min-[720px]:max-h-[calc(100dvh-var(--header-height))] @min-[720px]:overflow-y-auto @min-[720px]:px-5 xl:px-6 xl:py-8">
           {trackedBatch ? (
             <BatchMonitor
               completedRuns={completedRuns}

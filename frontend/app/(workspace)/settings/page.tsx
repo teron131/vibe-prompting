@@ -8,7 +8,7 @@ import { WorkspaceHomeLink } from "@/components/shell/home-link";
 
 export default function SettingsRoute() {
   return (
-    <main className="min-h-screen">
+    <main className="min-h-dvh">
       <FeaturePageHeader icon={Settings} rightContent={<WorkspaceHomeLink />} title="Settings" />
       <SettingsPage />
     </main>

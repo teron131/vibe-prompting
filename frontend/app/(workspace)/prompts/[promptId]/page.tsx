@@ -9,7 +9,7 @@ export default async function PromptDetailPage({
 }) {
   const { promptId } = await params;
   return (
-    <main className="flex h-screen min-h-0 flex-col overflow-hidden">
+    <main className="flex h-dvh min-h-0 flex-col overflow-hidden">
       <PromptStudio initialPromptId={promptId} />
     </main>
   );

@@ -9,7 +9,7 @@ import { WorkspaceHomeLink } from "@/components/shell/home-link";
 
 export default function EvaluationsLayout({ children }: { children: ReactNode }) {
   return (
-    <main className="@container min-h-screen">
+    <main className="@container min-h-dvh">
       <FeaturePageHeader
         href="/evaluations"
         icon={FlaskConical}

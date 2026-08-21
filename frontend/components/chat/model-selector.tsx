@@ -10,6 +10,8 @@ import type { ConfiguredModel } from "@/contracts/chat";
 import { useDismissibleDetails } from "@/hooks/use-dismissible-details";
 import { requestJson } from "@/shared/api";
 
+import { ComposerMenu } from "./composer-menu";
+
 const modelIdentityRequests = new Map<string, Promise<ConfiguredModel>>();
 const ARTIFICIAL_ANALYSIS_LOGO_BASE_URL = "https://artificialanalysis.ai/img/logos";
 
@@ -44,7 +46,7 @@ export function ModelSelector({
           className="size-3 shrink-0 text-muted-foreground transition-transform group-open/model:rotate-180"
         />
       </summary>
-      <div className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-max max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border bg-popover p-1 text-popover-foreground shadow-xl">
+      <ComposerMenu className="overflow-hidden p-1">
         <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Configured models
         </div>
@@ -65,7 +67,7 @@ export function ModelSelector({
             </span>
           </button>
         ))}
-      </div>
+      </ComposerMenu>
     </details>
   );
 }

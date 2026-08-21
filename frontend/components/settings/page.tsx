@@ -107,7 +107,7 @@ export function SettingsPage() {
 
   if (!settings && !error) {
     return (
-      <div className="mx-auto flex min-h-[calc(100vh-var(--header-height))] max-w-5xl items-center justify-center px-5">
+      <div className="mx-auto flex min-h-[calc(100dvh-var(--header-height))] max-w-5xl items-center justify-center px-5">
         <LoaderCircle
           aria-label="Loading settings"
           className="size-5 animate-spin text-muted-foreground"

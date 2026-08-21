@@ -5,15 +5,11 @@
 import {
   ArrowLeft,
   ArrowUpRight,
-  BookOpen,
   Check,
-  Eye,
   FileText,
   FlaskConical,
-  GitCompareArrows,
   LoaderCircle,
   MessageCircleMore,
-  Pencil,
   Quote,
   Redo2,
   Save,
@@ -35,6 +31,7 @@ import { MarkdownPreview } from "@/components/prompts/artifact";
 import { PromptDiff } from "@/components/prompts/diff";
 import { PromptStats } from "@/components/prompts/stats";
 import { usePromptSearch } from "@/components/prompts/use-search";
+import { type PromptViewMode, PromptViewModeControl } from "@/components/prompts/view-mode-control";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,8 +55,6 @@ const MIN_PANEL_WIDTH = 320;
 const PANEL_RESIZE_STEP = 16;
 const PANEL_WIDTH_STORAGE_KEY = "vibe-prompting:prompt-panel-width";
 const readError = createErrorReader("Prompt update failed.");
-
-type PanelMode = "changes" | "edit" | "preview" | "read";
 
 export function PromptContextPanel({
   activePrompt,
@@ -98,7 +93,7 @@ export function PromptContextPanel({
   const [editorPrompt, setEditorPrompt] = useState<PromptEditorSnapshot>();
   const [editorState, setEditorState] = useState<"error" | "idle" | "loading">("idle");
   const [draft, setDraft] = useState("");
-  const [mode, setMode] = useState<PanelMode>("edit");
+  const [mode, setMode] = useState<PromptViewMode>("edit");
   const [editError, setEditError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [historyAction, setHistoryAction] = useState<"redo" | "undo">();
@@ -159,7 +154,7 @@ export function PromptContextPanel({
   const displayedPrompt = editorPrompt ?? activePrompt;
   const dirty = Boolean(editorPrompt && draft !== editorPrompt.markdown);
   const changesAvailable = Boolean(editorPrompt?.canUndo);
-  const compactToolbar = panelWidth < 380;
+  const compactToolbar = panelWidth < 560;
   const matchingHighlight =
     activePromptId &&
     highlightedQuote?.promptId === activePromptId &&
@@ -173,18 +168,25 @@ export function PromptContextPanel({
   }, [activePrompt?.id, open]);
 
   useEffect(() => {
-    function syncPanelWidth() {
-      const maximum = getPanelMaxWidth();
+    if (!open) return;
+    const workspace = panelRef.current?.parentElement;
+    if (!workspace) return;
+    const syncPanelWidth = () => {
+      const maximum = getPanelMaxWidth(workspace.getBoundingClientRect().width);
       const storedWidth = Number(window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY));
       setPanelMaxWidth(maximum);
       setPanelWidth((current) =>
-        clampPanelWidth(Number.isFinite(storedWidth) && storedWidth > 0 ? storedWidth : current),
+        clampPanelWidth(
+          Number.isFinite(storedWidth) && storedWidth > 0 ? storedWidth : current,
+          maximum,
+        ),
       );
-    }
+    };
     syncPanelWidth();
-    window.addEventListener("resize", syncPanelWidth);
-    return () => window.removeEventListener("resize", syncPanelWidth);
-  }, []);
+    const observer = new ResizeObserver(syncPanelWidth);
+    observer.observe(workspace);
+    return () => observer.disconnect();
+  }, [open]);
 
   useEffect(() => () => resizeCleanupRef.current?.(), []);
 
@@ -389,7 +391,7 @@ export function PromptContextPanel({
     onClose();
   }
 
-  function selectMode(nextMode: PanelMode) {
+  function selectMode(nextMode: PromptViewMode) {
     if (nextMode === mode) return;
     if (nextMode === "changes" && !changesAvailable) return;
     if (nextMode === "edit" && (displayedRevision || editorState !== "idle")) return;
@@ -415,7 +417,7 @@ export function PromptContextPanel({
     document.body.style.userSelect = "none";
 
     function resize(pointerEvent: PointerEvent) {
-      nextWidth = clampPanelWidth(startWidth + startX - pointerEvent.clientX);
+      nextWidth = clampPanelWidth(startWidth + startX - pointerEvent.clientX, panelMaxWidth);
       setPanelWidth(nextWidth);
     }
 
@@ -443,7 +445,7 @@ export function PromptContextPanel({
     else if (event.key === "End") nextWidth = panelMaxWidth;
     if (nextWidth === undefined) return;
     event.preventDefault();
-    const width = clampPanelWidth(nextWidth);
+    const width = clampPanelWidth(nextWidth, panelMaxWidth);
     setPanelWidth(width);
     window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(Math.round(width)));
   }
@@ -522,7 +524,7 @@ export function PromptContextPanel({
     }
   }
 
-  function applyPromptUpdate(prompt: PromptEditorSnapshot, nextMode: PanelMode = "edit") {
+  function applyPromptUpdate(prompt: PromptEditorSnapshot, nextMode: PromptViewMode = "edit") {
     setEditorPrompt(prompt);
     setDraft(prompt.markdown);
     setMode(nextMode);
@@ -539,7 +541,7 @@ export function PromptContextPanel({
   return (
     <aside
       aria-labelledby={titleId}
-      className="relative z-auto hidden min-h-0 w-[var(--prompt-panel-width)] max-w-none shrink-0 flex-col overflow-hidden border-l bg-background shadow-none md:flex"
+      className="@container relative z-auto hidden min-h-0 w-[var(--prompt-panel-width)] max-w-none shrink-0 flex-col overflow-hidden border-l bg-background shadow-none xl:flex"
       onKeyDown={savePromptWithKeyboard}
       ref={panelRef}
       style={{ "--prompt-panel-width": `${panelWidth}px` } as CSSProperties}
@@ -707,116 +709,82 @@ export function PromptContextPanel({
         </div>
       ) : activePrompt ? (
         <>
-          <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2">
-            <div
-              aria-label="Prompt view mode"
-              className={`grid h-8 shrink-0 ${changesAvailable ? "grid-cols-4" : "grid-cols-3"} ${compactToolbar ? "w-64" : changesAvailable ? "w-[22rem]" : "w-[17.25rem]"}`}
-              role="group"
-            >
-              {changesAvailable ? (
-                <button
-                  aria-pressed={mode === "changes"}
-                  className={`inline-flex h-8 min-w-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${compactToolbar ? "gap-1 px-1 text-[11px]" : "gap-2 px-2 text-xs"} ${mode === "changes" ? "bg-primary font-semibold text-primary-foreground" : "font-medium text-muted-foreground hover:text-foreground"}`}
-                  onClick={() => selectMode("changes")}
-                  type="button"
-                >
-                  <GitCompareArrows aria-hidden="true" className="size-3.5 shrink-0" />
-                  Changes
-                </button>
+          <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b p-2 @min-[560px]:h-10 @min-[560px]:flex-nowrap @min-[560px]:py-0">
+            <PromptViewModeControl
+              className={
+                compactToolbar ? "w-full" : changesAvailable ? "w-[22rem]" : "w-[17.25rem]"
+              }
+              compact={compactToolbar}
+              editDisabled={Boolean(displayedRevision) || editorState !== "idle"}
+              mode={mode}
+              onChange={selectMode}
+              showChanges={changesAvailable}
+            />
+            <div className="ml-auto flex shrink-0 items-center gap-0.5">
+              {!dirty ? (
+                <>
+                  <Button
+                    aria-label="Undo last saved change"
+                    className="size-8"
+                    disabled={saving || Boolean(historyAction) || !editorPrompt?.canUndo}
+                    onClick={() => void navigateHistory("undo")}
+                    size="icon"
+                    title="Undo saved revision"
+                    variant="ghost"
+                  >
+                    {historyAction === "undo" ? (
+                      <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+                    ) : (
+                      <Undo2 aria-hidden="true" className="size-4" />
+                    )}
+                  </Button>
+                  <Button
+                    aria-label="Redo saved change"
+                    className="size-8"
+                    disabled={saving || Boolean(historyAction) || !editorPrompt?.canRedo}
+                    onClick={() => void navigateHistory("redo")}
+                    size="icon"
+                    title="Redo saved revision"
+                    variant="ghost"
+                  >
+                    {historyAction === "redo" ? (
+                      <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+                    ) : (
+                      <Redo2 aria-hidden="true" className="size-4" />
+                    )}
+                  </Button>
+                </>
               ) : null}
-              <button
-                aria-pressed={mode === "read"}
-                className={`inline-flex h-8 min-w-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${compactToolbar ? "gap-1 px-1.5 text-[11px]" : "gap-2 px-3 text-xs"} ${mode === "read" ? "bg-primary font-semibold text-primary-foreground" : "font-medium text-muted-foreground hover:text-foreground"}`}
-                onClick={() => selectMode("read")}
-                type="button"
-              >
-                <BookOpen aria-hidden="true" className="size-3.5 shrink-0" />
-                Read
-              </button>
-              <button
-                aria-pressed={mode === "edit"}
-                className={`inline-flex h-8 min-w-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 ${compactToolbar ? "gap-1 px-1.5 text-[11px]" : "gap-2 px-3 text-xs"} ${mode === "edit" ? "bg-primary font-semibold text-primary-foreground" : "font-medium text-muted-foreground hover:text-foreground"}`}
-                disabled={Boolean(displayedRevision) || editorState !== "idle"}
-                onClick={() => selectMode("edit")}
-                type="button"
-              >
-                <Pencil aria-hidden="true" className="size-3.5 shrink-0" />
-                Edit
-              </button>
-              <button
-                aria-pressed={mode === "preview"}
-                className={`inline-flex h-8 min-w-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${compactToolbar ? "gap-1 px-1.5 text-[11px]" : "gap-2 px-3 text-xs"} ${mode === "preview" ? "bg-primary font-semibold text-primary-foreground" : "font-medium text-muted-foreground hover:text-foreground"}`}
-                onClick={() => selectMode("preview")}
-                type="button"
-              >
-                <Eye aria-hidden="true" className="size-4 shrink-0" />
-                Preview
-              </button>
+              {!dirty && editorPrompt?.activeRevisionId !== editorPrompt?.revisionId ? (
+                <Button
+                  className="h-8 px-2.5 text-xs"
+                  disabled={activating || saving || Boolean(historyAction)}
+                  onClick={() => void makeActive()}
+                  size="sm"
+                  variant="outline"
+                >
+                  {activating ? (
+                    <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+                  ) : null}
+                  Make active
+                </Button>
+              ) : null}
+              {dirty ? (
+                <Button
+                  className="h-8 px-2.5 text-xs"
+                  disabled={!dirty || saving}
+                  onClick={() => void savePrompt()}
+                  size="sm"
+                >
+                  {saving ? (
+                    <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+                  ) : (
+                    <Save aria-hidden="true" className="size-3.5" />
+                  )}
+                  Save
+                </Button>
+              ) : null}
             </div>
-            {!dirty ? (
-              <>
-                <Button
-                  aria-label="Undo last saved change"
-                  className="ml-2 size-8"
-                  disabled={saving || Boolean(historyAction) || !editorPrompt?.canUndo}
-                  onClick={() => void navigateHistory("undo")}
-                  size="icon"
-                  title="Undo saved revision"
-                  variant="ghost"
-                >
-                  {historyAction === "undo" ? (
-                    <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-                  ) : (
-                    <Undo2 aria-hidden="true" className="size-4" />
-                  )}
-                </Button>
-                <Button
-                  aria-label="Redo saved change"
-                  className="size-8"
-                  disabled={saving || Boolean(historyAction) || !editorPrompt?.canRedo}
-                  onClick={() => void navigateHistory("redo")}
-                  size="icon"
-                  title="Redo saved revision"
-                  variant="ghost"
-                >
-                  {historyAction === "redo" ? (
-                    <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-                  ) : (
-                    <Redo2 aria-hidden="true" className="size-4" />
-                  )}
-                </Button>
-              </>
-            ) : null}
-            <div className="flex-1" />
-            {!dirty && editorPrompt?.activeRevisionId !== editorPrompt?.revisionId ? (
-              <Button
-                className="h-8 px-2.5 text-xs"
-                disabled={activating || saving || Boolean(historyAction)}
-                onClick={() => void makeActive()}
-                size="sm"
-                variant="outline"
-              >
-                {activating ? (
-                  <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
-                ) : null}
-                Make active
-              </Button>
-            ) : null}
-            {dirty ? (
-              <Button
-                className="h-8 px-2.5 text-xs"
-                disabled={!dirty || saving}
-                onClick={() => void savePrompt()}
-                size="sm"
-              >
-                {saving ? (
-                  <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
-                ) : (
-                  <Save aria-hidden="true" className="size-3.5" />
-                )}
-                Save
-              </Button>
-            ) : null}
           </div>
 
           {editError ? (
@@ -1111,13 +1079,13 @@ function projectActivePromptSummary(prompt: PromptEditorSnapshot): PromptSummary
   };
 }
 
-function getPanelMaxWidth(): number {
+function getPanelMaxWidth(availableWidth: number): number {
   return Math.max(
     MIN_PANEL_WIDTH,
-    Math.min(MAX_PANEL_WIDTH, window.innerWidth * 0.6, window.innerWidth - MIN_CHAT_WIDTH),
+    Math.min(MAX_PANEL_WIDTH, availableWidth * 0.6, availableWidth - MIN_CHAT_WIDTH),
   );
 }
 
-function clampPanelWidth(width: number): number {
-  return Math.min(Math.max(width, MIN_PANEL_WIDTH), getPanelMaxWidth());
+function clampPanelWidth(width: number, maximum: number): number {
+  return Math.min(Math.max(width, MIN_PANEL_WIDTH), maximum);
 }

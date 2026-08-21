@@ -166,7 +166,7 @@ export function EvaluationResultsExplorer() {
   return (
     <div
       className={cn(
-        "flex min-h-[calc(100vh-var(--header-height))] flex-col @min-[560px]:h-[calc(100vh-var(--header-height))] @min-[560px]:min-h-[36rem] @min-[560px]:overflow-hidden",
+        "flex min-h-[calc(100dvh-var(--header-height))] w-full min-w-0 max-w-full flex-col @min-[560px]:h-[calc(100dvh-var(--header-height))] @min-[560px]:min-h-[36rem] @min-[560px]:overflow-hidden",
         resizingList && "select-none cursor-col-resize",
       )}
     >
@@ -264,7 +264,7 @@ export function EvaluationResultsExplorer() {
       </header>
 
       <div
-        className="grid @min-[560px]:min-h-0 @min-[560px]:flex @min-[560px]:flex-1"
+        className="grid w-full min-w-0 max-w-full @min-[560px]:min-h-0 @min-[560px]:flex @min-[560px]:flex-1"
         ref={workspaceRef}
       >
         <div className="border-b @min-[560px]:hidden">
@@ -302,7 +302,7 @@ export function EvaluationResultsExplorer() {
         <section
           aria-label="Evaluation result list"
           className={cn(
-            "min-h-0 bg-muted/15 @min-[560px]:block @min-[560px]:w-[var(--results-list-width)] @min-[560px]:min-w-56 @min-[560px]:max-w-[calc(100%-20rem)] @min-[560px]:shrink-0 @min-[560px]:overflow-y-auto @min-[560px]:[--results-list-width:16rem] @min-[760px]:[--results-list-width:20rem] @min-[1200px]:[--results-list-width:23rem]",
+            "min-h-0 min-w-0 max-w-full bg-muted/15 @min-[560px]:block @min-[560px]:w-[var(--results-list-width)] @min-[560px]:min-w-56 @min-[560px]:max-w-[calc(100%-20rem)] @min-[560px]:shrink-0 @min-[560px]:overflow-y-auto @min-[560px]:[--results-list-width:16rem] @min-[760px]:[--results-list-width:20rem] @min-[1200px]:[--results-list-width:23rem]",
             mobilePane === "results" ? "block" : "hidden",
             !resultListOpen && "@min-[560px]:hidden",
           )}
@@ -665,8 +665,8 @@ function ResultRow({
       onClick={onSelect}
       type="button"
     >
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           <span
             className={cn("min-w-0 truncate text-sm", selected ? "font-semibold" : "font-medium")}
           >

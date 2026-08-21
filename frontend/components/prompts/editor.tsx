@@ -2,17 +2,7 @@
 
 "use client";
 
-import {
-  BookOpen,
-  Eye,
-  GitCompareArrows,
-  History,
-  LoaderCircle,
-  Pencil,
-  Redo2,
-  Save,
-  Undo2,
-} from "lucide-react";
+import { GitCompareArrows, History, LoaderCircle, Redo2, Save, Undo2 } from "lucide-react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -21,6 +11,7 @@ import { MarkdownPreview } from "@/components/prompts/artifact";
 import { PromptDiff } from "@/components/prompts/diff";
 import { PromptEvaluationView } from "@/components/prompts/evaluation-view";
 import { PromptStats } from "@/components/prompts/stats";
+import { PromptViewModeControl } from "@/components/prompts/view-mode-control";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
@@ -384,50 +375,14 @@ export function PromptEditor({
       </div>
       {view === "edit" ? (
         <section className="overflow-hidden border-y bg-card/20">
-          <div className="flex h-11 items-center gap-1 border-b px-2">
-            <div
-              aria-label="Prompt view mode"
-              className="grid h-8 min-w-0 flex-1 grid-cols-3 sm:max-w-72"
-              role="group"
-            >
-              <button
-                aria-pressed={mode === "read"}
-                className={cn(
-                  "inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  mode === "read" && "bg-primary font-semibold text-primary-foreground",
-                )}
-                onClick={() => setMode("read")}
-                type="button"
-              >
-                <BookOpen aria-hidden="true" className="size-3.5 shrink-0" />
-                Read
-              </button>
-              <button
-                aria-pressed={mode === "edit"}
-                className={cn(
-                  "inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  mode === "edit" && "bg-primary font-semibold text-primary-foreground",
-                )}
-                onClick={() => setMode("edit")}
-                type="button"
-              >
-                <Pencil aria-hidden="true" className="size-3.5 shrink-0" />
-                Edit
-              </button>
-              <button
-                aria-pressed={mode === "preview"}
-                className={cn(
-                  "inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  mode === "preview" && "bg-primary font-semibold text-primary-foreground",
-                )}
-                onClick={() => setMode("preview")}
-                type="button"
-              >
-                <Eye aria-hidden="true" className="size-4 shrink-0" />
-                Preview
-              </button>
-            </div>
-            <div className="flex shrink-0 items-center gap-0.5">
+          <div className="flex min-h-11 flex-wrap items-center gap-1 border-b p-2 sm:h-11 sm:flex-nowrap sm:py-0">
+            <PromptViewModeControl
+              className="w-full min-w-0 sm:w-auto sm:max-w-72 sm:flex-1"
+              mode={mode}
+              onChange={(nextMode) => setMode(nextMode === "changes" ? "read" : nextMode)}
+              variant="editor"
+            />
+            <div className="ml-auto flex shrink-0 items-center gap-0.5">
               {!dirty && detail.prompt.canUndo ? (
                 <Button
                   aria-label="Undo last saved change"
