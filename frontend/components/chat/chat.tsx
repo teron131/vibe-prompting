@@ -2,7 +2,14 @@
 
 "use client";
 
-import { FileText, LoaderCircle, PanelRightOpen, TriangleAlert } from "lucide-react";
+import {
+  Bot,
+  FileText,
+  FlaskConical,
+  LoaderCircle,
+  PanelRightOpen,
+  TriangleAlert,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +22,7 @@ import { FeaturePageHeader } from "@/components/shell/header";
 import type {
   Attachment,
   ChatMessage,
+  ChatQuote,
   ChatReasoningEffort,
   ChatResponse,
   ChatToolId,
@@ -25,14 +33,21 @@ import type {
   RunEvent,
   SteerChatResponse,
   StopChatResponse,
+  TargetRunQuote,
 } from "@/contracts/chat";
 import type { PromptsResponse, PromptSummary } from "@/contracts/prompts";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 import { createApiRequester, createErrorReader, readResponseError } from "@/shared/api";
 
-import { AssistantMessage } from "./assistant-message";
+import {
+  applyAssistantEvent,
+  AssistantMessage,
+  createAssistantMessage,
+  replayAssistantMessage,
+} from "./assistant-message";
 import { ChatComposer } from "./chat-composer";
 import { ChatHistoryIcon } from "./history-icon";
+import { TargetWorkspace } from "./target/workspace";
 
 const DEFAULT_TOOLS: ChatToolId[] = ["prompt-library", "evaluations", "web-search"];
 const chatApi = createApiRequester({ cache: "no-store" });
@@ -43,7 +58,7 @@ type WorkspaceDraft = {
   enabledTools: ChatToolId[];
   instruction: string;
   panelOpen: boolean;
-  quotes: PromptQuote[];
+  quotes: ChatQuote[];
   reasoningEffort: ChatReasoningEffort;
   selectedModelId: string;
 };
@@ -52,7 +67,7 @@ type ReplacementSubmission = {
   attachments: Attachment[];
   instruction: string;
   messageId: string;
-  quotes: PromptQuote[];
+  quotes: ChatQuote[];
 };
 
 type UseChatRunInput = {
@@ -65,9 +80,9 @@ type UseChatRunInput = {
   onInstructionChange(value: string): void;
   onPromptsRefresh(): Promise<unknown>;
   onPromptRevision(reference: PromptRevisionReference): void;
-  onQuotesChange(value: PromptQuote[]): void;
+  onQuotesChange(value: ChatQuote[]): void;
   panelOpen: boolean;
-  quotes: PromptQuote[];
+  quotes: ChatQuote[];
   reasoningEffort: ChatReasoningEffort;
   selectedModelId: string;
 };
@@ -77,9 +92,13 @@ type PromptRevisionReference = { promptId: string; revisionId: string };
 export function Chat({
   chatId: initialChatId,
   initialPromptId,
+  initialTargetRunId,
+  initialMode = "agent",
 }: {
   chatId?: string;
   initialPromptId?: string;
+  initialTargetRunId?: string;
+  initialMode?: "agent" | "target";
 }) {
   const [models, setModels] = useState<ConfiguredModel[]>([]);
   const [prompts, setPrompts] = useState<PromptSummary[]>([]);
@@ -88,13 +107,14 @@ export function Chat({
   const [reasoningEffort, setReasoningEffort] = useState<ChatReasoningEffort>("medium");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [activePromptId, setActivePromptId] = useState<string | null>(initialPromptId ?? null);
-  const [quotes, setQuotes] = useState<PromptQuote[]>([]);
+  const [quotes, setQuotes] = useState<ChatQuote[]>([]);
   const [highlightedQuote, setHighlightedQuote] = useState<PromptQuote>();
   const [reviewRevision, setReviewRevision] = useState<PromptRevisionReference>();
   const [panelOpen, setPanelOpen] = useState(Boolean(initialPromptId));
   const [instruction, setInstruction] = useState("");
   const [loading, setLoading] = useState(true);
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [workspaceMode, setWorkspaceMode] = useState<"agent" | "target">(initialMode);
   const panelWasOpen = useRef(panelOpen);
 
   const loadPrompts = useCallback(async () => {
@@ -107,6 +127,10 @@ export function Chat({
     setHighlightedQuote(undefined);
     setReviewRevision(reference);
     setPanelOpen(true);
+  }, []);
+  const handleTargetPromptResolved = useCallback((promptId: string) => {
+    setActivePromptId(promptId);
+    setPanelOpen(false);
   }, []);
 
   const {
@@ -226,7 +250,13 @@ export function Chat({
     window.history.replaceState(
       null,
       "",
-      chatId ? `/chat/${chatId}` : showPanel ? `/?prompt=${encodeURIComponent(prompt.id)}` : "/",
+      workspaceMode === "target"
+        ? `/?mode=target&prompt=${encodeURIComponent(prompt.id)}`
+        : chatId
+          ? `/chat/${chatId}`
+          : showPanel
+            ? `/?prompt=${encodeURIComponent(prompt.id)}`
+            : "/",
     );
     if (showPanel) setPanelOpen(true);
     setEnabledTools((current) =>
@@ -241,22 +271,31 @@ export function Chat({
     window.history.replaceState(null, "", chatId ? `/chat/${chatId}` : "/");
   }
 
-  function addQuote(quote: PromptQuote) {
-    setActivePromptId(quote.promptId);
-    setHighlightedQuote(quote);
+  function switchWorkspaceMode(nextMode: "agent" | "target") {
+    setWorkspaceMode(nextMode);
+    if (nextMode === "agent") {
+      window.history.replaceState(null, "", chatId ? `/chat/${chatId}` : "/");
+      return;
+    }
+    if (!activePromptId) setPanelOpen(true);
+    window.history.replaceState(
+      null,
+      "",
+      activePromptId
+        ? `/?mode=target&prompt=${encodeURIComponent(activePromptId)}`
+        : "/?mode=target",
+    );
+  }
+
+  function addQuote(quote: ChatQuote) {
+    if (isPromptQuote(quote)) {
+      setActivePromptId(quote.promptId);
+      setHighlightedQuote(quote);
+    }
     setQuotes((current) => {
-      if (
-        current.some(
-          (candidate) =>
-            candidate.promptId === quote.promptId &&
-            candidate.revisionId === quote.revisionId &&
-            candidate.text === quote.text,
-        )
-      ) {
-        return current;
-      }
+      if (current.some((candidate) => sameQuote(candidate, quote))) return current;
       if (current.length >= 6) {
-        toast.error("A message can include at most six prompt quotes.");
+        toast.error("A message can include at most six quotes.");
         return current;
       }
       return [...current, quote];
@@ -290,38 +329,68 @@ export function Chat({
     <main className="flex h-screen min-h-0 flex-col overflow-hidden">
       <FeaturePageHeader
         icon={
-          <ChatHistoryIcon
-            className="size-[18px]"
-            name={conversation?.chat.icon ?? "message-circle"}
-          />
+          workspaceMode === "target" ? (
+            <FlaskConical className="size-[18px]" />
+          ) : (
+            <ChatHistoryIcon
+              className="size-[18px]"
+              name={conversation?.chat.icon ?? "message-circle"}
+            />
+          )
         }
         rightContent={
-          <Link
-            aria-expanded={panelOpen}
-            aria-label={
-              panelOpen
-                ? "Close prompt panel"
-                : activePrompt
-                  ? `Open ${activePrompt.title}`
-                  : "Open prompt workspace"
-            }
-            className="inline-flex h-8 max-w-[min(18rem,45vw)] items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-accent"
-            href={activePrompt ? `/prompts/${activePrompt.id}` : "/prompts"}
-            onClick={(event) => {
-              if (!window.matchMedia("(min-width: 768px)").matches) return;
-              event.preventDefault();
-              setPanelOpen((open) => !open);
-            }}
-          >
-            <FileText aria-hidden="true" className="size-3.5 shrink-0" />
-            <span className="truncate">{activePrompt?.title ?? "Prompt"}</span>
-            <PanelRightOpen
-              aria-hidden="true"
-              className="size-3.5 shrink-0 text-muted-foreground"
-            />
-          </Link>
+          <div className="flex items-center gap-2">
+            <div
+              aria-label="Workspace mode"
+              className="flex h-8 items-stretch rounded-md border"
+              role="group"
+            >
+              <button
+                aria-pressed={workspaceMode === "agent"}
+                className={`inline-flex items-center gap-1.5 rounded-none px-2 text-xs font-medium first:rounded-l-[calc(var(--radius-md)-1px)] last:rounded-r-[calc(var(--radius-md)-1px)] ${workspaceMode === "agent" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                onClick={() => switchWorkspaceMode("agent")}
+                type="button"
+              >
+                <Bot aria-hidden="true" className="size-3.5" /> Agent
+              </button>
+              <button
+                aria-pressed={workspaceMode === "target"}
+                className={`inline-flex items-center gap-1.5 rounded-none px-2 text-xs font-medium first:rounded-l-[calc(var(--radius-md)-1px)] last:rounded-r-[calc(var(--radius-md)-1px)] ${workspaceMode === "target" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                onClick={() => switchWorkspaceMode("target")}
+                type="button"
+              >
+                <FlaskConical aria-hidden="true" className="size-3.5" /> Target
+              </button>
+            </div>
+            <Link
+              aria-expanded={panelOpen}
+              aria-label={
+                panelOpen
+                  ? "Close prompt panel"
+                  : activePrompt
+                    ? `Open ${activePrompt.title}`
+                    : "Open prompt workspace"
+              }
+              className={`${workspaceMode === "target" ? "hidden sm:inline-flex" : "inline-flex"} h-8 max-w-[min(18rem,45vw)] items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-accent`}
+              href={activePrompt ? `/prompts/${activePrompt.id}` : "/prompts"}
+              onClick={(event) => {
+                if (!window.matchMedia("(min-width: 768px)").matches) return;
+                event.preventDefault();
+                setPanelOpen((open) => !open);
+              }}
+            >
+              <FileText aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="truncate">{activePrompt?.title ?? "Prompt"}</span>
+              <PanelRightOpen
+                aria-hidden="true"
+                className="size-3.5 shrink-0 text-muted-foreground"
+              />
+            </Link>
+          </div>
         }
-        title={conversation?.chat.title ?? "New chat"}
+        title={
+          workspaceMode === "target" ? "Target Test" : (conversation?.chat.title ?? "New chat")
+        }
       />
       {loading ? (
         <div className="grid flex-1 place-items-center">
@@ -332,71 +401,92 @@ export function Chat({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <section
-            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-            aria-label="Agent conversation"
-          >
-            <ConversationView containerRef={containerRef} onScroll={onScroll}>
-              {messages.length === 0 ? (
-                <EmptyState onSelect={setInstruction} />
-              ) : (
-                messages.map((message, index) => {
-                  const modelId =
-                    typeof message.metadata.modelId === "string"
-                      ? message.metadata.modelId
-                      : conversation?.chat.modelId;
-                  const rerunSource = rerunSources.get(message.id);
-                  return (
-                    <AssistantMessage
-                      continuedByUser={
-                        message.role === "user" && messages[index + 1]?.role === "user"
-                      }
-                      disabled={running}
-                      key={message.id}
-                      message={message}
-                      modelId={modelId}
-                      onEdit={message.role === "user" ? editUserMessage : undefined}
-                      onPromptReference={openPromptReference}
-                      onRerun={rerunSource ? () => rerunFromUserMessage(rerunSource) : undefined}
-                    />
-                  );
-                })
-              )}
-              {error ? (
-                <div
-                  className="mb-2 flex w-fit max-w-xl items-center gap-1.5 text-xs text-destructive"
-                  role="alert"
-                >
-                  <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
-                  {error}
-                </div>
-              ) : null}
-            </ConversationView>
-            <ChatComposer
+          {workspaceMode === "target" ? (
+            <TargetWorkspace
               activePrompt={activePrompt}
-              attachments={attachments}
-              enabledTools={enabledTools}
-              instruction={instruction}
+              initialRunId={initialTargetRunId}
               models={models}
-              onAttachmentsChange={setAttachments}
-              onInstructionChange={setInstruction}
               onModelChange={setSelectedModelId}
               onOpenPrompt={() => setPanelOpen(true)}
-              onPromptChange={(prompt) => (prompt ? activatePrompt(prompt, false) : detachPrompt())}
-              onQuoteRemove={(quote) =>
-                setQuotes((current) => current.filter((candidate) => candidate !== quote))
-              }
+              onPromptResolved={handleTargetPromptResolved}
+              onQuoteInAgent={({ promptId, runId, title }) => {
+                setActivePromptId(promptId);
+                addQuote({ runId, title });
+                switchWorkspaceMode("agent");
+              }}
               onReasoningEffortChange={setReasoningEffort}
-              onStop={stop}
-              onSubmit={() => void submit()}
-              onToolsChange={setEnabledTools}
-              prompts={prompts}
-              quotes={quotes}
               reasoningEffort={reasoningEffort}
-              running={running}
               selectedModelId={selectedModelId}
             />
-          </section>
+          ) : (
+            <section
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+              aria-label="Agent conversation"
+            >
+              <ConversationView containerRef={containerRef} onScroll={onScroll}>
+                {messages.length === 0 ? (
+                  <EmptyState onSelect={setInstruction} />
+                ) : (
+                  messages.map((message, index) => {
+                    const modelId =
+                      typeof message.metadata.modelId === "string"
+                        ? message.metadata.modelId
+                        : conversation?.chat.modelId;
+                    const rerunSource = rerunSources.get(message.id);
+                    return (
+                      <AssistantMessage
+                        continuedByUser={
+                          message.role === "user" && messages[index + 1]?.role === "user"
+                        }
+                        disabled={running}
+                        key={message.id}
+                        message={message}
+                        modelId={modelId}
+                        onEdit={message.role === "user" ? editUserMessage : undefined}
+                        onPromptReference={openPromptReference}
+                        onRerun={rerunSource ? () => rerunFromUserMessage(rerunSource) : undefined}
+                      />
+                    );
+                  })
+                )}
+                {error ? (
+                  <div
+                    className="mb-2 flex w-fit max-w-xl items-center gap-1.5 text-xs text-destructive"
+                    role="alert"
+                  >
+                    <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
+                    {error}
+                  </div>
+                ) : null}
+              </ConversationView>
+              <ChatComposer
+                activePrompt={activePrompt}
+                attachments={attachments}
+                enabledTools={enabledTools}
+                instruction={instruction}
+                models={models}
+                onAttachmentsChange={setAttachments}
+                onInstructionChange={setInstruction}
+                onModelChange={setSelectedModelId}
+                onOpenPrompt={() => setPanelOpen(true)}
+                onPromptChange={(prompt) =>
+                  prompt ? activatePrompt(prompt, false) : detachPrompt()
+                }
+                onQuoteRemove={(quote) =>
+                  setQuotes((current) => current.filter((candidate) => candidate !== quote))
+                }
+                onReasoningEffortChange={setReasoningEffort}
+                onStop={stop}
+                onSubmit={() => void submit()}
+                onToolsChange={setEnabledTools}
+                prompts={prompts}
+                quotes={quotes}
+                reasoningEffort={reasoningEffort}
+                running={running}
+                selectedModelId={selectedModelId}
+              />
+            </section>
+          )}
           <PromptContextPanel
             activePrompt={activePrompt}
             highlightedQuote={highlightedQuote}
@@ -457,7 +547,7 @@ function useChatRun({
         setLiveMessage(undefined);
       } else if (ownedRunIdRef.current !== id) {
         setDetached(true);
-        setLiveMessage(replayLiveMessage(id, data.conversation.chat.modelId, data.events));
+        setLiveMessage(replayAssistantMessage(id, data.conversation.chat.modelId, data.events));
       }
       const revision = findLatestPromptRevision(data.conversation.messages);
       if (revision) onPromptRevision(revision);
@@ -497,7 +587,9 @@ function useChatRun({
     const requestInstruction =
       draftInstruction.trim() ||
       (requestQuotes.length
-        ? "Please review the quoted prompt passage."
+        ? requestQuotes.some(isTargetRunQuote)
+          ? "Please review the quoted Target Run."
+          : "Please review the quoted prompt passage."
         : "Please review the attached files.");
     const runChatId = chatId ?? crypto.randomUUID();
     const optimisticUser: ChatMessage = {
@@ -507,7 +599,11 @@ function useChatRun({
       metadata: {},
       parts: [
         ...requestAttachments.map((attachment) => ({ ...attachment, type: "file" as const })),
-        ...requestQuotes.map((quote) => ({ ...quote, type: "prompt-quote" as const })),
+        ...requestQuotes.map((quote) =>
+          isTargetRunQuote(quote)
+            ? { ...quote, type: "target-run-quote" as const }
+            : { ...quote, type: "prompt-quote" as const },
+        ),
         { type: "text", text: requestInstruction },
       ],
       role: "user",
@@ -543,7 +639,7 @@ function useChatRun({
     setError(undefined);
     setRunning(true);
     setDetached(false);
-    setLiveMessage(createLiveMessage(runChatId, selectedModelId));
+    setLiveMessage(createAssistantMessage(runChatId, selectedModelId));
     ownedRunIdRef.current = runChatId;
 
     try {
@@ -662,7 +758,10 @@ function useChatRun({
     }
     if (event.type === "prompt-revision") onPromptRevision(event);
     setLiveMessage((current) =>
-      addLiveEvent(current ?? createLiveMessage(chatId ?? "pending", selectedModelId), event),
+      applyAssistantEvent(
+        current ?? createAssistantMessage(chatId ?? "pending", selectedModelId),
+        event,
+      ),
     );
   }
 
@@ -736,9 +835,17 @@ function createReplacementSubmission(
   const attachments = message.parts
     .filter((part) => part.type === "file")
     .map(({ dataUrl, mediaType, name, size }) => ({ dataUrl, mediaType, name, size }));
-  const quotes = message.parts
-    .filter((part) => part.type === "prompt-quote")
-    .map(({ promptId, revisionId, text, title }) => ({ promptId, revisionId, text, title }));
+  const quotes = message.parts.flatMap((part): ChatQuote[] => {
+    if (part.type === "prompt-quote") {
+      const { promptId, revisionId, text, title } = part;
+      return [{ promptId, revisionId, text, title }];
+    }
+    if (part.type === "target-run-quote") {
+      const { runId, title } = part;
+      return [{ runId, title }];
+    }
+    return [];
+  });
   const instruction =
     editedText ??
     message.parts
@@ -753,17 +860,6 @@ function createReplacementSubmission(
   };
 }
 
-function createLiveMessage(chatId: string, modelId?: string): ChatMessage {
-  return {
-    chatId,
-    createdAt: new Date().toISOString(),
-    id: "live-assistant",
-    metadata: modelId ? { modelId } : {},
-    parts: [],
-    role: "assistant",
-  };
-}
-
 function findLatestPromptRevision(messages: ChatMessage[]): PromptRevisionReference | undefined {
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
     const message = messages[messageIndex];
@@ -773,84 +869,6 @@ function findLatestPromptRevision(messages: ChatMessage[]): PromptRevisionRefere
     }
   }
   return undefined;
-}
-
-function addLiveEvent(
-  message: ChatMessage,
-  event: Exclude<RunEvent, { type: "chat-metadata" | "error" | "finish" | "stopped" }>,
-): ChatMessage {
-  if (event.type === "text-delta") {
-    const parts = [...message.parts];
-    const last = parts.at(-1);
-    if (last?.type === "text")
-      parts[parts.length - 1] = { type: "text", text: last.text + event.delta };
-    else parts.push({ type: "text", text: event.delta });
-    return { ...message, parts };
-  }
-  if (event.type === "response-reset") {
-    return {
-      ...message,
-      parts: message.parts.filter((part) => part.type !== "reasoning" && part.type !== "text"),
-    };
-  }
-  if (event.type === "reasoning-start") {
-    if (message.parts.some((part) => part.type === "reasoning" && part.streaming)) return message;
-    return {
-      ...message,
-      parts: [...message.parts, { streaming: true, summary: "", type: "reasoning" }],
-    };
-  }
-  if (event.type === "reasoning-delta") {
-    const parts = [...message.parts];
-    const streamingIndex = parts.findLastIndex(
-      (part) => part.type === "reasoning" && part.streaming,
-    );
-    if (streamingIndex >= 0) {
-      const existing = parts[streamingIndex];
-      if (existing.type === "reasoning") {
-        parts[streamingIndex] = { ...existing, summary: existing.summary + event.delta };
-      }
-    } else {
-      parts.push({ streaming: true, summary: event.delta, type: "reasoning" });
-    }
-    return { ...message, parts };
-  }
-  if (event.type === "reasoning") {
-    const parts = [...message.parts];
-    const streamingIndex = parts.findLastIndex(
-      (part) => part.type === "reasoning" && part.streaming,
-    );
-    if (streamingIndex >= 0) parts[streamingIndex] = event;
-    else parts.push(event);
-    return { ...message, parts };
-  }
-  if (event.type === "tool") {
-    const existingIndex = message.parts.findIndex(
-      (part) => part.type === "tool" && part.callId === event.callId,
-    );
-    const parts = [...message.parts];
-    if (existingIndex >= 0) parts[existingIndex] = { ...parts[existingIndex], ...event };
-    else parts.push(event);
-    return { ...message, parts };
-  }
-  return { ...message, parts: [...message.parts, event] };
-}
-
-function replayLiveMessage(chatId: string, modelId: string, events: RunEvent[]): ChatMessage {
-  return events.reduce(
-    (message, event) => {
-      if (
-        event.type === "chat-metadata" ||
-        event.type === "error" ||
-        event.type === "finish" ||
-        event.type === "stopped"
-      ) {
-        return message;
-      }
-      return addLiveEvent(message, event);
-    },
-    createLiveMessage(chatId, modelId),
-  );
 }
 
 async function consumeRunStream(
@@ -884,7 +902,7 @@ function readWorkspaceDraft(key: string): WorkspaceDraft | undefined {
     const tools = Array.isArray(value.enabledTools)
       ? value.enabledTools.filter(isChatToolId)
       : DEFAULT_TOOLS;
-    const quotes = Array.isArray(value.quotes) ? value.quotes.filter(isPromptQuote) : [];
+    const quotes = Array.isArray(value.quotes) ? value.quotes.filter(isChatQuote) : [];
     return {
       activePromptId: typeof value.activePromptId === "string" ? value.activePromptId : null,
       enabledTools: tools,
@@ -915,5 +933,26 @@ function isPromptQuote(value: unknown): value is PromptQuote {
     typeof quote.revisionId === "string" &&
     typeof quote.text === "string" &&
     typeof quote.title === "string"
+  );
+}
+
+function isTargetRunQuote(value: unknown): value is TargetRunQuote {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const quote = value as Partial<TargetRunQuote>;
+  return typeof quote.runId === "string" && typeof quote.title === "string";
+}
+
+function isChatQuote(value: unknown): value is ChatQuote {
+  return isPromptQuote(value) || isTargetRunQuote(value);
+}
+
+function sameQuote(left: ChatQuote, right: ChatQuote): boolean {
+  if (isTargetRunQuote(left) || isTargetRunQuote(right)) {
+    return isTargetRunQuote(left) && isTargetRunQuote(right) && left.runId === right.runId;
+  }
+  return (
+    left.promptId === right.promptId &&
+    left.revisionId === right.revisionId &&
+    left.text === right.text
   );
 }

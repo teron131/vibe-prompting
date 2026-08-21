@@ -19,6 +19,7 @@ import type {
   PromptSummary,
 } from "@/contracts/prompts";
 import { createApiRequester, createErrorReader } from "@/shared/api";
+import { formatDateTime } from "@/shared/date";
 
 const promptApi = createApiRequester({ cache: "no-store" }, "Prompt request failed.");
 const readError = createErrorReader("Prompt request failed.");
@@ -265,10 +266,7 @@ function PromptRow({
   prompt: PromptSummary & { passages?: PromptSearchPassage[] };
   query: string;
 }) {
-  const updated = new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(prompt.updatedAt));
+  const updated = formatDateTime(prompt.updatedAt);
   const passages = prompt.passages ?? [];
   return (
     <div className={cn("relative overflow-hidden rounded-lg", active && "bg-accent")}>

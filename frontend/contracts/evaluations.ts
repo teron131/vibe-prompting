@@ -29,6 +29,8 @@ export type EvaluationRunSummary = {
   targetProfileId: string | null;
   targetProfileName: string | null;
   targetProfileRevisionId: string | null;
+  targetRunId: string | null;
+  targetRunTurnId: string | null;
   targetModelId: string;
 };
 

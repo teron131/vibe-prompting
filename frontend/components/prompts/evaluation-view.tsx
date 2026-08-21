@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-import { RevisionTrend } from "@/components/evaluations/revision-trend";
+import { RevisionTrend } from "@/components/evaluations/shared/revision-trend";
 import { buildPromptCriterionOutcomes } from "@/components/prompts/evaluation-model";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";

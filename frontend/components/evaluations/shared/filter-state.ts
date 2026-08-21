@@ -1,4 +1,4 @@
-/** Owns evaluation workspace filter parsing and URL serialization for results and analytics screens. */
+/** Owns shared evaluation filter parsing and URL serialization for results and analytics. */
 
 import type {
   EvaluationDataType,

@@ -1,4 +1,4 @@
-/** Turns durable, judge-attributed scores into compatible comparison fields without inventing one aggregate score. */
+/** Turns durable result scores into compatible comparison fields without inventing one aggregate score. */
 
 import { cn } from "@/components/ui/utils";
 import type { Criterion, EvaluationRun, EvaluationScore } from "@/contracts/evaluations";

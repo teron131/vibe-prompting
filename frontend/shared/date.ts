@@ -2,6 +2,7 @@
 
 const localDateTime = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
+  hourCycle: "h23",
   timeStyle: "short",
 });
 

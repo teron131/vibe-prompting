@@ -12,6 +12,7 @@ import {
   FlaskConical,
   GitCompareArrows,
   LoaderCircle,
+  MessageCircleMore,
   Pencil,
   Quote,
   Redo2,
@@ -47,6 +48,7 @@ import type {
   PromptSearchResult,
   PromptSummary,
 } from "@/contracts/prompts";
+import type { TargetRunsResponse, TargetRunSummary } from "@/contracts/target-runs";
 import { createErrorReader, requestJson } from "@/shared/api";
 
 const DEFAULT_PANEL_WIDTH = 384;
@@ -103,6 +105,8 @@ export function PromptContextPanel({
   const [activating, setActivating] = useState(false);
   const [latestRun, setLatestRun] = useState<EvaluationRunSummary>();
   const [runState, setRunState] = useState<"error" | "idle" | "loading">("idle");
+  const [latestTargetRun, setLatestTargetRun] = useState<TargetRunSummary>();
+  const [targetRunState, setTargetRunState] = useState<"error" | "idle" | "loading">("idle");
   const [historicalRevision, setHistoricalRevision] = useState<PromptRevision>();
   const [historicalState, setHistoricalState] = useState<"error" | "idle" | "loading">("idle");
   const [dismissedHistoryKey, setDismissedHistoryKey] = useState<string>();
@@ -272,6 +276,31 @@ export function PromptContextPanel({
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setRunState("error");
+      });
+    return () => controller.abort();
+  }, [activePromptId]);
+
+  useEffect(() => {
+    if (!activePromptId) {
+      setLatestTargetRun(undefined);
+      setTargetRunState("idle");
+      return;
+    }
+    const controller = new AbortController();
+    setLatestTargetRun(undefined);
+    setTargetRunState("loading");
+    void requestJson<TargetRunsResponse>(
+      `/api/target-runs?promptId=${encodeURIComponent(activePromptId)}`,
+      { cache: "no-store", signal: controller.signal },
+      "Target Run request failed.",
+    )
+      .then(({ runs }) => {
+        setLatestTargetRun(runs[0]);
+        setTargetRunState("idle");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setTargetRunState("error");
       });
     return () => controller.abort();
   }, [activePromptId]);
@@ -922,6 +951,30 @@ export function PromptContextPanel({
           </div>
 
           <footer className="shrink-0 border-t p-3">
+            <div className="mb-1 flex min-h-7 items-center gap-2 px-1 text-xs">
+              <MessageCircleMore
+                aria-hidden="true"
+                className="size-4 shrink-0 text-muted-foreground"
+              />
+              {targetRunState === "loading" ? (
+                <span className="flex items-center gap-2 text-muted-foreground">
+                  <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+                  Checking Target Runs…
+                </span>
+              ) : targetRunState === "error" ? (
+                <span className="text-muted-foreground">Target Runs unavailable</span>
+              ) : latestTargetRun ? (
+                <Link
+                  className="min-w-0 truncate font-medium text-muted-foreground hover:text-foreground"
+                  href={`/target-runs/${latestTargetRun.id}`}
+                >
+                  <span className="capitalize text-foreground">{latestTargetRun.latestStatus}</span>
+                  {` · ${latestTargetRun.turnCount} ${latestTargetRun.turnCount === 1 ? "turn" : "turns"} · v${latestTargetRun.promptRevisionNumber}`}
+                </Link>
+              ) : (
+                <span className="text-muted-foreground">No Target Runs yet</span>
+              )}
+            </div>
             <div className="mb-2 flex min-h-8 items-center gap-2 px-1 text-xs">
               <FlaskConical aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
               {runState === "loading" ? (
@@ -956,6 +1009,13 @@ export function PromptContextPanel({
               </Link>
               <Link
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                href={`/?mode=target&prompt=${activePrompt.id}`}
+              >
+                <MessageCircleMore aria-hidden="true" className="size-4" />
+                Target Test
+              </Link>
+              <Link
+                className="col-span-2 inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 href={`/evaluations?prompt=${activePrompt.id}`}
               >
                 <FlaskConical aria-hidden="true" className="size-4" />

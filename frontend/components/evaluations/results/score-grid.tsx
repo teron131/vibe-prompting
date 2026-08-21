@@ -1,4 +1,4 @@
-/** Presents one case as a ruled judge matrix followed by directly attributable rationale and evidence. */
+/** Presents one result case as a ruled judge matrix with attributable rationale and evidence. */
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
 import { cn } from "@/components/ui/utils";

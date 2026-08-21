@@ -6,7 +6,7 @@ import { ArrowDown, ArrowUp, Copy, LoaderCircle, Plus, Save, Trash2 } from "luci
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { CriterionTypeIcon } from "@/components/evaluations/criterion-type-icon";
+import { CriterionTypeIcon } from "@/components/evaluations/shared/criterion-type-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";

@@ -5,8 +5,18 @@ import { Chat } from "@/components/chat/chat";
 export default async function ChatPage({
   searchParams,
 }: {
-  searchParams: Promise<{ prompt?: string | string[] }>;
+  searchParams: Promise<{
+    mode?: string | string[];
+    prompt?: string | string[];
+    targetRun?: string | string[];
+  }>;
 }) {
-  const { prompt } = await searchParams;
-  return <Chat initialPromptId={typeof prompt === "string" ? prompt : undefined} />;
+  const { mode, prompt, targetRun } = await searchParams;
+  return (
+    <Chat
+      initialMode={mode === "target" ? "target" : "agent"}
+      initialPromptId={typeof prompt === "string" ? prompt : undefined}
+      initialTargetRunId={typeof targetRun === "string" ? targetRun : undefined}
+    />
+  );
 }

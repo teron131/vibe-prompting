@@ -29,8 +29,8 @@ import type { PromptDetail } from "@/contracts/prompts";
 import { createApiRequester, createErrorReader } from "@/shared/api";
 import { formatDateTime } from "@/shared/date";
 
+import { RevisionTrend } from "../shared/revision-trend";
 import { EvaluationMarkdownValue } from "./markdown-value";
-import { RevisionTrend } from "./revision-trend";
 import { ScoreGrid } from "./score-grid";
 import { RunScoreOverview } from "./score-visualization";
 
@@ -196,6 +196,16 @@ export function EvaluationReport({ runId }: { runId: string }) {
               {run.targetProfileRevisionId ? ` · ${run.targetProfileRevisionId}` : ""}
             </span>
           </ProvenanceDatum>
+          {run.targetRunId ? (
+            <ProvenanceDatum label="Recorded trace">
+              <Link
+                className="font-mono font-medium hover:underline"
+                href={`/target-runs/${run.targetRunId}`}
+              >
+                Target Run {run.targetRunId.slice(0, 8)} · no target replay
+              </Link>
+            </ProvenanceDatum>
+          ) : null}
           <ProvenanceDatum label="Judges">
             {run.judgeModelIds.length ? (
               <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
@@ -227,6 +237,11 @@ export function EvaluationReport({ runId }: { runId: string }) {
               value={run.effectiveInstructionsHash ?? "Not recorded"}
             />
             <ExactDatum label="Target profile ID" value={run.targetProfileId ?? "Legacy runtime"} />
+            <ExactDatum label="Target Run ID" value={run.targetRunId ?? "Live target execution"} />
+            <ExactDatum
+              label="Target Run turn ID"
+              value={run.targetRunTurnId ?? "Live target execution"}
+            />
             <ExactDatum
               label="Target configuration"
               value={

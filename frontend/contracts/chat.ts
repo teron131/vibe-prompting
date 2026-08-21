@@ -11,6 +11,8 @@ export type PromptQuote = {
   text: string;
   title: string;
 };
+export type TargetRunQuote = { runId: string; title: string };
+export type ChatQuote = PromptQuote | TargetRunQuote;
 export type ChatWorkspaceContext = {
   activePromptId: string | null;
   enabledTools: ChatToolId[];
@@ -24,7 +26,7 @@ export type ChatRequest = {
   instruction: string;
   messageId: string;
   modelId: string;
-  quotes: PromptQuote[];
+  quotes: ChatQuote[];
   replaceFromMessageId?: string;
   workspace: ChatWorkspaceContext;
 };
@@ -44,6 +46,7 @@ export type MessagePart =
     }
   | { promptId: string; revisionId: string; type: "prompt-revision" }
   | (PromptQuote & { type: "prompt-quote" })
+  | (TargetRunQuote & { type: "target-run-quote" })
   | { report: unknown; runId?: string; type: "evaluation" };
 
 export type ChatMessage = {

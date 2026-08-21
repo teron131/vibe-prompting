@@ -43,7 +43,7 @@ export function Tool({ nested = false, part }: { nested?: boolean; part: ToolPar
         />
         <ToolState state={part.state} />
       </summary>
-      <div className="ml-2 min-w-0 max-w-full border-l border-border/70 pb-1 pl-3 pr-2 text-popover-foreground">
+      <div className="ml-2 min-w-0 max-w-full border-l border-border/70 pl-3 pr-2 text-popover-foreground">
         {part.input !== undefined && part.input !== null ? (
           <ToolSection label="Input" value={part.input} />
         ) : null}
@@ -84,8 +84,8 @@ function ToolState({ state }: { state: ToolPart["state"] }) {
 
 function ToolSection({ label, value }: { label: string; value: unknown }) {
   return (
-    <section className="border-t border-zinc-200/80 py-3 first:border-t-0 dark:border-zinc-800/80">
-      <h4 className="mb-2 text-xs font-medium text-zinc-700 dark:text-zinc-300">{label}</h4>
+    <section className="border-t border-zinc-200/80 py-2 first:border-t-0 first:pt-1.5 last:pb-1.5 dark:border-zinc-800/80">
+      <h4 className="mb-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300">{label}</h4>
       <div className="max-h-72 min-w-0 max-w-full overflow-x-hidden overflow-y-auto text-zinc-600 dark:text-zinc-400">
         <StructuredValue value={normalizeValue(value)} />
       </div>

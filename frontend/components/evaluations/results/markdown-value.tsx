@@ -1,4 +1,4 @@
-/** Gives persisted evaluation input and output values one consistent source and rendered Markdown view. */
+/** Gives persisted result values one consistent source and rendered Markdown view. */
 
 "use client";
 

@@ -1,4 +1,4 @@
-/** Keeps criterion-type symbols consistent across evaluation setup and review surfaces. */
+/** Keeps criterion-type symbols consistent across evaluation workflows. */
 
 import { Hash, PencilLine, Tags, ToggleLeft, Type } from "lucide-react";
 

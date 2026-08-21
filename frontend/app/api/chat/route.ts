@@ -8,7 +8,6 @@ import {
   getApplicationServices,
   isConfiguredModelId,
   PromptRevisionNotFoundError,
-  type PromptSystem,
   type StoredMessagePart,
   type StoredPrompt,
   streamChatRun,
@@ -16,16 +15,17 @@ import {
 
 import type {
   Attachment,
+  ChatQuote,
   ChatReasoningEffort,
   ChatRequest,
   ChatResponse,
   ChatToolId,
   ChatWorkspaceContext,
   DeleteChatResponse,
-  PromptQuote,
   RunEvent,
   SteerChatResponse,
   StopChatResponse,
+  TargetRunQuote,
 } from "@/contracts/chat";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +33,9 @@ export const runtime = "nodejs";
 
 const NO_STORE_HEADERS = { "cache-control": "no-store" };
 const METADATA_EVERY_MESSAGES = 3;
+type ApplicationServices = Awaited<ReturnType<typeof getApplicationServices>>;
+type StoredQuote = Extract<StoredMessagePart, { type: "prompt-quote" | "target-run-quote" }>;
+type ResolvedQuote = { context: string; part: StoredQuote };
 
 export async function GET(request: Request) {
   try {
@@ -62,7 +65,7 @@ export async function POST(request: Request) {
       input.workspace.activePromptId
         ? services.prompts.getPrompt(input.workspace.activePromptId)
         : undefined,
-      validatePromptQuotes(services.prompts, input.quotes),
+      resolveChatQuotes(services, input.quotes),
     ]);
 
     claim = services.runs.claim(input.chatId);
@@ -79,7 +82,7 @@ export async function POST(request: Request) {
       ...attachment,
       type: "file" as const,
     }));
-    const storedQuotes = quotes.map((quote) => ({ ...quote, type: "prompt-quote" as const }));
+    const storedQuotes = quotes.map(({ part }) => part);
     if (input.replaceFromMessageId) {
       conversation = await services.conversations.replaceUserMessage({
         attachments,
@@ -145,8 +148,13 @@ export async function POST(request: Request) {
           enabledTools: input.workspace.enabledTools,
           evaluations: services.evaluations,
           evaluationResults: services.evaluationResults,
+          targetRuns: services.targetRuns,
           history,
-          instruction: formatWorkspaceInstruction(input.instruction, activePrompt, quotes),
+          instruction: formatWorkspaceInstruction(
+            input.instruction,
+            activePrompt,
+            quotes.map(({ context }) => context),
+          ),
           modelId: input.modelId,
           prompts: services.prompts,
           reasoningEffort: input.workspace.reasoningEffort,
@@ -301,7 +309,7 @@ function parseChatRequest(value: unknown): ChatRequest {
     instruction: requireText(record.instruction, "Message"),
     messageId: requireUuid(record.messageId, "Message ID"),
     modelId: requireText(record.modelId, "Model"),
-    quotes: requirePromptQuotes(record.quotes),
+    quotes: requireChatQuotes(record.quotes),
     replaceFromMessageId:
       record.replaceFromMessageId === undefined
         ? undefined
@@ -332,11 +340,16 @@ function projectRunHistory(
   return messages.flatMap((message) => {
     if (message.id === currentMessageId) return [];
     const text = message.parts
-      .filter((part) => part.type === "text" || part.type === "prompt-quote")
+      .filter(
+        (part) =>
+          part.type === "text" || part.type === "prompt-quote" || part.type === "target-run-quote",
+      )
       .map((part) =>
         part.type === "prompt-quote"
           ? `Quoted from ${part.title} revision ${part.revisionId.slice(0, 8)}:\n${part.text}`
-          : part.text,
+          : part.type === "target-run-quote"
+            ? `Quoted Target Run ${part.runId}: ${part.title}`
+            : part.text,
       )
       .join("\n");
     return text ? [{ role: message.role, text }] : [];
@@ -356,11 +369,17 @@ function requireWorkspaceContext(value: unknown): ChatWorkspaceContext {
   };
 }
 
-function requirePromptQuotes(value: unknown): PromptQuote[] {
+function requireChatQuotes(value: unknown): ChatQuote[] {
   if (!Array.isArray(value) || value.length > 6)
-    throw new RequestError("Prompt quotes must contain at most six passages.", 400);
+    throw new RequestError("Quotes must contain at most six references.", 400);
   return value.map((item) => {
     const record = readRecord(item);
+    if (record.runId !== undefined) {
+      return {
+        runId: requireUuid(record.runId, "Quoted Target Run ID"),
+        title: requireText(record.title, "Quoted Target Run title"),
+      } satisfies TargetRunQuote;
+    }
     const text = requireText(record.text, "Quoted prompt text");
     if (text.length > 4_000)
       throw new RequestError("Each prompt quote must be no longer than 4,000 characters.", 400);
@@ -373,14 +392,21 @@ function requirePromptQuotes(value: unknown): PromptQuote[] {
   });
 }
 
-async function validatePromptQuotes(
-  prompts: PromptSystem,
-  quotes: PromptQuote[],
-): Promise<PromptQuote[]> {
+async function resolveChatQuotes(
+  services: ApplicationServices,
+  quotes: ChatQuote[],
+): Promise<ResolvedQuote[]> {
   return Promise.all(
     quotes.map(async (quote) => {
-      const prompt = await prompts.getPrompt(quote.promptId);
-      const revision = await prompts
+      if (isTargetRunQuote(quote)) {
+        const run = await services.targetRuns.getRun(quote.runId);
+        return {
+          context: formatTargetRunContext(run),
+          part: { runId: run.id, title: run.promptTitle, type: "target-run-quote" },
+        };
+      }
+      const prompt = await services.prompts.getPrompt(quote.promptId);
+      const revision = await services.prompts
         .getRevision(quote.promptId, quote.revisionId)
         .catch((error) => {
           if (error instanceof PromptRevisionNotFoundError) {
@@ -390,7 +416,10 @@ async function validatePromptQuotes(
         });
       if (!revision.markdown.includes(quote.text))
         throw new RequestError("Quoted prompt text no longer matches its revision.", 400);
-      return { ...quote, title: prompt.title };
+      return {
+        context: `Quoted passage from ${prompt.title} (prompt ${quote.promptId}, revision ${quote.revisionId}):\n<prompt_quote>\n${quote.text}\n</prompt_quote>`,
+        part: { ...quote, title: prompt.title, type: "prompt-quote" },
+      };
     }),
   );
 }
@@ -398,7 +427,7 @@ async function validatePromptQuotes(
 function formatWorkspaceInstruction(
   instruction: string,
   activePrompt: StoredPrompt | undefined,
-  quotes: PromptQuote[],
+  quoteContexts: string[],
 ): string {
   const context: string[] = [];
   if (activePrompt) {
@@ -406,12 +435,50 @@ function formatWorkspaceInstruction(
       `Current prompt: ${activePrompt.title} (prompt ${activePrompt.id}, revision ${activePrompt.revisionId}).\n<prompt_markdown>\n${activePrompt.markdown}\n</prompt_markdown>`,
     );
   }
-  for (const quote of quotes) {
-    context.push(
-      `Quoted passage from ${quote.title} (prompt ${quote.promptId}, revision ${quote.revisionId}):\n<prompt_quote>\n${quote.text}\n</prompt_quote>`,
-    );
-  }
+  context.push(...quoteContexts);
   return context.length ? `${context.join("\n\n")}\n\nUser request:\n${instruction}` : instruction;
+}
+
+function isTargetRunQuote(quote: ChatQuote): quote is TargetRunQuote {
+  return "runId" in quote;
+}
+
+function formatTargetRunContext(
+  run: Awaited<ReturnType<ApplicationServices["targetRuns"]["getRun"]>>,
+): string {
+  const trace = {
+    createdAt: run.createdAt,
+    id: run.id,
+    prompt: {
+      id: run.promptId,
+      revisionId: run.promptRevisionId,
+      revisionNumber: run.promptRevisionNumber,
+      title: run.promptTitle,
+    },
+    runtime: {
+      effectiveInstructionsHash: run.effectiveInstructionsHash,
+      modelId: run.targetModelId,
+      profileId: run.targetProfileId,
+      profileName: run.targetProfileName,
+      profileRevisionId: run.targetProfileRevisionId,
+      reasoningEffort: run.reasoningEffort,
+    },
+    source: run.source,
+    turns: run.turns.map((turn) => ({
+      activity: turn.activity,
+      completedAt: turn.completedAt,
+      createdAt: turn.createdAt,
+      errorMessage: turn.errorMessage,
+      id: turn.id,
+      input: turn.input,
+      output: turn.output,
+      position: turn.position,
+      status: turn.status,
+      usage: turn.usage,
+    })),
+    updatedAt: run.updatedAt,
+  };
+  return `Quoted Target Run ${run.id}:\n<target_run_trace>\n${JSON.stringify(trace, null, 2)}\n</target_run_trace>`;
 }
 
 function requireAttachments(value: unknown): Attachment[] {

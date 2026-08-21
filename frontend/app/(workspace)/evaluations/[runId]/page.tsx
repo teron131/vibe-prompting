@@ -1,6 +1,6 @@
 /** Presents one durable prompt-bound evaluation report inside the shared evaluation workspace. */
 
-import { EvaluationReport } from "@/components/evaluations/report";
+import { EvaluationReport } from "@/components/evaluations/results/report";
 
 export default async function EvaluationReportPage({
   params,

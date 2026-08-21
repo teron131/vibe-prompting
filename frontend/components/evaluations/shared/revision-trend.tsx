@@ -1,4 +1,4 @@
-/** Draws fingerprint-compatible Boolean criterion trends as compact ruled comparison rows. */
+/** Draws compatible Boolean criterion trends for reports and prompt evaluation views. */
 
 import Link from "next/link";
 

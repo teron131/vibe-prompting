@@ -9,6 +9,7 @@ import {
   Check,
   ChevronDown,
   FileText,
+  FlaskConical,
   Paperclip,
   Square,
   Wrench,
@@ -22,10 +23,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import type {
   Attachment,
+  ChatQuote,
   ChatReasoningEffort,
   ChatToolId,
   ConfiguredModel,
-  PromptQuote,
+  TargetRunQuote,
 } from "@/contracts/chat";
 import type { PromptSummary } from "@/contracts/prompts";
 import { useDismissibleDetails } from "@/hooks/use-dismissible-details";
@@ -78,6 +80,8 @@ export function ChatComposer({
   reasoningEffort,
   running,
   selectedModelId,
+  targetModelLocked = false,
+  variant = "agent",
 }: {
   activePrompt?: PromptSummary;
   attachments: Attachment[];
@@ -89,25 +93,29 @@ export function ChatComposer({
   onModelChange(value: string): void;
   onOpenPrompt(): void;
   onPromptChange(prompt: PromptSummary | undefined): void;
-  onQuoteRemove(quote: PromptQuote): void;
+  onQuoteRemove(quote: ChatQuote): void;
   onReasoningEffortChange(value: ChatReasoningEffort): void;
   onStop(): void;
   onSubmit(): void;
   onToolsChange(value: ChatToolId[]): void;
   prompts: PromptSummary[];
-  quotes: PromptQuote[];
+  quotes: ChatQuote[];
   reasoningEffort: ChatReasoningEffort;
   running: boolean;
   selectedModelId: string;
+  targetModelLocked?: boolean;
+  variant?: "agent" | "target";
 }) {
   const composerRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
-  const mentionQuery = instruction.match(/(?:^|\s)@([^@\n]*)$/)?.[1] ?? null;
+  const mentionQuery =
+    variant === "agent" ? (instruction.match(/(?:^|\s)@([^@\n]*)$/)?.[1] ?? null) : null;
   const canSubmit = Boolean(
-    (instruction.trim() || attachments.length || quotes.length) && selectedModelId,
+    (instruction.trim() || (variant === "agent" && (attachments.length || quotes.length))) &&
+    selectedModelId,
   );
   const canSteer = Boolean(instruction.trim());
 
@@ -130,7 +138,12 @@ export function ChatComposer({
     error: mentionSearchError,
     loading: mentionSearchLoading,
     results: matchingPrompts,
-  } = usePromptSearch({ enabled: mentionOpen, limit: 6, prompts, query: mentionQuery });
+  } = usePromptSearch({
+    enabled: variant === "agent" && mentionOpen,
+    limit: 6,
+    prompts,
+    query: mentionQuery,
+  });
   const activeMentionPrompt = matchingPrompts[activeMentionIndex] ?? matchingPrompts[0];
   const effectiveMentionIndex = matchingPrompts[activeMentionIndex] ? activeMentionIndex : 0;
 
@@ -177,7 +190,7 @@ export function ChatComposer({
         className="relative rounded-3xl border border-border/70 bg-background p-3 shadow-lg transition-shadow focus-within:shadow-xl"
         onSubmit={(event) => {
           event.preventDefault();
-          if (running ? canSteer : canSubmit) onSubmit();
+          if (running ? variant === "agent" && canSteer : canSubmit) onSubmit();
         }}
         ref={composerRef}
       >
@@ -191,10 +204,10 @@ export function ChatComposer({
           ref={fileInputRef}
           type="file"
         />
-        {attachments.length ? (
+        {variant === "agent" && attachments.length ? (
           <AttachmentPreviews attachments={attachments} onChange={onAttachmentsChange} />
         ) : null}
-        {activePrompt || quotes.length ? (
+        {activePrompt || (variant === "agent" && quotes.length) ? (
           <div className="mb-2 flex flex-wrap gap-1.5 px-1">
             {activePrompt ? (
               <span className="inline-flex max-w-full items-center rounded-full bg-secondary text-xs font-medium">
@@ -209,32 +222,57 @@ export function ChatComposer({
                     {activePrompt.revisionId.slice(0, 8)}
                   </span>
                 </button>
-                <button
-                  aria-label={`Detach ${activePrompt.title} from this chat`}
-                  className="mr-0.5 grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-background/70 hover:text-foreground"
-                  onClick={() => onPromptChange(undefined)}
-                  type="button"
-                >
-                  <X aria-hidden="true" className="size-3" />
-                </button>
+                {variant === "agent" ? (
+                  <button
+                    aria-label={`Detach ${activePrompt.title} from this chat`}
+                    className="mr-0.5 grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                    onClick={() => onPromptChange(undefined)}
+                    type="button"
+                  >
+                    <X aria-hidden="true" className="size-3" />
+                  </button>
+                ) : null}
               </span>
             ) : null}
-            {quotes.map((quote) => (
-              <span
-                className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
-                key={`${quote.promptId}-${quote.revisionId}-${quote.text}`}
-              >
-                <span className="truncate">Quoted from {quote.title}</span>
-                <button
-                  aria-label={`Remove quote from ${quote.title}`}
-                  className="grid size-4 shrink-0 place-items-center rounded-full hover:bg-accent"
-                  onClick={() => onQuoteRemove(quote)}
-                  type="button"
-                >
-                  <X aria-hidden="true" className="size-3" />
-                </button>
-              </span>
-            ))}
+            {variant === "agent"
+              ? quotes.map((quote) =>
+                  isTargetRunQuote(quote) ? (
+                    <span
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
+                      key={quote.runId}
+                    >
+                      <FlaskConical aria-hidden="true" className="size-3.5 shrink-0" />
+                      <span>Target Run</span>
+                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                        {quote.runId.slice(0, 8)}
+                      </span>
+                      <button
+                        aria-label={`Remove Target Run ${quote.runId}`}
+                        className="grid size-4 shrink-0 place-items-center rounded-full hover:bg-accent"
+                        onClick={() => onQuoteRemove(quote)}
+                        type="button"
+                      >
+                        <X aria-hidden="true" className="size-3" />
+                      </button>
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
+                      key={`${quote.promptId}-${quote.revisionId}-${quote.text}`}
+                    >
+                      <span className="truncate">Quoted from {quote.title}</span>
+                      <button
+                        aria-label={`Remove quote from ${quote.title}`}
+                        className="grid size-4 shrink-0 place-items-center rounded-full hover:bg-accent"
+                        onClick={() => onQuoteRemove(quote)}
+                        type="button"
+                      >
+                        <X aria-hidden="true" className="size-3" />
+                      </button>
+                    </span>
+                  ),
+                )
+              : null}
           </div>
         ) : null}
         <textarea
@@ -247,8 +285,9 @@ export function ChatComposer({
           aria-controls={mentionOpen ? "prompt-mention-listbox" : undefined}
           aria-expanded={mentionOpen}
           aria-haspopup="listbox"
-          aria-label="Message"
+          aria-label={variant === "target" ? "Target Test message" : "Message"}
           className="block min-h-11 w-full resize-none overflow-y-auto bg-transparent px-2 py-2 text-base leading-7 outline-none placeholder:text-muted-foreground"
+          disabled={variant === "target" && running}
           onChange={(event) => {
             onInstructionChange(event.target.value);
             if (mentionOpen && mentionQuery === null) setMentionOpen(false);
@@ -296,8 +335,12 @@ export function ChatComposer({
           }}
           placeholder={
             running
-              ? "Add guidance while the agent works…"
-              : "Ask anything, or use @ to reference a prompt…"
+              ? variant === "target"
+                ? "Wait for this Target turn to finish…"
+                : "Add guidance while the agent works…"
+              : variant === "target"
+                ? "Test this target…"
+                : "Ask anything, or use @ to reference a prompt…"
           }
           ref={textareaRef}
           role="combobox"
@@ -306,45 +349,53 @@ export function ChatComposer({
         />
         <div className="mt-1 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1">
-            <button
-              aria-label="Attach files"
-              className="grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-              disabled={running}
-              onClick={() => fileInputRef.current?.click()}
-              type="button"
-            >
-              <Paperclip aria-hidden="true" className="size-4" />
-            </button>
-            <button
-              aria-controls={mentionOpen ? "prompt-mention-listbox" : undefined}
-              aria-expanded={mentionOpen}
-              aria-label="Search prompts"
-              className={cn(
-                "grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground",
-                mentionOpen && "bg-accent text-foreground",
-              )}
-              disabled={running}
-              onClick={() => {
-                if (mentionOpen) closeMention();
-                else setMentionOpen(true);
-                window.requestAnimationFrame(() => textareaRef.current?.focus());
-              }}
-              type="button"
-            >
-              <AtSign aria-hidden="true" className="size-4" />
-            </button>
-            <ToolSelector disabled={false} onChange={onToolsChange} value={enabledTools} />
+            {variant === "agent" ? (
+              <button
+                aria-label="Attach files"
+                className="grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                disabled={running}
+                onClick={() => fileInputRef.current?.click()}
+                type="button"
+              >
+                <Paperclip aria-hidden="true" className="size-4" />
+              </button>
+            ) : null}
+            {variant === "agent" ? (
+              <button
+                aria-controls={mentionOpen ? "prompt-mention-listbox" : undefined}
+                aria-expanded={mentionOpen}
+                aria-label="Search prompts"
+                className={cn(
+                  "grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground",
+                  mentionOpen && "bg-accent text-foreground",
+                )}
+                disabled={running}
+                onClick={() => {
+                  if (mentionOpen) closeMention();
+                  else setMentionOpen(true);
+                  window.requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+                type="button"
+              >
+                <AtSign aria-hidden="true" className="size-4" />
+              </button>
+            ) : null}
+            {variant === "agent" ? (
+              <ToolSelector disabled={false} onChange={onToolsChange} value={enabledTools} />
+            ) : null}
             <ModelSelector
-              disabled={false}
+              disabled={targetModelLocked}
               models={models}
               onChange={onModelChange}
               value={selectedModelId}
             />
-            <ReasoningSelector
-              disabled={false}
-              onChange={onReasoningEffortChange}
-              value={reasoningEffort}
-            />
+            {variant === "agent" || variant === "target" ? (
+              <ReasoningSelector
+                disabled={targetModelLocked}
+                onChange={onReasoningEffortChange}
+                value={reasoningEffort}
+              />
+            ) : null}
           </div>
           <Button
             aria-label={running ? "Stop generating" : "Send message"}
@@ -361,7 +412,7 @@ export function ChatComposer({
             )}
           </Button>
         </div>
-        {mentionOpen ? (
+        {variant === "agent" && mentionOpen ? (
           <div className="absolute bottom-[calc(100%+8px)] left-3 z-50 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl">
             <div className="border-b px-3 py-2">
               <div className="text-xs font-medium">Reference a prompt</div>
@@ -430,6 +481,10 @@ export function ChatComposer({
       </form>
     </div>
   );
+}
+
+function isTargetRunQuote(quote: ChatQuote): quote is TargetRunQuote {
+  return "runId" in quote;
 }
 
 function AttachmentPreviews({

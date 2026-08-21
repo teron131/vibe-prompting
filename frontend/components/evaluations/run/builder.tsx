@@ -18,7 +18,10 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
-import { CriterionTypeIcon } from "@/components/evaluations/criterion-type-icon";
+import {
+  CriteriaProfilePicker,
+  EvaluationModelPicker,
+} from "@/components/evaluations/run/selectors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -39,6 +42,8 @@ import type {
 import type { PromptsResponse, PromptSummary } from "@/contracts/prompts";
 import type { TargetProfile, TargetProfileResponse } from "@/contracts/targets";
 import { createApiRequester, createErrorReader } from "@/shared/api";
+
+import { RecordedEvaluationBuilder } from "./recorded";
 
 type SavedConfiguration = {
   cases: string[];
@@ -63,7 +68,22 @@ const TERMINAL_STATUSES = new Set<EvaluationRunStatus>(["completed", "failed", "
 const evaluationApi = createApiRequester({}, (status) => `Request failed with ${status}.`);
 const readError = createErrorReader("The evaluation request failed.");
 
-export function EvaluationRunBuilder() {
+export function EvaluationRunBuilder({
+  targetRunId,
+  targetRunTurnId,
+}: {
+  targetRunId?: string;
+  targetRunTurnId?: string;
+} = {}) {
+  if (targetRunId && targetRunTurnId) {
+    return (
+      <RecordedEvaluationBuilder targetRunId={targetRunId} targetRunTurnId={targetRunTurnId} />
+    );
+  }
+  return <EvaluationBatchRunBuilder />;
+}
+
+function EvaluationBatchRunBuilder() {
   const [prompts, setPrompts] = useState<PromptSummary[]>([]);
   const [models, setModels] = useState<ConfiguredModel[]>([]);
   const [profiles, setProfiles] = useState<CriteriaProfile[]>([]);
@@ -363,11 +383,12 @@ export function EvaluationRunBuilder() {
               }
             />
           </div>
-          <ModelPicker
+          <EvaluationModelPicker
+            className="mt-4"
             label="Target models"
             models={models}
+            onChange={setTargetModelIds}
             selected={targetModelIds}
-            setSelected={setTargetModelIds}
           />
         </RunSection>
 
@@ -375,110 +396,47 @@ export function EvaluationRunBuilder() {
           description="Each selected profile becomes an independent execution lane."
           title="Score profiles"
         >
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">
-              {configurationIds.length} selected
-            </span>
-            <div className="flex items-center gap-3 text-xs">
-              <button
-                className="text-muted-foreground hover:text-foreground"
-                onClick={() => setConfigurationIds(profiles.map(({ id }) => id))}
-                type="button"
-              >
-                Select all
-              </button>
-              <button
-                className="text-muted-foreground hover:text-foreground"
-                onClick={() => setConfigurationIds([])}
-                type="button"
-              >
-                Clear
-              </button>
-              <Link
-                className="inline-flex items-center gap-1.5 font-medium hover:underline"
-                href="/evaluations/criteria"
-              >
-                <SlidersHorizontal className="size-3.5" /> Manage
-              </Link>
-            </div>
-          </div>
-          <div className="max-h-64 overflow-auto border">
-            <table className="w-full table-fixed text-left text-xs">
-              <thead className="sticky top-0 z-10 bg-background text-[11px] text-muted-foreground">
-                <tr className="border-b">
-                  <th className="w-10 px-3 py-2 font-medium" scope="col">
-                    Use
-                  </th>
-                  <th className="w-[32%] px-2 py-2 font-medium" scope="col">
-                    Profile
-                  </th>
-                  <th className="px-2 py-2 font-medium" scope="col">
-                    Criteria preview
-                  </th>
-                  <th className="w-16 px-3 py-2 text-right font-medium" scope="col">
-                    Count
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {profiles.map((profile) => {
-                  const selected = configurationIds.includes(profile.id);
-                  return (
-                    <tr
-                      className={cn(
-                        "transition-colors hover:bg-accent/60 focus-within:bg-accent/60",
-                        selected && "bg-accent hover:bg-accent",
-                      )}
-                      key={profile.id}
-                    >
-                      <td className="px-3 py-2.5 align-top">
-                        <input
-                          aria-label={`Use ${profile.name}`}
-                          checked={selected}
-                          className="size-4 accent-foreground"
-                          onChange={() => setConfigurationIds(toggle(configurationIds, profile.id))}
-                          type="checkbox"
-                        />
-                      </td>
-                      <th className="px-2 py-2.5 align-top font-medium" scope="row">
-                        <button
-                          className="rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => setConfigurationIds(toggle(configurationIds, profile.id))}
-                          type="button"
-                        >
-                          {profile.name}
-                        </button>
-                      </th>
-                      <td className="px-2 py-2.5 align-top leading-relaxed text-muted-foreground">
-                        <span className="line-clamp-2">
-                          {profile.criteria.map((criterion, index) => (
-                            <span className="mr-2 inline-flex items-center gap-1" key={index}>
-                              <CriterionTypeIcon type={criterion.type} />
-                              {criterion.instruction.split(" — ")[0]}
-                            </span>
-                          ))}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-right align-top font-mono text-[11px] text-muted-foreground">
-                        {profile.criteria.length}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <CriteriaProfilePicker
+            actions={
+              <div className="flex items-center gap-3 text-xs">
+                <button
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setConfigurationIds(profiles.map(({ id }) => id))}
+                  type="button"
+                >
+                  Select all
+                </button>
+                <button
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setConfigurationIds([])}
+                  type="button"
+                >
+                  Clear
+                </button>
+                <Link
+                  className="inline-flex items-center gap-1.5 font-medium hover:underline"
+                  href="/evaluations/criteria"
+                >
+                  <SlidersHorizontal className="size-3.5" /> Manage
+                </Link>
+              </div>
+            }
+            onChange={setConfigurationIds}
+            profiles={profiles}
+            selected={configurationIds}
+          />
         </RunSection>
 
         <RunSection
           description="Every judge scores every criterion for every case in an execution."
           title="Judges"
         >
-          <ModelPicker
+          <EvaluationModelPicker
+            className="mt-4"
             label="Judge models"
             models={models}
+            onChange={setJudges}
             selected={judges}
-            setSelected={setJudges}
           />
         </RunSection>
 
@@ -901,45 +859,6 @@ function Definition({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ModelPicker({
-  label,
-  models,
-  selected,
-  setSelected,
-}: {
-  label: string;
-  models: ConfiguredModel[];
-  selected: string[];
-  setSelected(value: string[]): void;
-}) {
-  return (
-    <fieldset className="mt-4">
-      <legend className="mb-2 text-xs font-medium">{label}</legend>
-      <div className="flex flex-wrap gap-2">
-        {models.map((model) => {
-          const active = selected.includes(model.id);
-          return (
-            <button
-              aria-pressed={active}
-              className={cn(
-                "inline-flex h-7 items-center justify-center rounded-full border px-2.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                active
-                  ? "border-foreground bg-foreground text-background"
-                  : "bg-background hover:bg-accent",
-              )}
-              key={model.id}
-              onClick={() => setSelected(toggle(selected, model.id))}
-              type="button"
-            >
-              <ModelIdentityLabel labelClassName="font-medium leading-none" model={model} />
-            </button>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
 /** Multiplies out only the axes the user actually varied, because an axis left at one contributes nothing and reads as noise next to the ones that do. */
 function describeWorkload(request: EvaluationBatchRequest | null): string {
   if (!request) return "";
@@ -979,10 +898,6 @@ function buildRequest(input: {
     repetitions: input.repetitions,
     targetModelIds: input.targetModelIds,
   };
-}
-
-function toggle(values: string[], value: string): string[] {
-  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 }
 
 function statusLabel(status: EvaluationRunStatus): string {

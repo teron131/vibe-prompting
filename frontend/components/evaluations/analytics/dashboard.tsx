@@ -28,15 +28,10 @@ import type { EvaluationRunStatus } from "@/contracts/evaluations";
 import { requestJson } from "@/shared/api";
 import { formatDateTime } from "@/shared/date";
 
-import {
-  buildCriterionRows,
-  type CriterionRow,
-  formatDuration,
-  formatPercent,
-} from "./analytics-model";
-import { EvaluationHelper } from "./evaluation-helper";
-import { ClearFilters, FilterSelect, MoreFilters } from "./filter-controls";
-import { analyticsFilterParams, parseEvaluationFilters } from "./filter-state";
+import { EvaluationHelper } from "../shared/evaluation-helper";
+import { ClearFilters, FilterSelect, MoreFilters } from "../shared/filter-controls";
+import { analyticsFilterParams, parseEvaluationFilters } from "../shared/filter-state";
+import { buildCriterionRows, type CriterionRow, formatDuration, formatPercent } from "./model";
 
 type ComparisonDimension = "promptRevisionId" | "targetModelId";
 

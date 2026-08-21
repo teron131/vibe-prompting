@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Copy,
   FileText,
+  FlaskConical,
   GitCommitHorizontal,
   LoaderCircle,
   Pencil,
@@ -25,7 +26,7 @@ import { Reasoning } from "@/components/chat/elements/reasoning";
 import { ResponseText } from "@/components/chat/elements/response";
 import { Tool } from "@/components/chat/elements/tool";
 import { cn } from "@/components/ui/utils";
-import type { ChatMessage, MessagePart } from "@/contracts/chat";
+import type { ChatMessage, MessagePart, RunEvent } from "@/contracts/chat";
 
 import { ModelIcon } from "./model-selector";
 
@@ -34,6 +35,102 @@ type PromptReference = {
   quote?: Extract<MessagePart, { type: "prompt-quote" }>;
   revisionId?: string;
 };
+
+type AssistantEvent = Exclude<RunEvent, { type: "chat-metadata" | "error" | "finish" | "stopped" }>;
+
+export function createAssistantMessage(chatId: string, modelId?: string): ChatMessage {
+  return {
+    chatId,
+    createdAt: new Date().toISOString(),
+    id: "live-assistant",
+    metadata: modelId ? { modelId } : {},
+    parts: [],
+    role: "assistant",
+  };
+}
+
+export function applyAssistantEvent(message: ChatMessage, event: AssistantEvent): ChatMessage {
+  if (event.type === "text-delta") {
+    const parts = [...message.parts];
+    const last = parts.at(-1);
+    if (last?.type === "text")
+      parts[parts.length - 1] = { type: "text", text: last.text + event.delta };
+    else parts.push({ type: "text", text: event.delta });
+    return { ...message, parts };
+  }
+  if (event.type === "response-reset") {
+    return {
+      ...message,
+      parts: message.parts.filter((part) => part.type !== "reasoning" && part.type !== "text"),
+    };
+  }
+  if (event.type === "reasoning-start") {
+    if (message.parts.some((part) => part.type === "reasoning" && part.streaming)) return message;
+    return {
+      ...message,
+      parts: [...message.parts, { streaming: true, summary: "", type: "reasoning" }],
+    };
+  }
+  if (event.type === "reasoning-delta") {
+    const parts = [...message.parts];
+    const streamingIndex = parts.findLastIndex(
+      (part) => part.type === "reasoning" && part.streaming,
+    );
+    if (streamingIndex >= 0) {
+      const existing = parts[streamingIndex];
+      if (existing.type === "reasoning") {
+        parts[streamingIndex] = { ...existing, summary: existing.summary + event.delta };
+      }
+    } else {
+      parts.push({ streaming: true, summary: event.delta, type: "reasoning" });
+    }
+    return { ...message, parts };
+  }
+  if (event.type === "reasoning") {
+    const parts = [...message.parts];
+    const streamingIndex = parts.findLastIndex(
+      (part) => part.type === "reasoning" && part.streaming,
+    );
+    if (streamingIndex >= 0) parts[streamingIndex] = event;
+    else parts.push(event);
+    return { ...message, parts };
+  }
+  if (event.type === "tool") {
+    const existingIndex = message.parts.findIndex(
+      (part) => part.type === "tool" && part.callId === event.callId,
+    );
+    const parts = [...message.parts];
+    if (existingIndex >= 0) parts[existingIndex] = { ...parts[existingIndex], ...event };
+    else parts.push(event);
+    return { ...message, parts };
+  }
+  return { ...message, parts: [...message.parts, event] };
+}
+
+export function replayAssistantMessage(
+  chatId: string,
+  modelId: string,
+  events: RunEvent[],
+): ChatMessage {
+  return events.reduce(
+    (message, event) => {
+      if (
+        event.type === "chat-metadata" ||
+        event.type === "error" ||
+        event.type === "finish" ||
+        event.type === "stopped"
+      ) {
+        return message;
+      }
+      return applyAssistantEvent(message, event);
+    },
+    createAssistantMessage(chatId, modelId),
+  );
+}
+
+export function projectAssistantParts(events: RunEvent[]): MessagePart[] {
+  return replayAssistantMessage("live", "", events).parts;
+}
 
 export function AssistantMessage({
   continuedByUser = false,
@@ -176,6 +273,13 @@ function MessageParts({
 }
 
 function ActivityGroup({ parts }: { parts: ActivityPart[] }) {
+  if (parts.length === 1 && parts[0]?.type === "reasoning") {
+    return <Reasoning streaming={parts[0].streaming} summary={parts[0].summary} />;
+  }
+  return <GroupedActivity parts={parts} />;
+}
+
+function GroupedActivity({ parts }: { parts: ActivityPart[] }) {
   const [open, setOpen] = useState(false);
   const toolCount = parts.filter((part) => part.type === "tool").length;
   const reasoningCount = parts.filter((part) => part.type === "reasoning").length;
@@ -207,7 +311,12 @@ function ActivityGroup({ parts }: { parts: ActivityPart[] }) {
       <div className="ml-2 border-l border-border/70 pl-3">
         {parts.map((part, index) =>
           part.type === "reasoning" ? (
-            <Reasoning key={`reasoning-${index}`} nested summary={part.summary} />
+            <Reasoning
+              key={`reasoning-${index}`}
+              nested
+              streaming={part.streaming}
+              summary={part.summary}
+            />
           ) : (
             <Tool key={part.callId || `tool-${index}`} nested part={part} />
           ),
@@ -287,7 +396,9 @@ function MessagePartView({
         <span className="truncate">{part.name}</span>
       </a>
     );
-  if (part.type === "reasoning") return <Reasoning summary={part.summary} />;
+  if (part.type === "reasoning") {
+    return <Reasoning streaming={part.streaming} summary={part.summary} />;
+  }
   if (part.type === "tool") return <Tool part={part} />;
   if (part.type === "prompt-quote")
     return (
@@ -304,6 +415,16 @@ function MessagePartView({
           {part.text}
         </span>
       </button>
+    );
+  if (part.type === "target-run-quote")
+    return (
+      <Link
+        className="mb-2 inline-flex max-w-xl items-center gap-2 rounded-xl border bg-background/10 px-3 py-2 text-xs font-medium hover:bg-accent hover:text-accent-foreground"
+        href={`/target-runs/${part.runId}`}
+      >
+        <FlaskConical aria-hidden="true" className="size-3.5" /> Target Run
+        <span className="font-mono text-[10px] opacity-70">{part.runId.slice(0, 8)}</span>
+      </Link>
     );
   if (part.type === "prompt-revision")
     return (

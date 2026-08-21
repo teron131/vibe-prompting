@@ -1,4 +1,4 @@
-/** Owns the one scope-filter grammar the results and analytics toolbars share, so an unset dimension stays quiet and an applied one is legible without reading every control. */
+/** Owns the scope-filter grammar shared by results and analytics, so applied dimensions stay legible without reading every control. */
 
 "use client";
 

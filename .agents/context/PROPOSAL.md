@@ -16,6 +16,7 @@ The product is an 80/20 prompt-engineering runtime for practical iteration, not 
 - A Target is any opaque input-output runtime with a configured model identity and an `invoke` operation.
 - A Target Profile is revisioned runtime configuration and supplemental instructions associated with a Prompt without copying its content.
 - A Pinned Target combines one Target Profile revision, one exact Prompt Revision, and one configured model into a repeatable runtime for an application run.
+- A Target Run is a durable multi-turn trace over one Pinned Target, separate from general chat history and available to human and AI clients.
 - An Evaluation Request contains cases, criteria, judges, and a Target without requiring a Prompt or Target Profile.
 - An Evaluation Criteria Profile is a reusable ordered set of typed criteria; each Evaluation Run still stores its exact criteria snapshot so later profile edits cannot change historical meaning.
 - An Evaluation Run records one execution and its outputs, per-criterion scores, judge attribution, evidence, status, and configuration.
@@ -47,7 +48,8 @@ The Target System owns construction of runtimes that can execute prompt behavior
 - Store Target Profiles and their revisions separately from Prompt content so runtime instructions, tools, and limits can change without duplicating prompts.
 - Construct a Pinned Target from an exact Prompt Revision, one Target Profile revision, and one configured model, then record the effective-instructions hash and resolved configuration on a durable run.
 - Provide a vanilla Vercel AI SDK runtime for the application fallback while keeping AI SDK and LangChain adapters available for externally constructed agents.
-- Reuse shared model, search, and spend-limit clients rather than implementing provider behavior inside Target System.
+- Persist Target Runs and their completed turn history so a client can continue the same pinned runtime or inspect the exact trace later.
+- Reuse generic agent integrations and lower-level search and spend-limit clients rather than implementing provider behavior inside Target System.
 
 Target System does not own judges, scores, prompt revisions, or the built-in editing agent. A richer external runtime may remain entirely opaque as long as it satisfies the Target input-output contract.
 
@@ -56,6 +58,7 @@ Target System does not own judges, scores, prompt revisions, or the built-in edi
 The Evaluation System owns one transport-neutral evaluation capability shared by every adapter:
 
 - Evaluate opaque Targets against case-local criteria with one or more judges.
+- Evaluate a selected completed Target Run turn through the same judge pipeline without invoking the Target again.
 - Support Boolean, categorical, numeric, text, and correction criteria as configuration rather than hard-coded evaluator classes in the product workflow.
 - Manage reusable ordered criteria profiles while keeping exact criteria snapshots on every durable run.
 - Persist runs, cases, outputs, scores, evidence, status, and exact configuration when durable tracking is requested.
@@ -79,6 +82,7 @@ The built-in agent is one client of the backend systems rather than the product 
 - Evaluate only when the user requests evaluation or supplies acceptance criteria.
 - When the user asks for both refinement and evaluation, use separate edit and evaluation operations in sequence, passing the saved revision ID explicitly.
 - Preview or start durable evaluation batches through the same server-owned expansion used by human-triggered runs.
+- Start, continue, and inspect durable Target Runs through the same Target Run service used by the browser.
 - Translate simple result questions into allowlisted structured operations through the configured helper model at low reasoning effort; never give that model arbitrary SQL access.
 - Treat the built-in OpenAI Agents SDK runtime as the editing and orchestration client, not as the Target runtime being evaluated.
 - Use external search only when current or outside information is required.
@@ -100,7 +104,7 @@ Hashline is only an addressing technique in this product. It does not justify a 
 ## Public Surfaces
 
 - The TypeScript API is the direct in-process contract for application composition and external library use.
-- Fastify exposes headless HTTP and OpenAPI operations for prompt editing, configured models, durable evaluation runs and batches, criteria profiles, paginated results, analytics, structured queries, and result exploration over the same systems.
+- Fastify exposes headless HTTP and OpenAPI operations for prompt editing, configured models, durable Target Runs, durable evaluation runs and batches, criteria profiles, paginated results, analytics, structured queries, and result exploration over the same systems.
 - MCP is an application adapter and may expose Prompt System, Target System, and Evaluation System operations without inventing separate semantics or hosting an independent editing implementation.
 - The built-in agent composes the same operations into natural-language workflows.
 - The Next.js browser provides a simple non-technical interface over those operations without becoming their owner.
@@ -111,14 +115,15 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 
 - `prompt-system/` owns prompt identity, immutable revisions, history navigation, derived search, and its persistence rules.
 - `target/` owns the small Target contract, revisioned Target Profiles, pinned runtime construction, and AI SDK or LangChain interoperability adapters.
+- `target/runs/` owns durable multi-turn Target Run lifecycle, pinned history replay, event snapshots, and PostgreSQL trace persistence.
 - `evaluation/api.ts` and `evaluation/engine/` own the transport-neutral evaluator contract, typed criteria, judge orchestration, and optional Langfuse tracing.
 - `evaluation/runs/` owns durable run schemas, target preparation and detached lifecycle orchestration, PostgreSQL state transitions, report projection, and compatible revision trends.
 - `evaluation/results/` owns result filters, per-domain search projection, paginated PostgreSQL queries, aggregate analytics, and the helper-model translation into allowlisted read operations.
 - `evaluation/criteria-profiles.ts` owns reusable ordered criteria profiles without becoming the source of truth for historical run criteria.
-- `agent/` owns natural-language orchestration and thin tool adapters over public system operations.
+- `agents/tools/` owns framework-neutral agent tool definitions over direct clients and public system operations, `agents/ai-sdk/` and `agents/openai-agents/` own agent runtime integration, and each runtime usage owns its tool adaptation.
 - `conversations/` owns durable general-chat history and detached assistant-run reconciliation rather than prompt or evaluation records.
 - `search.ts` owns target-agnostic hybrid matching, semantic ranking, thresholds, and derived embedding-cache lifecycle; each domain owner projects its own searchable documents.
-- `clients/` owns external provider transports such as language models, embeddings, Exa, and Langfuse clients.
+- `clients/` owns direct model and service clients plus shared provider primitives that do not construct agent runtimes, including LangChain chat models, embeddings, Exa Search API access, Exa MCP connection data, Langfuse, model identity, pricing, and spend accounting.
 - `config/` owns validated runtime configuration and shared optional spend limits, while `settings/` owns user-editable persisted application settings.
 - `app/` owns Fastify, MCP, database setup, and application composition rather than domain rules.
 - `frontend/` owns browser interaction and presentation rather than backend behavior.
@@ -143,22 +148,22 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 
 ## Current Alignment
 
-The implemented baseline has distinct Prompt, Target, and Evaluation systems. `PromptSystem` owns immutable full revisions, human/AI authors, optimistic concurrency, an independent editor history cursor, explicit active-revision selection, deletion, and active-revision passage projection. `TargetSystem` owns revisioned prompt-associated profiles and constructs pinned vanilla AI SDK targets while public AI SDK and LangChain adapters support externally supplied runtimes. The shared hybrid search capability applies one keyword and semantic policy to prompt passages, chats, and evaluation cases while each owner controls its document projection.
+The implemented baseline has distinct Prompt, Target, and Evaluation systems. `PromptSystem` owns immutable full revisions, human/AI authors, optimistic concurrency, an independent editor history cursor, explicit active-revision selection, deletion, and active-revision passage projection. `TargetSystem` owns revisioned prompt-associated profiles, constructs pinned vanilla AI SDK targets, and persists separate multi-turn Target Runs that both human and AI clients can start, continue, and inspect. Public AI SDK and LangChain adapters support externally supplied runtimes. The shared hybrid search capability applies one keyword and semantic policy to prompt passages, chats, and evaluation cases while each owner controls its document projection.
 
-Evaluation exposes the transport-neutral `evaluate(target, request)` boundary plus durable prompt-linked asynchronous runs and batches. A batch pins every job and persists all run records atomically before detached execution begins, while completion can only commit outputs and scores for a run that remains active. The backend stores exact prompt, target profile, model, configuration, output, score, evidence, judge attribution, status, synthetic provenance, and criteria snapshots. Criteria profiles are reusable CRUD resources, while result browsing, typed aggregates, chronological trends, and allowlisted structured exploration all read the same persisted facts and filters.
+Evaluation exposes the transport-neutral `evaluate(target, request)` boundary plus durable prompt-linked asynchronous runs and batches. It can also score a completed Target Run turn through the same judge graph while skipping target invocation and retaining trace provenance. A batch pins every job and persists all run records atomically before detached execution begins, while completion can only commit outputs and scores for a run that remains active. The backend stores exact prompt, target profile, model, configuration, output, score, evidence, judge attribution, status, synthetic provenance, criteria snapshots, and optional Target Run references. Criteria profiles are reusable CRUD resources, while result browsing, typed aggregates, chronological trends, and allowlisted structured exploration all read the same persisted facts and filters.
 
-The built-in agent uses separate structured prompt editing, evaluation execution, evaluation search, and evaluation analytics tools, passes revision IDs explicitly, and can preview or start the same durable batches as a human client. Prompt editing operates on one isolated in-memory string with hash-addressed structured operations and persists only through Prompt System. The configured helper model only translates plain-language questions into validated read operations at low reasoning effort. The browser now has separate run setup, result exploration, aggregate analytics, criteria management, and LLM-assisted exploration surfaces, but those surfaces remain clients of backend owners.
+The built-in agent uses separate structured prompt editing, Target Run, evaluation execution, evaluation search, and evaluation analytics tools, passes revision IDs explicitly, and can operate the same durable Target Runs and evaluation batches as a human client. Prompt editing operates on one isolated in-memory string with hash-addressed structured operations and persists only through Prompt System. The configured helper model only translates plain-language questions into validated read operations at low reasoning effort. The browser reuses the general conversation presentation in an explicit Test Target mode whose traces are not stored in general chat history, and it can launch judge-only evaluation from a selected completed turn. The other run setup, result exploration, aggregate analytics, criteria management, and LLM-assisted exploration surfaces remain clients of backend owners.
 
 The remaining gaps are narrower:
 
 - MCP currently exposes only stateless evaluation and should reach useful Prompt, Target, durable Evaluation, result, and criteria-profile operations through the same application services.
 - Asynchronous runs are owned by the current server process. Startup reconciliation marks abandoned running work as interrupted, but durable resumption or a separate worker queue is not yet implemented.
 - Persisted application runs currently construct the built-in prompt-linked AI SDK Target; durable execution of a caller-supplied opaque Target needs an explicit remote or callback boundary before it is warranted.
-- Target Profile management and direct target testing remain backend capabilities without a complete non-technical workflow.
+- Target Profile revision management remains backend-only even though the active profile and pinned revision are visible in the direct-test workflow.
 - Langfuse export and broader editable presets remain optional follow-up work rather than prerequisites for the core loop.
 
 ## Current Direction
 
 Stabilize the result-driven loop as a portable backend contract: find and read an exact Prompt Revision, apply one atomic batch of hash-addressed structured edits, save one immutable revision, construct or receive a Target, preview and optionally start an evaluation batch, and inspect durable results and aggregates from any supported adapter.
 
-Prioritize durable worker ownership, MCP parity, and a small Target Profile and direct-test workflow. Add broader presets and Langfuse export only when observed usage earns them; do not duplicate the existing result browser, hybrid search, or aggregate analytics in another subsystem.
+Prioritize durable worker ownership, MCP parity, and a small Target Profile management workflow. Add broader presets and Langfuse export only when observed usage earns them; do not duplicate the existing result browser, hybrid search, or aggregate analytics in another subsystem.

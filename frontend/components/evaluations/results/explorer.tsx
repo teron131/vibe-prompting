@@ -22,9 +22,9 @@ import type { EvaluationRunStatus } from "@/contracts/evaluations";
 import { requestJson } from "@/shared/api";
 import { formatDateTime } from "@/shared/date";
 
-import { EvaluationHelper } from "./evaluation-helper";
-import { ClearFilters, FilterSelect, MoreFilters } from "./filter-controls";
-import { evaluationFilterParams, parseEvaluationFilters } from "./filter-state";
+import { EvaluationHelper } from "../shared/evaluation-helper";
+import { ClearFilters, FilterSelect, MoreFilters } from "../shared/filter-controls";
+import { evaluationFilterParams, parseEvaluationFilters } from "../shared/filter-state";
 import { EvaluationMarkdownValue } from "./markdown-value";
 
 const PAGE_SIZE = 25;
@@ -841,6 +841,7 @@ function formatShortDateTime(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
     day: "2-digit",
     hour: "2-digit",
+    hourCycle: "h23",
     minute: "2-digit",
     month: "short",
   }).format(new Date(value));

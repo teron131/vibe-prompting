@@ -1,4 +1,4 @@
-/** Places bounded natural-language evaluation queries beside the data controls they refine. */
+/** Places bounded natural-language queries beside the evaluation data controls they refine. */
 
 "use client";
 

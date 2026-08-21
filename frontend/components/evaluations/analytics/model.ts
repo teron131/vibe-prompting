@@ -1,4 +1,4 @@
-/** Projects typed evaluation aggregates into criterion rows without collapsing unlike score types. */
+/** Projects analytics aggregates into criterion rows without collapsing unlike score types. */
 
 import type { EvaluationAnalyticsResponse } from "@/contracts/evaluation-workspace";
 
