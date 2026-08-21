@@ -1,102 +1,114 @@
-/** Owns constrained Exa MCP connections shared across the supported agent frameworks. */
+/** Owns Exa provider primitives for direct search and usage-owned MCP adaptation without constructing an agent runtime. */
 
-import { createMCPClient } from "@ai-sdk/mcp";
-import type { DynamicStructuredTool } from "@langchain/core/tools";
-import { MultiServerMCPClient } from "@langchain/mcp-adapters";
-import { createMCPToolStaticFilter, type MCPServer, MCPServerStreamableHttp } from "@openai/agents";
-import type { ToolSet } from "ai";
+import { z } from "zod";
 
-import { EXA_MCP_URL, loadRuntimeConfig } from "../config/index.ts";
+import { loadRuntimeConfig } from "../config/index.ts";
+
+const EXA_SEARCH_URL = "https://api.exa.ai/search";
+const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
+const EXA_SEARCH_TIMEOUT_MS = 30_000;
+const DEFAULT_RESULT_COUNT = 10;
+const CATEGORY_PATTERN = /\bcategory:(company|publication|news|personal\s*site|people)\b/iu;
 
 export const EXA_WEB_SEARCH_TOOL = "web_search_exa";
 
-export type LangChainExaTools = {
-  close: () => Promise<void>;
-  tools: DynamicStructuredTool[];
+const exaSearchInputSchema = z.object({
+  query: z.string().trim().min(1),
+  numResults: z.number().int().min(1).max(100).default(DEFAULT_RESULT_COUNT),
+});
+
+const optionalProviderText = z.string().nullish();
+const exaSearchResponseSchema = z.object({
+  results: z.array(
+    z.object({
+      author: optionalProviderText,
+      highlights: z.array(z.string()).nullish(),
+      publishedDate: optionalProviderText,
+      text: optionalProviderText,
+      title: optionalProviderText,
+      url: z.string().min(1),
+    }),
+  ),
+});
+
+export type ExaWebSearchInput = z.input<typeof exaSearchInputSchema>;
+
+export type ExaWebSearchResult = {
+  author?: string;
+  highlights?: string[];
+  publishedDate?: string;
+  text?: string;
+  title?: string;
+  url: string;
 };
 
-export type AiSdkExaTools = {
-  close: () => Promise<void>;
-  tools: ToolSet;
+type ExaMcpConnection = {
+  headers?: Record<string, string>;
+  url: string;
 };
 
-/** Connects a Vercel AI SDK target to only Exa web search and returns an explicit lifecycle owner for the remote MCP client. */
-export async function connectAiSdkExaSearch(): Promise<AiSdkExaTools> {
-  const config = loadRuntimeConfig();
-  const client = await createMCPClient({
-    transport: {
-      type: "http",
-      url: EXA_MCP_URL,
-      ...(config.exa.apiKey && { headers: { "x-api-key": config.exa.apiKey } }),
-    },
-  });
-  try {
-    const definitions = await client.listTools();
-    const definition = definitions.tools.find(({ name }) => name === EXA_WEB_SEARCH_TOOL);
-    if (!definition) throw new Error(`Exa MCP does not expose: ${EXA_WEB_SEARCH_TOOL}.`);
-    const tools = client.toolsFromDefinitions({ ...definitions, tools: [definition] });
-    return {
-      close: () => client.close(),
-      tools: { [EXA_WEB_SEARCH_TOOL]: tools[EXA_WEB_SEARCH_TOOL] as ToolSet[string] },
-    };
-  } catch (error) {
-    await client.close();
-    throw error;
-  }
-}
-
-/** Connects the OpenAI Agents runtime to only Exa web search while keeping all other remote MCP tools hidden. */
-export async function connectOpenAiAgentsExaSearch(): Promise<MCPServer> {
-  const config = loadRuntimeConfig();
-  const server = new MCPServerStreamableHttp({
-    cacheToolsList: true,
-    name: "exa",
-    requestInit: config.exa.apiKey ? { headers: { "x-api-key": config.exa.apiKey } } : undefined,
-    toolFilter: createMCPToolStaticFilter({ allowed: [EXA_WEB_SEARCH_TOOL] }),
+/** Resolves transport-neutral Exa MCP connection data for usages that must reproduce an MCP-backed target. */
+export function getExaMcpConnection(apiKey = loadRuntimeConfig().exa.apiKey): ExaMcpConnection {
+  return {
     url: EXA_MCP_URL,
-  });
-
-  try {
-    await server.connect();
-    const tools = await server.listTools();
-    if (!tools.some(({ name }) => name === EXA_WEB_SEARCH_TOOL)) {
-      throw new Error(`Exa MCP does not expose: ${EXA_WEB_SEARCH_TOOL}.`);
-    }
-    return server;
-  } catch (error) {
-    await server.close();
-    throw error;
-  }
+    ...(apiKey && { headers: { "x-api-key": apiKey } }),
+  };
 }
 
-/** Connects LangChain to Exa over remote HTTP MCP and exposes only explicitly selected tools. */
-export async function connectLangChainExaTools(
-  toolNames: readonly string[] = [EXA_WEB_SEARCH_TOOL],
-): Promise<LangChainExaTools> {
-  if (!toolNames.length) throw new Error("At least one Exa tool name is required.");
+/** Searches Exa directly and returns only the stable result fields consumed by agent tools. */
+export async function searchExaWeb(
+  input: ExaWebSearchInput,
+  signal?: AbortSignal,
+): Promise<ExaWebSearchResult[]> {
+  const apiKey = loadRuntimeConfig().exa.apiKey;
+  if (!apiKey) throw new Error("EXA_API_KEY is required for web search.");
 
-  const config = loadRuntimeConfig();
-  const client = new MultiServerMCPClient({
-    exa: {
-      transport: "http",
-      url: EXA_MCP_URL,
-      ...(config.exa.apiKey && { headers: { "x-api-key": config.exa.apiKey } }),
+  const { query, numResults } = exaSearchInputSchema.parse(input);
+  const categoryMatch = query.match(CATEGORY_PATTERN);
+  const category = categoryMatch?.[1]?.toLocaleLowerCase().replace(/\s+/gu, " ");
+  const cleanedQuery = categoryMatch
+    ? query.replace(categoryMatch[0], "").replace(/\s+/gu, " ").trim()
+    : query;
+  if (!cleanedQuery)
+    throw new Error("Exa search query must contain text beyond its category filter.");
+
+  const requestSignal = signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(EXA_SEARCH_TIMEOUT_MS)])
+    : AbortSignal.timeout(EXA_SEARCH_TIMEOUT_MS);
+  const response = await fetch(EXA_SEARCH_URL, {
+    body: JSON.stringify({
+      query: cleanedQuery,
+      type: "auto",
+      numResults,
+      ...(category && { category }),
+      contents: { highlights: true },
+    }),
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
     },
+    method: "POST",
+    signal: requestSignal,
   });
-
-  try {
-    const tools = await client.getTools("exa");
-    const selected = tools.filter((tool) => toolNames.includes(tool.name));
-    const missing = toolNames.filter((name) => !selected.some((tool) => tool.name === name));
-    if (missing.length) throw new Error(`Exa MCP does not expose: ${missing.join(", ")}.`);
-
-    let closePromise: Promise<void> | undefined;
-    return {
-      tools: selected,
-      close: () => (closePromise ??= client.close()),
-    };
-  } catch (error) {
-    await client.close();
-    throw error;
+  if (!response.ok) {
+    const detail = (await response.text()).trim().slice(0, 500);
+    throw new Error(
+      `Exa search failed with HTTP ${response.status}${detail ? `: ${detail}` : "."}`,
+    );
   }
+
+  let providerResponse: z.infer<typeof exaSearchResponseSchema>;
+  try {
+    providerResponse = exaSearchResponseSchema.parse(await response.json());
+  } catch (error) {
+    throw new Error("Exa returned an invalid search response.", { cause: error });
+  }
+  return providerResponse.results.map((result) => ({
+    ...(result.author && { author: result.author }),
+    ...(result.highlights?.length && { highlights: result.highlights }),
+    ...(result.publishedDate && { publishedDate: result.publishedDate }),
+    ...(result.text && { text: result.text }),
+    ...(result.title && { title: result.title }),
+    url: result.url,
+  }));
 }

@@ -14,6 +14,7 @@ import { PromptSystem } from "./prompt-system/index.ts";
 import { HybridSearch } from "./search.ts";
 import { ApplicationSettingsStore } from "./settings/index.ts";
 import { TargetSystem } from "./target/index.ts";
+import { TargetRuns } from "./target/runs/index.ts";
 
 export type ConfiguredModel = {
   id: string;
@@ -25,6 +26,7 @@ export type ConfiguredModel = {
 export type ApplicationServices = {
   prompts: PromptSystem;
   targets: TargetSystem;
+  targetRuns: TargetRuns;
   evaluations: EvaluationRuns;
   evaluationResults: EvaluationResults;
   criteriaProfiles: CriteriaProfiles;
@@ -38,7 +40,7 @@ const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 17;
+const APPLICATION_SERVICES_VERSION = 24;
 
 /** Resolves configured model identities after the shared services and database are ready. */
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
@@ -73,11 +75,13 @@ export async function createApplicationServices(
   const search = new HybridSearch(database);
   const prompts = new PromptSystem(database, search);
   const targets = new TargetSystem(database, prompts);
-  const evaluations = new EvaluationRuns(database, prompts, targets);
+  const targetRuns = new TargetRuns(database, prompts, targets);
+  const evaluations = new EvaluationRuns(database, prompts, targets, targetRuns);
   const criteriaProfiles = new CriteriaProfiles(database);
   return {
     prompts,
     targets,
+    targetRuns,
     evaluations,
     evaluationResults: new EvaluationResults(database, search),
     criteriaProfiles,
@@ -97,13 +101,14 @@ export function getApplicationServices(): Promise<ApplicationServices> {
     sharedState.vibePromptingServicesVersion = APPLICATION_SERVICES_VERSION;
     sharedState.vibePromptingServices = createApplicationServices().then(async (services) => {
       await services.evaluations.reconcileInterrupted();
+      await services.targetRuns.reconcileInterrupted();
       return services;
     });
   }
   return sharedState.vibePromptingServices;
 }
 
-export { CHAT_TOOL_IDS, streamChatRun, streamPromptEdit } from "./agent/runtime.ts";
+export { CHAT_TOOL_IDS, streamChatRun, streamPromptEdit } from "./agents/openai-agents/runtime.ts";
 export type {
   AgentStreamEvent,
   ChatAttachment,
@@ -111,7 +116,7 @@ export type {
   ChatRunResult,
   ChatToolId,
   PromptEdit,
-} from "./agent/runtime.ts";
+} from "./agents/openai-agents/runtime.ts";
 export { EmbeddingError } from "./clients/embedding.ts";
 export * from "./conversations/index.ts";
 export * from "./evaluation/runs/index.ts";
@@ -120,3 +125,4 @@ export * from "./evaluation/criteria-profiles.ts";
 export * from "./prompt-system/index.ts";
 export * from "./settings/index.ts";
 export * from "./target/index.ts";
+export * from "./target/runs/index.ts";

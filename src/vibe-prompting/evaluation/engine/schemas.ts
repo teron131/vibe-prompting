@@ -156,69 +156,59 @@ export type EvaluationCriterion = z.infer<typeof criterionSchema>;
 export type EvaluationCriteria = z.infer<typeof evaluationCriteriaSchema>;
 export type EvaluationReport = z.infer<typeof evaluationReportSchema>;
 
-export function createEvaluationReportSchema(criteria: EvaluationCriteria) {
+export type EvaluationResponse = {
+  results: Record<
+    string,
+    {
+      value: boolean | number | string;
+      comment: string;
+      evidence: string[];
+    }
+  >;
+};
+
+/** Builds a strict object-shaped response contract because provider structured outputs reject unions inside arrays. */
+export function createEvaluationResponseSchema(
+  criteria: EvaluationCriteria,
+): z.ZodType<EvaluationResponse> {
   const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
-  const criteriaByName = new Map(
-    configuredCriteria.map((criterion) => [criterion.name, criterion]),
+  const resultShape = Object.fromEntries(
+    configuredCriteria.map((criterion) => [
+      criterion.name,
+      z.object({
+        value: criterionValueSchema(criterion),
+        comment: commentSchema,
+        evidence: evidenceSchema,
+      }),
+    ]),
   );
+  return z.object({ results: z.object(resultShape) }) as z.ZodType<EvaluationResponse>;
+}
 
-  return evaluationReportSchema.superRefine(({ results }, context) => {
-    if (results.length !== configuredCriteria.length) {
-      context.addIssue({
-        code: "custom",
-        message: "The report must contain exactly one result per criterion.",
-        path: ["results"],
-      });
-    }
-
-    if (new Set(results.map(({ name }) => name)).size !== results.length) {
-      context.addIssue({
-        code: "custom",
-        message: "Result names must be unique.",
-        path: ["results"],
-      });
-    }
-
-    results.forEach((result, index) => {
-      const criterion = criteriaByName.get(result.name);
-      if (!criterion) {
-        context.addIssue({
-          code: "custom",
-          message: `Unknown criterion: ${result.name}.`,
-          path: ["results", index, "name"],
-        });
-        return;
-      }
-      if (result.dataType !== criterion.dataType) {
-        context.addIssue({
-          code: "custom",
-          message: `Result dataType must be ${criterion.dataType}.`,
-          path: ["results", index, "dataType"],
-        });
-        return;
-      }
-      if (
-        result.dataType === "CATEGORICAL" &&
-        criterion.dataType === "CATEGORICAL" &&
-        !criterion.categories.includes(result.value)
-      ) {
-        context.addIssue({
-          code: "custom",
-          message: "Result value must be one of the configured categories.",
-          path: ["results", index, "value"],
-        });
-      }
-      if (
-        result.dataType === "NUMERIC" &&
-        criterion.dataType === "NUMERIC" &&
-        (result.value < criterion.minValue || result.value > criterion.maxValue)
-      ) {
-        context.addIssue({
-          code: "custom",
-          message: "Result value must be within the configured range.",
-          path: ["results", index, "value"],
-        });
-      }
-    });
+export function projectEvaluationResponse(
+  response: EvaluationResponse,
+  criteria: EvaluationCriteria,
+): EvaluationReport {
+  return evaluationReportSchema.parse({
+    results: criteria.map((criterion) => ({
+      ...response.results[criterion.name],
+      dataType: criterion.dataType,
+      name: criterion.name,
+    })),
   });
+}
+
+function criterionValueSchema(criterion: EvaluationCriterion): z.ZodType {
+  switch (criterion.dataType) {
+    case "BOOLEAN":
+      return z.boolean();
+    case "CATEGORICAL":
+      return z.enum(criterion.categories as [string, ...string[]]);
+    case "CORRECTION":
+      return z.string().trim().min(1);
+    case "NUMERIC":
+      return z.number().min(criterion.minValue).max(criterion.maxValue);
+    case "TEXT":
+      return z.string().trim().min(1).max(500);
+  }
 }

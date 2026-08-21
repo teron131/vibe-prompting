@@ -1,4 +1,4 @@
-/** Builds configured OpenAI Agents SDK model providers while isolating GPT Responses routing and OpenAI-compatible provider normalization. */
+/** Adapts configured model providers and shared spend policy to the OpenAI Agents SDK model contract. */
 
 import {
   type Model,
@@ -10,10 +10,10 @@ import {
   type StreamEvent,
 } from "@openai/agents";
 
+import { startSpendCall } from "../../clients/llm/spend.ts";
 import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../../config/index.ts";
 import { preserveGeminiToolCallSignatures } from "./gemini.ts";
 import { normalizeChatCompletionsReasoning } from "./reasoning.ts";
-import { startSpendCall } from "./spend.ts";
 
 export function createModel(modelId: string): {
   config: ModelConfig;

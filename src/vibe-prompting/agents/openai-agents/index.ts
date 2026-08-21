@@ -1,5 +1,6 @@
-/** Publishes the general agent runtime without exposing its internal tools. */
+/** Publishes the OpenAI Agents SDK model and general product runtime without owning tool definitions. */
 
+export { createModel as createOpenAiAgentsModel } from "./model.ts";
 export {
   CHAT_TOOL_IDS,
   createAgentRuntime,

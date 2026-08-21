@@ -1,4 +1,4 @@
-/** Publishes configured client factories while keeping provider routing inside each client owner. */
+/** Publishes primitive external-service clients and direct model clients without agent-runtime adaptation. */
 
 export {
   embedSearchDocuments,
@@ -8,12 +8,10 @@ export {
   SEARCH_EMBEDDING_MODEL,
 } from "./embedding.ts";
 export {
-  connectAiSdkExaSearch,
-  connectLangChainExaTools,
-  connectOpenAiAgentsExaSearch,
   EXA_WEB_SEARCH_TOOL,
-  type AiSdkExaTools,
-  type LangChainExaTools,
+  type ExaWebSearchInput,
+  type ExaWebSearchResult,
+  searchExaWeb,
 } from "./exa.ts";
 export {
   createLangfuseClient,
@@ -21,9 +19,7 @@ export {
   type LangfuseConfig,
   loadLangfuseConfig,
 } from "./langfuse.ts";
-export { createModel as createAiSdkModel } from "./llm/ai-sdk.ts";
 export {
   createModel as createLangChainModel,
   type ModelOptions as LangChainModelOptions,
 } from "./llm/langchain.ts";
-export { createModel as createOpenAiAgentsModel } from "./llm/openai-agents.ts";

@@ -1,4 +1,4 @@
-/** Retains the standalone raw apply-patch engine as an inactive backup for prompt editing experiments; production prompt tools use Hashline instead. */
+/** Retains the framework-neutral raw apply-patch engine as an inactive backup for prompt editing experiments; production prompt tools use Hashline instead. */
 
 const BEGIN_PATCH_MARKER = "*** Begin Patch";
 const END_PATCH_MARKER = "*** End Patch";

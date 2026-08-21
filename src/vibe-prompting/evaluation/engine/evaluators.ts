@@ -9,13 +9,15 @@ import { z } from "zod";
 import { createModel } from "../../clients/llm/langchain.ts";
 import { buildCriteriaPrompt, buildCriteriaSystemPrompt } from "./prompts.ts";
 import {
-  createEvaluationReportSchema,
+  createEvaluationResponseSchema,
   type EvaluationCriteria,
   evaluationCriteriaSchema,
   type EvaluationReport,
   evaluationReportSchema,
+  type EvaluationResponse,
   type EvaluationSubject,
   evaluationSubjectSchema,
+  projectEvaluationResponse,
 } from "./schemas.ts";
 
 const judgeModelSchema = z.string().trim().min(1);
@@ -108,8 +110,8 @@ async function evaluateCriteria(
   options?: Partial<RunnableConfig>,
 ): Promise<EvaluationReport> {
   const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
-  return model
-    .withStructuredOutput<EvaluationReport>(createEvaluationReportSchema(configuredCriteria))
+  const response = await model
+    .withStructuredOutput<EvaluationResponse>(createEvaluationResponseSchema(configuredCriteria))
     .invoke(
       [
         new SystemMessage(buildCriteriaSystemPrompt(configuredCriteria)),
@@ -117,4 +119,5 @@ async function evaluateCriteria(
       ],
       options,
     );
+  return projectEvaluationResponse(response, configuredCriteria);
 }

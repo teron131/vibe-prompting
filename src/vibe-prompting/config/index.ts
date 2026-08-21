@@ -5,7 +5,6 @@ export {
   CONFIG_PATH,
   type ConfiguredPlatform,
   DEFAULT_CLIPROXYAPI_BASE_URL,
-  EXA_MCP_URL,
   GEMINI_OPENAI_BASE_URL,
   getModelStorage,
   loadBaseRuntimeConfig,

@@ -1,27 +1,33 @@
-/** Composes prompt editing, general chat, safe stream projection, scoped tools, and idempotent cleanup. */
+/** Composes prompt editing, general chat, safe stream projection, and framework-adapted agent tools. */
 
 import {
   type AgentInputItem,
-  type MCPServer,
   Agent as OpenAIAgent,
   Runner,
   type RunStreamEvent,
+  tool,
   type Tool,
 } from "@openai/agents";
 
-import { connectOpenAiAgentsExaSearch } from "../clients/exa.ts";
-import { resolveModelIdentities } from "../clients/llm/models-dev.ts";
-import { createModel } from "../clients/llm/openai-agents.ts";
-import { readChatCompletionsReasoning } from "../clients/llm/reasoning.ts";
-import { loadRuntimeConfig, type ModelConfig } from "../config/index.ts";
-import type { EvaluationResults } from "../evaluation/results/index.ts";
-import type { EvaluationRuns } from "../evaluation/runs/index.ts";
-import type { PromptSystem } from "../prompt-system/index.ts";
-import { AGENT_INSTRUCTIONS } from "./instructions.ts";
-import { createEvaluationDataTools } from "./tools/evaluation-search.ts";
-import { createEvaluationTool } from "./tools/evaluation.ts";
-import { createPromptLibraryTools } from "./tools/prompt-library.ts";
-import { createPromptWorkspace, createScopedFsTools } from "./tools/scoped-fs.ts";
+import { resolveModelIdentities } from "../../clients/llm/models-dev.ts";
+import { loadRuntimeConfig, type ModelConfig } from "../../config/index.ts";
+import type { EvaluationResults } from "../../evaluation/results/index.ts";
+import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
+import type { PromptSystem } from "../../prompt-system/index.ts";
+import type { TargetRuns } from "../../target/runs/index.ts";
+import {
+  type AgentTool,
+  createEvaluationDataTools,
+  createEvaluationTool,
+  createExaSearchTool,
+  createPromptLibraryTools,
+  createPromptWorkspace,
+  createScopedFsTools,
+  createTargetRunTools,
+} from "../tools/index.ts";
+import { createAgentInstructions } from "./instructions.ts";
+import { createModel } from "./model.ts";
+import { readChatCompletionsReasoning } from "./reasoning.ts";
 
 export type AgentRuntime = {
   agent: OpenAIAgent;
@@ -92,6 +98,7 @@ export type ChatRunInput = {
   instruction: string;
   modelId: string;
   prompts: PromptSystem;
+  targetRuns: TargetRuns;
   reasoningEffort: ChatReasoningEffort;
   signal?: AbortSignal;
   steering?: ChatSteering;
@@ -113,7 +120,6 @@ export type ChatRunResult = {
 export function createAgentRuntime(
   modelId: string,
   tools: Tool[] = [],
-  mcpServers: MCPServer[] = [],
   reasoningEffort: ChatReasoningEffort = "medium",
 ): AgentRuntime {
   const { config, provider } = createModel(modelId);
@@ -121,8 +127,7 @@ export function createAgentRuntime(
 
   return {
     agent: new OpenAIAgent({
-      instructions: AGENT_INSTRUCTIONS,
-      mcpServers,
+      instructions: createAgentInstructions(tools.map(({ name }) => name)),
       model: config.id,
       modelSettings:
         config.platform === "gemini"
@@ -155,75 +160,81 @@ export function createAgentRuntime(
   };
 }
 
+/** Translates framework-neutral definitions into OpenAI Agents SDK function tools at runtime composition. */
+function adaptTools(definitions: readonly AgentTool[]): Tool[] {
+  return definitions.map((definition) =>
+    tool({
+      name: definition.name,
+      description: definition.description,
+      parameters: definition.parameters,
+      execute: (input, _context, details) => definition.execute(input, { signal: details?.signal }),
+    }),
+  );
+}
+
 /** Runs a detached chat stream, preserving steering retries and tool event projections. */
 export async function streamChatRun(
   input: ChatRunInput,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<ChatRunResult> {
   const enabled = new Set(input.enabledTools);
-  const tools: Tool[] = [];
+  const toolDefinitions: AgentTool[] = [];
   const promptToolsEnabled = enabled.has("prompt-library");
   const evaluationsEnabled = enabled.has("evaluations");
-  if (promptToolsEnabled) tools.push(...createPromptLibraryTools(input.prompts));
+  if (promptToolsEnabled) toolDefinitions.push(...createPromptLibraryTools(input.prompts));
   if (evaluationsEnabled)
-    tools.push(
+    toolDefinitions.push(
       createEvaluationTool(input.evaluations, input.chatId, getEvaluationModelReferences),
+      ...createTargetRunTools(input.targetRuns, input.chatId, getEvaluationModelReferences),
       ...createEvaluationDataTools(input.evaluationResults),
     );
-  let exaServer: MCPServer | undefined;
+  if (enabled.has("web-search")) toolDefinitions.push(createExaSearchTool());
 
-  try {
-    if (input.signal?.aborted) throw abortReason(input.signal);
-    if (enabled.has("web-search")) exaServer = await connectOpenAiAgentsExaSearch();
-    if (input.signal?.aborted) throw abortReason(input.signal);
-    const runtime = createAgentRuntime(
-      input.modelId,
-      tools,
-      exaServer ? [exaServer] : [],
-      input.reasoningEffort,
-    );
-    let runInput = formatConversation(input);
-    const toolNames = new Map<string, string>();
-    while (true) {
-      const run = await runtime.runner.run(runtime.agent, runInput, {
-        signal: input.signal,
-        stream: true,
-      });
-      const disconnectSteering = input.steering?.connect((instruction) => {
-        try {
-          run.state.addInput(instruction);
-          return true;
-        } catch {
-          return false;
-        }
-      });
-      onEvent({ type: "reasoning-start" });
-      for await (const event of run) {
-        for (const item of projectEvent(event, toolNames)) onEvent(item);
-        input.steering?.retry();
-      }
+  if (input.signal?.aborted) throw abortReason(input.signal);
+  const runtime = createAgentRuntime(
+    input.modelId,
+    adaptTools(toolDefinitions),
+    input.reasoningEffort,
+  );
+  let runInput = formatConversation(input);
+  const toolNames = new Map<string, string>();
+  while (true) {
+    const run = await runtime.runner.run(runtime.agent, runInput, {
+      signal: input.signal,
+      stream: true,
+    });
+    const disconnectSteering = input.steering?.connect((instruction) => {
       try {
-        await run.completed;
-      } finally {
-        disconnectSteering?.();
+        run.state.addInput(instruction);
+        return true;
+      } catch {
+        return false;
       }
-      if (run.error) throw run.error;
-      if (typeof run.finalOutput !== "string") throw new Error("The model did not return text.");
-      const queuedSteering = input.steering?.drain() ?? [];
-      if (queuedSteering.length) {
-        onEvent({ type: "response-reset" });
-        runInput = [
-          ...run.history,
-          ...queuedSteering.map((content) => ({ content, role: "user" as const })),
-        ];
-        continue;
-      }
-      if (!input.steering || input.steering.close()) {
-        return { message: run.finalOutput, model: runtime.model };
-      }
+    });
+    onEvent({ type: "reasoning-start" });
+    for await (const event of run) {
+      for (const item of projectEvent(event, toolNames)) onEvent(item);
+      input.steering?.retry();
     }
-  } finally {
-    await exaServer?.close();
+    try {
+      await run.completed;
+    } finally {
+      disconnectSteering?.();
+    }
+    if (run.error) throw run.error;
+    if (typeof run.finalOutput !== "string") throw new Error("The model did not return text.");
+    const queuedSteering = input.steering?.drain() ?? [];
+    if (queuedSteering.length) {
+      onEvent({ type: "response-reset" });
+      runInput = [
+        ...run.history,
+        ...queuedSteering.map((content) => ({ content, role: "user" as const })),
+      ];
+      continue;
+    }
+    if (!input.steering || input.steering.close()) {
+      return { message: run.finalOutput, model: runtime.model };
+    }
   }
 }
 
@@ -239,24 +250,19 @@ export async function editPrompt(input: PromptEditInput): Promise<PromptEdit> {
   return streamPromptEdit(input, () => undefined);
 }
 
-/** Runs a prompt-edit stream and disposes both the temporary workspace and MCP server. */
+/** Runs a prompt-edit stream and always disposes its temporary workspace. */
 export async function streamPromptEdit(
   input: PromptEditInput,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<PromptEdit> {
   const workspace = await createPromptWorkspace(input.markdown);
-  let exaServer: MCPServer | undefined;
-  let cleanupPromise: Promise<void> | undefined;
-  const cleanup = () => {
-    cleanupPromise ??= closeRunResources(exaServer, workspace.dispose);
-    return cleanupPromise;
-  };
 
   try {
     if (input.signal?.aborted) throw abortReason(input.signal);
-    exaServer = await connectOpenAiAgentsExaSearch();
-    if (input.signal?.aborted) throw abortReason(input.signal);
-    const runtime = createAgentRuntime(input.modelId, createScopedFsTools(workspace), [exaServer]);
+    const runtime = createAgentRuntime(
+      input.modelId,
+      adaptTools([...createScopedFsTools(workspace), createExaSearchTool()]),
+    );
     const run = await runtime.runner.run(runtime.agent, input.instruction, {
       signal: input.signal,
       stream: true,
@@ -276,7 +282,7 @@ export async function streamPromptEdit(
       model: runtime.model,
     };
   } finally {
-    await cleanup();
+    await workspace.dispose();
   }
 }
 
@@ -473,18 +479,6 @@ function decodeDataUrl(dataUrl: string): string {
   return metadata.endsWith(";base64")
     ? Buffer.from(payload, "base64").toString("utf8")
     : decodeURIComponent(payload);
-}
-
-/** Closes external run resources and always disposes the temporary workspace. */
-async function closeRunResources(
-  exaServer: MCPServer | undefined,
-  disposeWorkspace: () => Promise<void>,
-): Promise<void> {
-  try {
-    await exaServer?.close();
-  } finally {
-    await disposeWorkspace();
-  }
 }
 
 function abortReason(signal: AbortSignal): unknown {

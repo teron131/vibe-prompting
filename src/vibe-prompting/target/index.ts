@@ -6,6 +6,12 @@ export {
   type AiSdkInput,
   type AiSdkRunOptions,
   type AiSdkRunResult,
+  type AiSdkTargetRun,
+  type AiSdkTargetRuntime,
+  createAiSdkTarget,
+  createAiSdkTargetRuntime,
+  sanitizeAiSdkHistory,
+  type AiSdkStreamRunResult,
   type AiSdkStructuredRunResult,
 } from "./adapters/ai-sdk.ts";
 export {
@@ -22,4 +28,4 @@ export {
   type PinnedTarget,
   type TargetProfile,
 } from "./system.ts";
-export { createAiSdkTarget, targetConfigurationSchema, type TargetConfiguration } from "./agent.ts";
+export { targetConfigurationSchema, type TargetConfiguration } from "./configuration.ts";

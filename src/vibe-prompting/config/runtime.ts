@@ -11,7 +11,6 @@ import { z } from "zod";
 
 export const CONFIG_PATH = ".config.yaml";
 export const DEFAULT_CLIPROXYAPI_BASE_URL = "http://localhost:8317/v1";
-export const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
 export const GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
 
 loadDotenv({ override: false, path: resolveRuntimeFile(".env"), quiet: true });

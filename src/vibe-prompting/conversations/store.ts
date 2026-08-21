@@ -29,6 +29,7 @@ export type StoredMessagePart =
       title: string;
       type: "prompt-quote";
     }
+  | { runId: string; title: string; type: "target-run-quote" }
   | { report: unknown; runId?: string; type: "evaluation" };
 
 export type ChatWorkspaceContext = {
@@ -108,7 +109,7 @@ type UserMessageInput = {
   instruction: string;
   messageId: string;
   modelId: string;
-  quotes?: Array<Extract<StoredMessagePart, { type: "prompt-quote" }>>;
+  quotes?: Array<Extract<StoredMessagePart, { type: "prompt-quote" | "target-run-quote" }>>;
 };
 
 const CHAT_MESSAGES_PER_HOUR = 300;

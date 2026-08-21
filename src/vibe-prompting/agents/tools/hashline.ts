@@ -1,4 +1,4 @@
-/** Owns the active structured Hashline editing protocol for database-backed prompts without exposing a filesystem or raw patch grammar. */
+/** Owns the framework-neutral structured Hashline editing protocol for database-backed prompts without exposing a filesystem or raw patch grammar. */
 
 import { createHash } from "node:crypto";
 

@@ -6,7 +6,8 @@ import { loadRuntimeConfig } from "../../config/index.ts";
 import type { Database } from "../../database.ts";
 import { PromptConflictError, type PromptSystem } from "../../prompt-system/index.ts";
 import type { PinnedTarget, TargetSystem } from "../../target/index.ts";
-import { evaluate, type EvaluationCase, requestSchema } from "../api.ts";
+import type { TargetRuns } from "../../target/runs/index.ts";
+import { evaluate, evaluateRecorded, type EvaluationCase, requestSchema } from "../api.ts";
 import {
   type BooleanTrendPoint,
   type EvaluationBatchInput,
@@ -18,6 +19,7 @@ import {
   evaluationRunInputSchema,
   type EvaluationRunSource,
   type EvaluationRunSummary,
+  recordedEvaluationRunInputSchema,
   type StoredEvaluationRun,
 } from "./schemas.ts";
 import { EvaluationRunStore, type NewEvaluationRun } from "./store.ts";
@@ -33,11 +35,18 @@ export class EvaluationRuns {
   readonly #prompts: PromptSystem;
   readonly #store: EvaluationRunStore;
   readonly #targets: TargetSystem;
+  readonly #targetRuns: TargetRuns;
 
-  constructor(database: Database, prompts: PromptSystem, targets: TargetSystem) {
+  constructor(
+    database: Database,
+    prompts: PromptSystem,
+    targets: TargetSystem,
+    targetRuns: TargetRuns,
+  ) {
     this.#prompts = prompts;
     this.#store = new EvaluationRunStore(database);
     this.#targets = targets;
+    this.#targetRuns = targetRuns;
   }
 
   /** Marks runs left in progress by a previous process as interrupted during startup recovery. */
@@ -53,6 +62,67 @@ export class EvaluationRuns {
   /** Validates and persists an agent-requested run while attributing it to its chat. */
   async startAgentRun(rawInput: unknown, chatId: string): Promise<EvaluationRunSummary> {
     return this.#startRun(rawInput, "ai", chatId);
+  }
+
+  /** Persists an evaluation of one completed Target Run turn and starts only the judge stage. */
+  async startHumanRecordedRun(rawInput: unknown): Promise<EvaluationRunSummary> {
+    const parsed = recordedEvaluationRunInputSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      throw new EvaluationRequestError(
+        parsed.error.issues[0]?.message ?? "Invalid recorded evaluation request.",
+      );
+    }
+    const input = parsed.data;
+    requireConfiguredModels(input.judges);
+    const targetRun = await this.#targetRuns.getRun(input.targetRunId);
+    const selectedTurn = targetRun.turns.find(({ id }) => id === input.targetRunTurnId);
+    if (!selectedTurn)
+      throw new EvaluationRequestError(`Target Run turn ${input.targetRunTurnId} was not found.`);
+    if (selectedTurn.status !== "completed" || selectedTurn.output === null) {
+      throw new EvaluationRequestError("Only a completed Target Run turn can be evaluated.");
+    }
+    const trace = {
+      messages: targetRun.turns
+        .filter(
+          ({ position, status }) => position <= selectedTurn.position && status === "completed",
+        )
+        .flatMap((turn) => [
+          { content: turn.input, role: "user" as const },
+          ...(turn.position < selectedTurn.position && turn.output !== null
+            ? [{ content: turn.output, role: "assistant" as const }]
+            : []),
+        ]),
+    };
+    const cases = [{ input: trace, criteria: input.criteria }];
+    const record: NewEvaluationRun = {
+      cases,
+      chatId: null,
+      configurationFingerprint: createConfigurationFingerprint({
+        cases,
+        effectiveInstructionsHash: targetRun.effectiveInstructionsHash,
+        judges: input.judges,
+        targetConfiguration: targetRun.targetConfiguration,
+        targetModelId: targetRun.targetModelId,
+        targetProfileRevisionId: targetRun.targetProfileRevisionId,
+      }),
+      effectiveInstructionsHash: targetRun.effectiveInstructionsHash,
+      isSyntheticExample: false,
+      judgeModelIds: input.judges,
+      promptId: targetRun.promptId,
+      promptRevisionId: targetRun.promptRevisionId,
+      source: "human",
+      targetModelId: targetRun.targetModelId,
+      targetProfileId: targetRun.targetProfileId,
+      targetProfileRevisionId: targetRun.targetProfileRevisionId,
+      targetRunId: targetRun.id,
+      targetRunTurnId: selectedTurn.id,
+    };
+    const runId = await this.#store.create(record);
+    void this.#executeRecordedRun(runId, targetRun.targetModelId, {
+      cases: [{ ...cases[0], output: selectedTurn.output }],
+      judges: input.judges,
+    }).catch(() => undefined);
+    return this.getRunSummary(runId);
   }
 
   /** Validates a batch and reports its execution fan-out without creating run records. */
@@ -201,6 +271,8 @@ export class EvaluationRuns {
           source,
           chatId,
           isSyntheticExample: input.isSyntheticExample,
+          targetRunId: null,
+          targetRunTurnId: null,
         },
         pinnedTarget,
         request: { cases: request.cases, judges: judgeModelIds },
@@ -246,6 +318,22 @@ export class EvaluationRuns {
       await this.#store.fail(runId, safeExecutionError(error));
     } finally {
       await pinnedTarget.close();
+    }
+  }
+
+  async #executeRecordedRun(
+    runId: string,
+    targetModelId: string,
+    request: {
+      cases: Array<EvaluationCase<unknown> & { output: unknown }>;
+      judges: string[];
+    },
+  ): Promise<void> {
+    try {
+      const result = await evaluateRecorded(targetModelId, request);
+      await this.#store.complete(runId, request.cases, result);
+    } catch (error) {
+      await this.#store.fail(runId, safeExecutionError(error));
     }
   }
 }

@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { type Criterion, requestSchema } from "../api.ts";
+import { criteriaSchema, type Criterion, requestSchema } from "../api.ts";
 
 export type EvaluationRunStatus = "completed" | "failed" | "interrupted" | "running";
 export type EvaluationRunSource = "ai" | "human";
@@ -43,6 +43,8 @@ export type EvaluationRunSummary = {
   targetProfileRevisionId: string | null;
   targetProfileName: string | null;
   targetModelId: string;
+  targetRunId: string | null;
+  targetRunTurnId: string | null;
   judgeModelIds: string[];
   caseCount: number;
   configurationFingerprint: string;
@@ -102,6 +104,17 @@ export const evaluationRunInputSchema = requestSchema.extend({
     .array()
     .min(1),
   isSyntheticExample: z.boolean().default(false),
+});
+
+/** Validates a request to judge one completed Target Run turn without invoking the Target again. */
+export const recordedEvaluationRunInputSchema = z.object({
+  criteria: criteriaSchema,
+  judges: z
+    .array(z.string().trim().min(1))
+    .min(1)
+    .refine((judges) => new Set(judges).size === judges.length, "Judge model IDs must be unique."),
+  targetRunId: z.uuid(),
+  targetRunTurnId: z.uuid(),
 });
 
 /** Bounds the batch fan-out before the server expands it into independently durable runs. */

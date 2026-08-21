@@ -2,14 +2,17 @@
 
 import { createHash, randomUUID } from "node:crypto";
 
+import { createMCPClient } from "@ai-sdk/mcp";
+import type { ToolSet } from "ai";
 import type postgres from "postgres";
 
-import { connectAiSdkExaSearch } from "../clients/exa.ts";
-import { createModel } from "../clients/llm/ai-sdk.ts";
+import { createModel, createReasoningProviderOptions } from "../agents/ai-sdk/model.ts";
+import { EXA_WEB_SEARCH_TOOL, getExaMcpConnection } from "../clients/exa.ts";
 import type { Database, DatabaseClient } from "../database.ts";
 import type { PromptSystem } from "../prompt-system/index.ts";
-import { createAiSdkTarget, type TargetConfiguration, targetConfigurationSchema } from "./agent.ts";
+import { type AiSdkTargetRuntime, createAiSdkTargetRuntime } from "./adapters/ai-sdk.ts";
 import type { Target } from "./api.ts";
+import { type TargetConfiguration, targetConfigurationSchema } from "./configuration.ts";
 
 export type TargetProfile = {
   configuration: TargetConfiguration;
@@ -23,6 +26,7 @@ export type PinnedTarget = {
   close(): Promise<void>;
   effectiveInstructionsHash: string;
   profile: TargetProfile;
+  runtime: AiSdkTargetRuntime;
   target: Target<string, string>;
 };
 
@@ -187,10 +191,22 @@ export class TargetSystem {
   async createPinnedTarget(input: {
     promptId: string;
     promptRevisionId: string;
+    targetProfileId?: string;
+    targetProfileRevisionId?: string;
     targetModelId: string;
+    reasoningEffort?: "high" | "low" | "medium" | "xhigh";
   }): Promise<PinnedTarget> {
     const [profile, prompt] = await Promise.all([
-      this.ensureProfileForPrompt(input.promptId),
+      input.targetProfileId && input.targetProfileRevisionId
+        ? this.#database.run((sql) =>
+            requireProfileRevision(
+              sql,
+              input.promptId,
+              input.targetProfileId as string,
+              input.targetProfileRevisionId as string,
+            ),
+          )
+        : this.ensureProfileForPrompt(input.promptId),
       this.#prompts.getRevision(input.promptId, input.promptRevisionId),
     ]);
     const effectiveInstructions = [profile.instructions, prompt.markdown]
@@ -203,21 +219,85 @@ export class TargetSystem {
     const exa = profile.configuration.tools?.includes("web-search")
       ? await connectAiSdkExaSearch()
       : undefined;
-    const target = createAiSdkTarget({
+    const runtime = createAiSdkTargetRuntime({
       configuration: profile.configuration,
       instructions: effectiveInstructions,
       model,
       modelId: input.targetModelId,
       profileId: profile.id,
+      providerOptions: input.reasoningEffort
+        ? createReasoningProviderOptions(input.targetModelId, input.reasoningEffort)
+        : undefined,
       tools: exa?.tools,
     });
     return {
       close: () => exa?.close() ?? Promise.resolve(),
       effectiveInstructionsHash,
       profile,
-      target,
+      runtime,
+      target: runtime.target,
     };
   }
+}
+
+type ConnectedExaTools = {
+  close: () => Promise<void>;
+  tools: ToolSet;
+};
+
+/** Ports the primitive Exa connection into the exact AI SDK MCP tool contract used by configured Targets. */
+async function connectAiSdkExaSearch(): Promise<ConnectedExaTools> {
+  const connection = getExaMcpConnection();
+  const client = await createMCPClient({
+    transport: {
+      type: "http",
+      url: connection.url,
+      ...(connection.headers && { headers: connection.headers }),
+    },
+  });
+  try {
+    const definitions = await client.listTools();
+    const definition = definitions.tools.find(({ name }) => name === EXA_WEB_SEARCH_TOOL);
+    if (!definition) throw new Error(`Exa MCP does not expose: ${EXA_WEB_SEARCH_TOOL}.`);
+    const tools = client.toolsFromDefinitions({ ...definitions, tools: [definition] });
+    return {
+      close: () => client.close(),
+      tools: { [EXA_WEB_SEARCH_TOOL]: tools[EXA_WEB_SEARCH_TOOL] as ToolSet[string] },
+    };
+  } catch (error) {
+    await client.close();
+    throw error;
+  }
+}
+
+async function requireProfileRevision(
+  sql: DatabaseClient,
+  promptId: string,
+  profileId: string,
+  revisionId: string,
+): Promise<TargetProfile> {
+  const [row] = await sql<ProfileRow[]>`
+    SELECT
+      target_profiles.id,
+      target_profiles.name,
+      target_profile_revisions.id AS revision_id,
+      target_profile_revisions.instructions,
+      target_profile_revisions.configuration
+    FROM target_profiles
+    JOIN target_profile_revisions
+      ON target_profile_revisions.target_profile_id = target_profiles.id
+    WHERE target_profiles.prompt_id = ${promptId}
+      AND target_profiles.id = ${profileId}
+      AND target_profile_revisions.id = ${revisionId}
+  `;
+  if (!row) throw new TargetProfileNotFoundError(promptId);
+  return {
+    configuration: targetConfigurationSchema.parse(row.configuration),
+    id: row.id,
+    instructions: row.instructions,
+    name: row.name,
+    revisionId: row.revisionId,
+  };
 }
 
 async function requireProfileForPrompt(

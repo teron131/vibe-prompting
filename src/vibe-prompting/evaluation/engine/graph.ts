@@ -33,6 +33,7 @@ const evaluatorCaseSchema = z.object({
   criteria: evaluationCriteriaSchema,
   expectedOutput: z.unknown().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  output: z.unknown().optional(),
 });
 const evaluatedCaseSchema = z.object({
   input: z.unknown(),
@@ -46,7 +47,8 @@ const indexedCaseResultSchema = z.object({
 
 const EvaluatorInput = new StateSchema({
   name: z.string().trim().min(1).default("evaluation"),
-  target: targetSchema,
+  target: targetSchema.optional(),
+  targetModel: z.string().trim().min(1),
   cases: z.array(evaluatorCaseSchema).min(1),
   judges: judgesSchema,
   skipTargetModel: z.boolean().default(false),
@@ -79,7 +81,7 @@ let defaultRunner: LangfuseExperimentRunner | undefined;
 
 const prepareEvaluation: typeof EvaluatorState.Node = (state) => {
   const judgeModels = state.skipTargetModel
-    ? getJudgeModels(state.judges).filter((model) => model !== state.target.model)
+    ? getJudgeModels(state.judges).filter((model) => model !== state.targetModel)
     : getJudgeModels(state.judges);
   if (judgeModels.length === 0) {
     throw new Error("No judge models remain after skipping the Target model.");
@@ -110,6 +112,7 @@ function dispatchCaseBatch(state: EvaluatorStateValue): Send[] {
         target: state.target,
         caseIndex: state.caseOffset + batchIndex,
         input: testCase.input,
+        output: testCase.output,
         expectedOutput: testCase.expectedOutput,
         metadata: testCase.metadata,
         criteria: testCase.criteria,
@@ -152,20 +155,21 @@ const finalizeEvaluation: typeof EvaluatorState.Node = async (state) => {
       runName: state.runName,
       description: state.description,
       maxConcurrency: state.maxConcurrency,
-      metadata: { ...state.metadata, targetModel: state.target.model },
+      metadata: { ...state.metadata, targetModel: state.targetModel },
     });
   }
   return { results: completedCases.map(({ result }) => result) };
 };
 
 const EvaluationCaseInput = new StateSchema({
-  target: targetSchema,
+  target: targetSchema.optional(),
   caseIndex: z.number().int().nonnegative(),
   input: z.unknown().refine((input) => input !== undefined, "Case input is required."),
   expectedOutput: z.unknown().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   criteria: evaluationCriteriaSchema,
   judges: judgesSchema,
+  output: z.unknown().optional(),
 });
 
 const EvaluationCaseOutput = new StateSchema({
@@ -182,11 +186,26 @@ const EvaluationCaseState = new StateSchema({
 const invokeTarget: typeof EvaluationCaseState.Node = async (state) => ({
   subject: {
     input: state.input,
-    output: await state.target.invoke(state.input),
+    output: await requireTarget(state.target).invoke(state.input),
     expectedOutput: state.expectedOutput,
     metadata: { ...state.metadata, caseIndex: state.caseIndex },
   },
 });
+
+const prepareRecordedSubject: typeof EvaluationCaseState.Node = (state) => ({
+  subject: {
+    input: state.input,
+    output: state.output,
+    expectedOutput: state.expectedOutput,
+    metadata: { ...state.metadata, caseIndex: state.caseIndex },
+  },
+});
+
+function routeCase(
+  state: typeof EvaluationCaseState.State,
+): "invokeTarget" | "prepareRecordedSubject" {
+  return state.output === undefined ? "invokeTarget" : "prepareRecordedSubject";
+}
 
 const projectCaseResult: typeof EvaluationCaseState.Node = (state) => {
   const subject = requireEvaluationSubject(state.subject);
@@ -210,10 +229,12 @@ const evaluationCaseGraph = new StateGraph({
   state: EvaluationCaseState,
 })
   .addNode("invokeTarget", invokeTarget)
+  .addNode("prepareRecordedSubject", prepareRecordedSubject)
   .addNode("judgeEvaluation", judgesGraph)
   .addNode("projectResult", projectCaseResult)
-  .addEdge(START, "invokeTarget")
+  .addConditionalEdges(START, routeCase, ["invokeTarget", "prepareRecordedSubject"])
   .addEdge("invokeTarget", "judgeEvaluation")
+  .addEdge("prepareRecordedSubject", "judgeEvaluation")
   .addEdge("judgeEvaluation", "projectResult")
   .addEdge("projectResult", END)
   .compile();
@@ -241,6 +262,12 @@ function requireEvaluationSubject(
 ): z.output<typeof evaluationSubjectSchema> {
   if (!subject) throw new Error("Evaluation subject was not prepared.");
   return subject;
+}
+
+function requireTarget(target: z.output<typeof targetSchema> | undefined) {
+  if (!target)
+    throw new Error("A Target is required when an evaluation case has no recorded output.");
+  return target;
 }
 
 function requireJudgeEvaluations(evaluations: JudgeEvaluation[] | undefined): JudgeEvaluation[] {

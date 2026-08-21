@@ -1,8 +1,8 @@
-/** Owns the in-memory prompt workspace and the only document tools exposed to the editing agent. */
+/** Owns the in-memory prompt workspace and its framework-neutral document tools. */
 
-import { tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 
+import { type AgentTool, defineAgentTool } from "./api.ts";
 import {
   applyPromptHashlineEdits,
   formatPromptHashlines,
@@ -31,9 +31,9 @@ export async function createPromptWorkspace(markdown: string): Promise<PromptWor
   };
 }
 
-export function createScopedFsTools(workspace: PromptWorkspace): Tool[] {
+export function createScopedFsTools(workspace: PromptWorkspace): AgentTool[] {
   return [
-    tool({
+    defineAgentTool({
       name: "read_prompt",
       description:
         "Read the complete current prompt as LINE#HASH:content physical lines before deciding what to edit.",
@@ -42,7 +42,7 @@ export function createScopedFsTools(workspace: PromptWorkspace): Tool[] {
         return formatPromptHashlines(await workspace.read());
       },
     }),
-    tool({
+    defineAgentTool({
       name: "edit_prompt",
       description:
         "Update the working prompt after read_prompt with structured replace_range, insert_before, insert_after, or append operations. Copy LINE#HASH refs exactly and send replacement content as complete physical lines without refs. All edits apply atomically against the latest read result. Never send diff or patch syntax.",

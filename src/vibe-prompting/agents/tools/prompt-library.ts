@@ -1,6 +1,5 @@
-/** Adapts durable Prompt System operations into focused tools for general chat runs. */
+/** Exposes durable Prompt System operations as framework-neutral agent tools. */
 
-import { tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 
 import {
@@ -8,6 +7,7 @@ import {
   type PromptSystem,
   type StoredPrompt,
 } from "../../prompt-system/index.ts";
+import { type AgentTool, defineAgentTool } from "./api.ts";
 import {
   applyPromptHashlineEdits,
   formatPromptHashlines,
@@ -21,9 +21,9 @@ const promptEditRequestSchema = z.object({
   edits: promptHashlineEditsSchema,
 });
 
-export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
+export function createPromptLibraryTools(prompts: PromptSystem): AgentTool[] {
   return [
-    tool({
+    defineAgentTool({
       name: "list_prompts",
       description:
         "List saved prompts with their active revision IDs so another prompt tool can address the correct revision.",
@@ -32,7 +32,7 @@ export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
         return (await prompts.listPrompts()).map((prompt) => projectStoredPrompt(prompt));
       },
     }),
-    tool({
+    defineAgentTool({
       name: "read_prompt",
       description:
         "Read one saved prompt revision as LINE#HASH:content physical lines before editing it.",
@@ -45,7 +45,7 @@ export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
         };
       },
     }),
-    tool({
+    defineAgentTool({
       name: "search_prompts",
       description: "Search active saved prompt titles and passages before choosing one to read.",
       parameters: z.object({ query: z.string().trim().min(2).max(200) }),
@@ -55,7 +55,7 @@ export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
         );
       },
     }),
-    tool({
+    defineAgentTool({
       name: "create_prompt",
       description: "Create a saved prompt when the user asks to draft or store markdown.",
       parameters: z.object({
@@ -67,7 +67,7 @@ export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
         return promptResult(prompt, "Created prompt.");
       },
     }),
-    tool({
+    defineAgentTool({
       name: "edit_prompt",
       description:
         "Update one saved prompt after read_prompt with structured replace_range, insert_before, insert_after, or append operations. Copy LINE#HASH refs exactly and send content as complete physical lines without refs. The batch persists as one revision only if every ref is current and every edit succeeds. Never send diff or patch syntax.",

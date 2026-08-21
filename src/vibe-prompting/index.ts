@@ -1,11 +1,10 @@
 /** Publishes the application facade without starting its HTTP or MCP runtimes. */
 
-export * from "./agent/index.ts";
+export * from "./agents/index.ts";
 export * from "./clients/index.ts";
 export {
   CONFIG_PATH,
   DEFAULT_CLIPROXYAPI_BASE_URL,
-  EXA_MCP_URL,
   GEMINI_OPENAI_BASE_URL,
   loadModelSpendLimits,
   loadRuntimeConfig,

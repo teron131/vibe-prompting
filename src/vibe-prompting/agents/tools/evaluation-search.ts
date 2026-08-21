@@ -1,6 +1,5 @@
-/** Adapts persisted evaluation records and aggregates into one agent-facing evaluation data toolkit. */
+/** Exposes persisted evaluation records and aggregates through framework-neutral agent tools. */
 
-import { tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 
 import {
@@ -9,6 +8,7 @@ import {
   type EvaluationResults,
   type ResultFilters,
 } from "../../evaluation/results/index.ts";
+import { type AgentTool, defineAgentTool } from "./api.ts";
 
 const evaluationSearchSchema = evaluationResultListInputSchema.safeExtend({
   caseId: z.uuid().optional().describe("Exact case ID; when supplied, other inputs are ignored."),
@@ -16,9 +16,9 @@ const evaluationSearchSchema = evaluationResultListInputSchema.safeExtend({
 });
 
 /** Exposes record retrieval and aggregate analysis as distinct choices while sharing one filter vocabulary. */
-export function createEvaluationDataTools(evaluationResults: EvaluationResults): Tool[] {
+export function createEvaluationDataTools(evaluationResults: EvaluationResults): AgentTool[] {
   return [
-    tool({
+    defineAgentTool({
       name: "search_evaluations",
       description:
         "Find persisted evaluation cases and their complete judge-attributed scores. Supply caseId for one exact case; otherwise use search text, filters, cursor, and limit.",
@@ -41,7 +41,7 @@ export function createEvaluationDataTools(evaluationResults: EvaluationResults):
         };
       },
     }),
-    tool({
+    defineAgentTool({
       name: "get_evaluation_analytics",
       description:
         "Get aggregate evaluation totals, score distributions, numeric statistics, execution timing, judge agreement, timeline, and facets for the supplied filters.",

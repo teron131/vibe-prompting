@@ -87,6 +87,21 @@ export const requestSchema = z.object({
   judges: judgesSchema,
 });
 
+export const recordedRequestSchema = z.object({
+  cases: z
+    .array(
+      z.object({
+        input: z.unknown().refine((input) => input !== undefined, "Case input is required."),
+        output: z
+          .unknown()
+          .refine((output) => output !== undefined, "Recorded output is required."),
+        criteria: criteriaSchema,
+      }),
+    )
+    .min(1),
+  judges: judgesSchema,
+});
+
 export type Criterion = z.infer<typeof criterionSchema>;
 
 export type EvaluationCase<INPUT = unknown> = {
@@ -96,6 +111,15 @@ export type EvaluationCase<INPUT = unknown> = {
 
 export type EvaluationRequest<INPUT = unknown> = {
   cases: EvaluationCase<INPUT>[];
+  judges: string | string[];
+};
+
+export type RecordedEvaluationCase<INPUT = unknown, OUTPUT = unknown> = EvaluationCase<INPUT> & {
+  output: OUTPUT;
+};
+
+export type RecordedEvaluationRequest<INPUT = unknown, OUTPUT = unknown> = {
+  cases: RecordedEvaluationCase<INPUT, OUTPUT>[];
   judges: string | string[];
 };
 
@@ -124,22 +148,55 @@ export async function evaluate<INPUT, OUTPUT>(
 ): Promise<EvaluationRun<INPUT, OUTPUT>> {
   const validatedTarget = targetSchema.parse(target) as Target<INPUT, OUTPUT>;
   const validatedRequest = requestSchema.parse(request) as EvaluationRequest<INPUT>;
-  const validatedCases = validatedRequest.cases.map((testCase) => ({
+  return runEvaluation({
+    cases: validatedRequest.cases,
+    judges: validatedRequest.judges,
+    target: {
+      model: validatedTarget.model,
+      invoke: (input: unknown) => validatedTarget.invoke(input as INPUT),
+    },
+    targetModel: validatedTarget.model,
+  });
+}
+
+/** Scores already completed input-output behavior without invoking a Target again. */
+export async function evaluateRecorded<INPUT, OUTPUT>(
+  targetModel: string,
+  request: RecordedEvaluationRequest<INPUT, OUTPUT>,
+): Promise<EvaluationRun<INPUT, OUTPUT>> {
+  const model = z.string().trim().min(1).parse(targetModel);
+  const validatedRequest = recordedRequestSchema.parse(request) as RecordedEvaluationRequest<
+    INPUT,
+    OUTPUT
+  >;
+  return runEvaluation({
+    cases: validatedRequest.cases,
+    judges: validatedRequest.judges,
+    targetModel: model,
+  });
+}
+
+async function runEvaluation<INPUT, OUTPUT>(input: {
+  cases: Array<EvaluationCase<INPUT> & { output?: OUTPUT }>;
+  judges: string | string[];
+  target?: Target<unknown, unknown>;
+  targetModel: string;
+}): Promise<EvaluationRun<INPUT, OUTPUT>> {
+  const validatedCases = input.cases.map((testCase) => ({
     ...testCase,
     internalCriteria: testCase.criteria.map(toInternalCriterion),
   }));
 
   const { results } = await evaluatorGraph.invoke({
-    target: {
-      model: validatedTarget.model,
-      invoke: (input: unknown) => validatedTarget.invoke(input as INPUT),
-    },
-    runName: validatedTarget.model,
-    cases: validatedCases.map(({ input, internalCriteria }) => ({
-      input,
+    target: input.target,
+    targetModel: input.targetModel,
+    runName: input.targetModel,
+    cases: validatedCases.map(({ input: caseInput, internalCriteria, output }) => ({
+      input: caseInput,
+      output,
       criteria: internalCriteria,
     })),
-    judges: { model: validatedRequest.judges },
+    judges: { model: input.judges },
   });
 
   const cases = results.map((item, caseIndex) => {

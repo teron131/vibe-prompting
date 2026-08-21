@@ -1,13 +1,13 @@
-/** Builds configured Vercel AI SDK models with GPT-only Responses routing and deployment-wide spend enforcement. */
+/** Adapts configured model providers and shared spend policy to the Vercel AI SDK model contract. */
 
+import { createGoogleGenerativeAI, type GoogleLanguageModelOptions } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModel, LanguageModelMiddleware } from "ai";
+import type { LanguageModel, LanguageModelMiddleware, ToolLoopAgentSettings } from "ai";
 import { wrapLanguageModel } from "ai";
 
+import { type SpendCall, startSpendCall } from "../../clients/llm/spend.ts";
 import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../../config/index.ts";
-import { preserveAiSdkGeminiToolCallSignatures } from "./gemini.ts";
-import { type SpendCall, startSpendCall } from "./spend.ts";
 
 export function createModel(modelId: string): LanguageModel {
   const id = modelId.trim();
@@ -17,10 +17,14 @@ export function createModel(modelId: string): LanguageModel {
   const config = runtime.models.find((candidate) => candidate.id === id);
   if (!config) throw new Error(`Model is not configured: ${id}.`);
   const platform = resolveModelPlatform(config, runtime);
-  const middleware: LanguageModelMiddleware[] = [
-    ...(platform.id === "gemini" ? [preserveAiSdkGeminiToolCallSignatures()] : []),
-    createSpendLimitMiddleware(config),
-  ];
+  const middleware: LanguageModelMiddleware[] = [createSpendLimitMiddleware(config)];
+  if (platform.id === "gemini") {
+    const provider = createGoogleGenerativeAI({
+      apiKey: platform.apiKey,
+      baseURL: platform.baseURL.replace(/\/openai\/?$/u, ""),
+    });
+    return wrapLanguageModel({ middleware, model: provider(id) });
+  }
   if (id.startsWith("gpt-")) {
     const provider = createOpenAI({ apiKey: platform.apiKey, baseURL: platform.baseURL });
     return wrapLanguageModel({ middleware, model: provider.responses(id) });
@@ -33,6 +37,32 @@ export function createModel(modelId: string): LanguageModel {
     name: platform.id,
   });
   return wrapLanguageModel({ middleware, model: provider(id) });
+}
+
+/** Projects the shared reasoning setting into the provider-specific options consumed by the configured AI SDK model. */
+export function createReasoningProviderOptions(
+  modelId: string,
+  reasoningEffort: "high" | "low" | "medium" | "xhigh",
+): ToolLoopAgentSettings["providerOptions"] {
+  const runtime = loadRuntimeConfig();
+  const config = runtime.models.find((candidate) => candidate.id === modelId);
+  if (!config) throw new Error(`Model is not configured: ${modelId}.`);
+  const platform = resolveModelPlatform(config, runtime);
+  const effort = reasoningEffort === "xhigh" ? "high" : reasoningEffort;
+  if (platform.id === "gemini") {
+    return {
+      google: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingLevel: effort,
+        },
+      } satisfies GoogleLanguageModelOptions,
+    };
+  }
+  if (modelId.startsWith("gpt-")) {
+    return { openai: { reasoningEffort: effort, reasoningSummary: "detailed" } };
+  }
+  return { [platform.id]: { reasoningEffort: effort } };
 }
 
 type Usage = {

@@ -33,6 +33,8 @@ type RunSummaryRow = {
   targetProfileRevisionId: string | null;
   targetProfileName: string | null;
   targetModelId: string;
+  targetRunId: string | null;
+  targetRunTurnId: string | null;
   judgeModelIds: string[];
   caseCount: number;
   configurationFingerprint: string;
@@ -104,6 +106,8 @@ export type NewEvaluationRun = {
   source: EvaluationRunSource;
   chatId: string | null;
   isSyntheticExample: boolean;
+  targetRunId: string | null;
+  targetRunTurnId: string | null;
 };
 
 /** Keeps every evaluation run state transition and projection behind one PostgreSQL owner. */
@@ -249,9 +253,9 @@ export class EvaluationRunStore {
             evaluation_runs.completed_at
           FROM evaluation_runs
           JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
-          WHERE prompt_id = ${source.promptId}
-            AND configuration_fingerprint = ${source.configurationFingerprint}
-            AND status = 'completed'
+          WHERE evaluation_runs.prompt_id = ${source.promptId}
+            AND evaluation_runs.configuration_fingerprint = ${source.configurationFingerprint}
+            AND evaluation_runs.status = 'completed'
         ), boolean_scores AS (
           SELECT
             evaluation_cases.run_id,
@@ -296,6 +300,7 @@ async function insertRun(sql: DatabaseClient, input: NewEvaluationRun): Promise<
       id, prompt_id, prompt_revision_id, chat_id, source, target_model_id,
       judge_model_ids, status, configuration_fingerprint, is_synthetic_example,
       target_profile_id, target_profile_revision_id, effective_instructions_hash,
+      target_run_id, target_run_turn_id,
       completed_at
     )
     VALUES (
@@ -303,6 +308,7 @@ async function insertRun(sql: DatabaseClient, input: NewEvaluationRun): Promise<
       ${input.targetModelId}, ${sql.array(input.judgeModelIds)}, 'running',
       ${input.configurationFingerprint}, ${input.isSyntheticExample}, ${input.targetProfileId},
       ${input.targetProfileRevisionId}, ${input.effectiveInstructionsHash},
+      ${input.targetRunId}, ${input.targetRunTurnId},
       NULL
     )
   `;
@@ -401,6 +407,7 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
       evaluation_runs.is_synthetic_example,
       evaluation_runs.effective_instructions_hash,
       evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
+      evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
       target_profile_revisions.configuration AS target_configuration,
       evaluation_runs.created_at, evaluation_runs.completed_at,
       target_profiles.name AS target_profile_name,
@@ -434,6 +441,7 @@ function selectRunRows(sql: DatabaseClient, limit: number) {
       evaluation_runs.is_synthetic_example,
       evaluation_runs.effective_instructions_hash,
       evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
+      evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
       evaluation_runs.created_at, evaluation_runs.completed_at,
       target_profiles.name AS target_profile_name,
       prompts.title AS prompt_title, prompt_revisions.revision_number AS prompt_revision_number,
@@ -460,6 +468,7 @@ function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, limit: nu
       evaluation_runs.is_synthetic_example,
       evaluation_runs.effective_instructions_hash,
       evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
+      evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
       evaluation_runs.created_at, evaluation_runs.completed_at,
       target_profiles.name AS target_profile_name,
       prompts.title AS prompt_title, prompt_revisions.revision_number AS prompt_revision_number,
@@ -513,6 +522,8 @@ function projectRunSummary(row: RunSummaryRow): EvaluationRunSummary {
     targetProfileRevisionId: row.targetProfileRevisionId,
     targetProfileName: row.targetProfileName,
     targetModelId: row.targetModelId,
+    targetRunId: row.targetRunId,
+    targetRunTurnId: row.targetRunTurnId,
     judgeModelIds: row.judgeModelIds,
     caseCount: row.caseCount,
     configurationFingerprint: row.configurationFingerprint,

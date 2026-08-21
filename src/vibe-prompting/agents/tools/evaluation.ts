@@ -1,10 +1,10 @@
-/** Adapts the evaluation capability into a general-agent tool without owning prompt operations. */
+/** Exposes evaluation execution through a framework-neutral agent tool without owning prompt operations. */
 
-import { tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 
 import type { Criterion } from "../../evaluation/api.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
+import { type AgentTool, defineAgentTool } from "./api.ts";
 
 /** Identifies configured models by either their canonical ID or display label. */
 export type ConfiguredModelReference = { id: string; label: string };
@@ -40,8 +40,8 @@ export function createEvaluationTool(
   evaluations: EvaluationRuns,
   chatId: string,
   loadModels: () => Promise<readonly ConfiguredModelReference[]>,
-): Tool {
-  return tool({
+): AgentTool {
+  return defineAgentTool({
     name: "evaluate",
     description:
       "Start one persisted evaluation run, or preview and start a matrix when batchConfigurations, targetModelIds, or repetitions are supplied.",
@@ -127,7 +127,7 @@ function toBooleanCriteria(instructions: readonly string[]): Criterion[] {
 }
 
 /** Resolves a model ID or unique display label and rejects unknown or ambiguous references. */
-function resolveConfiguredModelId(
+export function resolveConfiguredModelId(
   reference: string,
   models: readonly ConfiguredModelReference[],
 ): string {

@@ -1,4 +1,4 @@
-/** Restores provider-emitted reasoning summaries that the OpenAI Agents Chat Completions adapter does not recognize. */
+/** Normalizes provider-emitted reasoning into the OpenAI Agents SDK model and stream contracts. */
 
 import type {
   Model,
