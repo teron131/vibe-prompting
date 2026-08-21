@@ -1,4 +1,4 @@
-/** Owns current prompt reading, editing, preview, conflict-safe immutable saves, dirty navigation guards, and revision inspection. */
+/** Owns prompt reading, editing, preview, conflict-safe immutable saves, dirty navigation guards, and revision inspection. */
 
 "use client";
 
@@ -32,8 +32,8 @@ import type {
   EvaluationRunSummary,
 } from "@/contracts/evaluations";
 import type {
-  PromptCurrent,
   PromptDetail,
+  PromptEditorSnapshot,
   PromptRevisionResponse,
   PromptRevisionSummary,
   PromptSearchPassage,
@@ -64,6 +64,7 @@ export function PromptEditor({
   const [revisionRequest, setRevisionRequest] = useState(0);
   const [saving, setSaving] = useState(false);
   const [historyAction, setHistoryAction] = useState<"redo" | "undo">();
+  const [activatingRevisionId, setActivatingRevisionId] = useState<string>();
   const [error, setError] = useState<string>();
   const [runs, setRuns] = useState<EvaluationRunSummary[]>([]);
   const [trend, setTrend] = useState<BooleanTrendPoint[]>([]);
@@ -205,7 +206,7 @@ export function PromptEditor({
     setSaving(true);
     setError(undefined);
     try {
-      await promptApi.json<PromptCurrent>(`/api/prompts/${promptId}`, {
+      await promptApi.json<PromptEditorSnapshot>(`/api/prompts/${promptId}`, {
         body: JSON.stringify({ expectedRevisionId: detail.prompt.revisionId, markdown: draft }),
         headers: { "content-type": "application/json" },
         method: "PATCH",
@@ -226,7 +227,7 @@ export function PromptEditor({
       setHistoryAction(action);
       setError(undefined);
       try {
-        await promptApi.json<PromptCurrent>(`/api/prompts/${promptId}`, {
+        await promptApi.json<PromptEditorSnapshot>(`/api/prompts/${promptId}`, {
           body: JSON.stringify({ action, expectedRevisionId: detail.prompt.revisionId }),
           headers: { "content-type": "application/json" },
           method: "PATCH",
@@ -242,6 +243,45 @@ export function PromptEditor({
     },
     [detail, dirty, historyAction, loadPrompt, promptId, saving],
   );
+
+  async function makeActive(revisionId: string, version: number) {
+    if (
+      !detail ||
+      dirty ||
+      saving ||
+      historyAction ||
+      activatingRevisionId ||
+      revisionId === detail.prompt.activeRevisionId
+    )
+      return;
+    if (
+      !window.confirm(
+        `Make v${version} active? New chats, prompt search, and evaluations will use this version.`,
+      )
+    )
+      return;
+    setActivatingRevisionId(revisionId);
+    setError(undefined);
+    try {
+      await promptApi.json<PromptEditorSnapshot>(`/api/prompts/${promptId}`, {
+        body: JSON.stringify({
+          action: "activate",
+          expectedActiveRevisionId: detail.prompt.activeRevisionId,
+          revisionId,
+        }),
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      });
+      await loadPrompt();
+      toast.success(`v${version} is active.`);
+    } catch (cause) {
+      const message = readError(cause);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setActivatingRevisionId(undefined);
+    }
+  }
 
   function saveWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
     if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.key.toLowerCase() !== "s")
@@ -319,6 +359,12 @@ export function PromptEditor({
             <History aria-hidden="true" className="size-3.5" />v{detail.prompt.revisionNumber} ·{" "}
             {detail.prompt.revisionCount} versions
           </button>
+          <span className="rounded-full bg-primary px-2 py-1 font-medium text-primary-foreground">
+            Active
+            {detail.prompt.activeRevisionId === detail.prompt.revisionId
+              ? ""
+              : ` v${detail.prompt.activeRevisionNumber}`}
+          </span>
           <span>Updated {formatDateTime(detail.prompt.updatedAt)}</span>
           <PromptStats markdown={draft} />
         </div>
@@ -414,6 +460,21 @@ export function PromptEditor({
                   )}
                 </Button>
               ) : null}
+              {!dirty && detail.prompt.activeRevisionId !== detail.prompt.revisionId ? (
+                <Button
+                  disabled={Boolean(activatingRevisionId) || saving || Boolean(historyAction)}
+                  onClick={() =>
+                    void makeActive(detail.prompt.revisionId, detail.prompt.revisionNumber)
+                  }
+                  size="sm"
+                  variant="outline"
+                >
+                  {activatingRevisionId === detail.prompt.revisionId ? (
+                    <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+                  ) : null}
+                  Make active
+                </Button>
+              ) : null}
               {dirty ? (
                 <Button disabled={saving} onClick={save} size="sm">
                   {saving ? (
@@ -430,7 +491,7 @@ export function PromptEditor({
             <MarkdownPreview className="min-h-96 p-5 sm:p-7" markdown={draft} />
           ) : mode === "read" ? (
             <pre
-              aria-label="Latest prompt source"
+              aria-label="Prompt source"
               className="min-h-[32rem] whitespace-pre-wrap break-words px-5 py-5 font-mono text-sm leading-6 sm:px-7 sm:py-7"
               tabIndex={0}
             >
@@ -478,8 +539,8 @@ export function PromptEditor({
             <div className="overflow-hidden rounded-xl border bg-card">
               {detail.revisions.map((revision, index) => (
                 <RevisionButton
-                  active={revision.id === selectedRevisionId}
-                  current={revision.id === detail.prompt.revisionId}
+                  isActiveRevision={revision.id === detail.prompt.activeRevisionId}
+                  isSelected={revision.id === selectedRevisionId}
                   key={revision.id}
                   onClick={() => {
                     setSelectedRevisionId(revision.id);
@@ -517,13 +578,33 @@ export function PromptEditor({
               </div>
             ) : selectedRevision && selectedRevisionSummary ? (
               <div>
-                <div className="mb-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  <span className="rounded-full bg-secondary px-2 py-1 capitalize">
-                    {revisionAuthorLabel(selectedRevisionSummary.source)}
-                  </span>
-                  <span>{selectedDate}</span>
-                  {selectedRevisionSummary.changeRequest ? (
-                    <span>{selectedRevisionSummary.changeRequest}</span>
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span className="rounded-full bg-secondary px-2 py-1 capitalize">
+                      {revisionAuthorLabel(selectedRevisionSummary.source)}
+                    </span>
+                    <span>{selectedDate}</span>
+                    {selectedRevisionSummary.changeRequest ? (
+                      <span>{selectedRevisionSummary.changeRequest}</span>
+                    ) : null}
+                  </div>
+                  {selectedRevisionId !== detail.prompt.activeRevisionId ? (
+                    <Button
+                      disabled={dirty || Boolean(activatingRevisionId) || saving}
+                      onClick={() =>
+                        void makeActive(
+                          selectedRevisionId,
+                          revisionVersions.get(selectedRevisionId) ?? 1,
+                        )
+                      }
+                      size="sm"
+                      variant="outline"
+                    >
+                      {activatingRevisionId === selectedRevisionId ? (
+                        <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+                      ) : null}
+                      Make active
+                    </Button>
                   ) : null}
                 </div>
                 <PromptDiff
@@ -585,14 +666,14 @@ function PromptViewTab({
 }
 
 function RevisionButton({
-  active,
-  current,
+  isActiveRevision,
+  isSelected,
   onClick,
   revision,
   version,
 }: {
-  active: boolean;
-  current: boolean;
+  isActiveRevision: boolean;
+  isSelected: boolean;
   onClick(): void;
   revision: PromptRevisionSummary;
   version: number;
@@ -601,18 +682,18 @@ function RevisionButton({
     <button
       className={cn(
         "block w-full border-b px-3 py-3 text-left text-xs transition-colors last:border-0 hover:bg-accent",
-        active && "bg-accent",
+        isSelected && "bg-accent",
       )}
       onClick={onClick}
-      aria-pressed={active}
+      aria-pressed={isSelected}
       type="button"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="font-mono font-semibold">v{version}</span>
-          {current ? (
+          {isActiveRevision ? (
             <span className="rounded-full bg-primary px-1.5 py-0.5 font-sans text-[10px] font-medium text-primary-foreground">
-              current
+              Active
             </span>
           ) : null}
         </span>

@@ -146,7 +146,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
     "/api/prompts",
     {
       schema: {
-        description: "List saved prompts at their current revisions.",
+        description: "List saved prompts at their active revisions.",
         summary: "List prompts",
         tags: ["prompts"],
       },
@@ -167,8 +167,8 @@ export async function createApiServer(): Promise<FastifyInstance> {
       },
     },
     async (request) => {
-      const currentPrompt = await prompts.getPrompt(request.params.promptId);
-      if (currentPrompt.revisionId !== request.body.revisionId) {
+      const activePrompt = await prompts.getPrompt(request.params.promptId);
+      if (activePrompt.revisionId !== request.body.revisionId) {
         throw new PromptConflictError();
       }
       const edit = await editPrompt({

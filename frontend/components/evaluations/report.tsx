@@ -86,7 +86,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
           isSyntheticExample: run.isSyntheticExample,
           judges: run.judgeModelIds,
           promptId: run.promptId,
-          promptRevisionId: prompt.prompt.revisionId,
+          promptRevisionId: prompt.prompt.activeRevisionId,
           targetModelId: run.targetModelId,
         }),
         headers: { "content-type": "application/json" },
@@ -155,7 +155,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
             {run.status === "failed" || run.status === "interrupted" ? (
               <Button onClick={retry} variant="outline">
                 <RotateCcw aria-hidden="true" className="size-4" />
-                Retry current revision
+                Retry active revision
               </Button>
             ) : null}
           </div>
@@ -267,7 +267,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
               <div>
                 <div className="text-sm font-semibold">Exact evaluated revision</div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  This immutable artifact, not the current prompt revision, produced the results.
+                  This immutable artifact, not the active prompt revision, produced the results.
                 </p>
               </div>
               <div className="flex gap-2">

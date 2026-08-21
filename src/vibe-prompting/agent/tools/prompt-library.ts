@@ -26,7 +26,7 @@ export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
     tool({
       name: "list_prompts",
       description:
-        "List saved prompts with their current revision IDs so another prompt tool can address the correct revision.",
+        "List saved prompts with their active revision IDs so another prompt tool can address the correct revision.",
       parameters: z.object({}),
       async execute() {
         return (await prompts.listPrompts()).map((prompt) => projectStoredPrompt(prompt));
@@ -47,7 +47,7 @@ export function createPromptLibraryTools(prompts: PromptSystem): Tool[] {
     }),
     tool({
       name: "search_prompts",
-      description: "Search current saved prompt titles and passages before choosing one to read.",
+      description: "Search active saved prompt titles and passages before choosing one to read.",
       parameters: z.object({ query: z.string().trim().min(2).max(200) }),
       async execute({ query }) {
         return (await prompts.searchPrompts(query)).map(
@@ -84,15 +84,15 @@ async function editStoredPrompt(
   prompts: PromptSystem,
   { changeRequest, edits, expectedRevisionId, promptId }: z.infer<typeof promptEditRequestSchema>,
 ): Promise<StoredPrompt> {
-  const current = await prompts.getPrompt(promptId);
-  if (current.revisionId !== expectedRevisionId) throw new PromptConflictError();
-  const editedMarkdown = applyPromptHashlineEdits(current.markdown, edits);
+  const active = await prompts.getPrompt(promptId);
+  if (active.revisionId !== expectedRevisionId) throw new PromptConflictError();
+  const editedMarkdown = applyPromptHashlineEdits(active.markdown, edits);
   return prompts.appendAiEdit({
     promptId,
     editedMarkdown,
     expectedRevisionId,
     instruction: changeRequest,
-    visibleMarkdown: current.markdown,
+    visibleMarkdown: active.markdown,
   });
 }
 

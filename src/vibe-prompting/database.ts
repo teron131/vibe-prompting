@@ -74,6 +74,11 @@ const MIGRATIONS = [
       readFile(new URL("../../migrations/012_default_ai_sdk_target.sql", import.meta.url), "utf8"),
     version: 12,
   },
+  {
+    load: () =>
+      readFile(new URL("../../migrations/013_prompt_active_revision.sql", import.meta.url), "utf8"),
+    version: 13,
+  },
 ];
 
 export type DatabaseClient = postgres.Sql | postgres.TransactionSql;

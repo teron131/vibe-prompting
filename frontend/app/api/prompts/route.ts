@@ -1,8 +1,8 @@
-/** Exposes saved prompt creation and current-revision listing to browser workspace surfaces. */
+/** Exposes saved prompt creation and active-revision listing to browser workspace surfaces. */
 
 import { getApplicationServices } from "vibe-prompting/server";
 
-import type { PromptCurrent, PromptsResponse } from "@/contracts/prompts";
+import type { PromptEditorSnapshot, PromptsResponse } from "@/contracts/prompts";
 
 import { promptErrorResponse, requireRecord, requireString, requireText } from "./request";
 
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const markdown = requireString(record.markdown, "Prompt Markdown");
     const services = await getApplicationServices();
     const prompt = await services.prompts.createPrompt({ markdown, title });
-    return Response.json(prompt satisfies PromptCurrent, {
+    return Response.json(prompt satisfies PromptEditorSnapshot, {
       headers: NO_STORE_HEADERS,
       status: 201,
     });

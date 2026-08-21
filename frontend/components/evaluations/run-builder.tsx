@@ -328,7 +328,7 @@ export function EvaluationRunBuilder() {
         </div>
 
         <RunSection
-          description="Run one current prompt revision through the AI SDK agent."
+          description="Run one active prompt revision through the AI SDK agent."
           title="Target"
         >
           <Field label="Prompt">

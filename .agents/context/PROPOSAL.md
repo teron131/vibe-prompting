@@ -10,7 +10,7 @@ The product is an 80/20 prompt-engineering runtime for practical iteration, not 
 
 ## Domain Model
 
-- A Prompt owns stable identity, a human-readable title, metadata, and a pointer to its current revision.
+- A Prompt owns stable identity, a human-readable title, metadata, a pointer to its active revision, and an independent editor history cursor for undo and redo.
 - A Prompt Revision is an immutable full-content snapshot with a parent revision, author (`human` or `ai`), change request, and creation time.
 - A Prompt Passage is a derived section of one revision used for sentence- and paragraph-level search; it is not separately authoritative content.
 - A Target is any opaque input-output runtime with a configured model identity and an `invoke` operation.
@@ -30,12 +30,13 @@ The Prompt System is the single owner of durable prompt behavior:
 - Create, list, read, update, and search prompts.
 - Read exact revisions and revision metadata.
 - Append human and AI revisions with optimistic concurrency.
-- Navigate immutable history with undo and redo by moving the current-revision pointer.
-- Search current revisions at prompt and passage granularity.
+- Navigate immutable history with undo and redo by moving the editor history cursor without changing the active revision.
+- Select the active revision used by product-wide prompt consumers.
+- Search active revisions at prompt and passage granularity.
 
 PostgreSQL stores complete Markdown snapshots because prompts are small and exact recovery is more valuable than storage-level diff complexity. Line-, word-, character-, and whitespace-level diffs are derived when requested and are never the source of truth.
 
-Prompt System owns projection of current revisions into searchable passages. The shared search capability owns target-agnostic keyword matching, semantic fallback, ranking thresholds, and the derived embedding cache, while external embedding transport remains a client dependency. Prompt search can therefore change ranking or providers without changing prompt storage contracts.
+Prompt System owns projection of active revisions into searchable passages. The shared search capability owns target-agnostic keyword matching, semantic fallback, ranking thresholds, and the derived embedding cache, while external embedding transport remains a client dependency. Prompt search can therefore change ranking or providers without changing prompt storage contracts.
 
 ## Target System
 
@@ -142,7 +143,7 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 
 ## Current Alignment
 
-The implemented baseline has distinct Prompt, Target, and Evaluation systems. `PromptSystem` owns immutable full revisions, human/AI authors, optimistic concurrency, undo/redo, deletion, and current-revision passage projection. `TargetSystem` owns revisioned prompt-associated profiles and constructs pinned vanilla AI SDK targets while public AI SDK and LangChain adapters support externally supplied runtimes. The shared hybrid search capability applies one keyword and semantic policy to prompt passages, chats, and evaluation cases while each owner controls its document projection.
+The implemented baseline has distinct Prompt, Target, and Evaluation systems. `PromptSystem` owns immutable full revisions, human/AI authors, optimistic concurrency, an independent editor history cursor, explicit active-revision selection, deletion, and active-revision passage projection. `TargetSystem` owns revisioned prompt-associated profiles and constructs pinned vanilla AI SDK targets while public AI SDK and LangChain adapters support externally supplied runtimes. The shared hybrid search capability applies one keyword and semantic policy to prompt passages, chats, and evaluation cases while each owner controls its document projection.
 
 Evaluation exposes the transport-neutral `evaluate(target, request)` boundary plus durable prompt-linked asynchronous runs and batches. A batch pins every job and persists all run records atomically before detached execution begins, while completion can only commit outputs and scores for a run that remains active. The backend stores exact prompt, target profile, model, configuration, output, score, evidence, judge attribution, status, synthetic provenance, and criteria snapshots. Criteria profiles are reusable CRUD resources, while result browsing, typed aggregates, chronological trends, and allowlisted structured exploration all read the same persisted facts and filters.
 

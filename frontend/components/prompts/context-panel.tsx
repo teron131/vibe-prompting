@@ -1,4 +1,4 @@
-/** Provides Agent with current prompt context, pinned quotes, prompt search, and secondary artifact actions. */
+/** Provides Agent with active prompt context, pinned quotes, prompt search, and secondary artifact actions. */
 
 "use client";
 
@@ -40,8 +40,8 @@ import { Textarea } from "@/components/ui/textarea";
 import type { PromptQuote } from "@/contracts/chat";
 import type { EvaluationRunsResponse, EvaluationRunSummary } from "@/contracts/evaluations";
 import type {
-  PromptCurrent,
   PromptDetail,
+  PromptEditorSnapshot,
   PromptRevision,
   PromptRevisionResponse,
   PromptSearchResult,
@@ -73,7 +73,7 @@ export function PromptContextPanel({
   activePrompt?: PromptSummary;
   highlightedQuote?: PromptQuote;
   onClose(): void;
-  onPromptUpdated(prompt: PromptCurrent): void;
+  onPromptUpdated(prompt: PromptSummary): void;
   onQuote(quote: PromptQuote): void;
   onSelectPrompt(prompt: PromptSummary): void;
   open: boolean;
@@ -93,13 +93,14 @@ export function PromptContextPanel({
   );
   const [query, setQuery] = useState("");
   const [selectedText, setSelectedText] = useState("");
-  const [currentPrompt, setCurrentPrompt] = useState<PromptCurrent>();
-  const [currentState, setCurrentState] = useState<"error" | "idle" | "loading">("idle");
+  const [editorPrompt, setEditorPrompt] = useState<PromptEditorSnapshot>();
+  const [editorState, setEditorState] = useState<"error" | "idle" | "loading">("idle");
   const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<PanelMode>("edit");
   const [editError, setEditError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [historyAction, setHistoryAction] = useState<"redo" | "undo">();
+  const [activating, setActivating] = useState(false);
   const [latestRun, setLatestRun] = useState<EvaluationRunSummary>();
   const [runState, setRunState] = useState<"error" | "idle" | "loading">("idle");
   const [historicalRevision, setHistoricalRevision] = useState<PromptRevision>();
@@ -139,21 +140,21 @@ export function PromptContextPanel({
   const displayedRevision = showingHistorical ? historicalRevision : undefined;
   const displayedMarkdown = showingHistorical
     ? historicalRevision?.markdown
-    : currentPrompt?.markdown;
+    : editorPrompt?.markdown;
   const resolvedMarkdown =
     showingHistorical && historicalState === "loading"
       ? "Loading pinned revision…"
       : showingHistorical && historicalState === "error"
-        ? "Pinned revision unavailable. Return to latest to continue."
-        : currentState === "loading"
-          ? "Loading latest prompt…"
-          : currentState === "error"
-            ? "Latest prompt unavailable. Close and reopen this panel to retry."
+        ? "Pinned revision unavailable. Return to the prompt to continue."
+        : editorState === "loading"
+          ? "Loading prompt…"
+          : editorState === "error"
+            ? "Prompt unavailable. Close and reopen this panel to retry."
             : (displayedMarkdown ?? "");
-  const displayedRevisionId = displayedRevision?.id ?? currentPrompt?.revisionId;
-  const displayedPrompt = currentPrompt ?? activePrompt;
-  const dirty = Boolean(currentPrompt && draft !== currentPrompt.markdown);
-  const changesAvailable = Boolean(currentPrompt?.canUndo);
+  const displayedRevisionId = displayedRevision?.id ?? editorPrompt?.revisionId;
+  const displayedPrompt = editorPrompt ?? activePrompt;
+  const dirty = Boolean(editorPrompt && draft !== editorPrompt.markdown);
+  const changesAvailable = Boolean(editorPrompt?.canUndo);
   const compactToolbar = panelWidth < 380;
   const matchingHighlight =
     activePromptId &&
@@ -199,29 +200,29 @@ export function PromptContextPanel({
   }, [displayedRevisionId]);
 
   useEffect(() => {
-    setCurrentPrompt(undefined);
-    setCurrentState("idle");
+    setEditorPrompt(undefined);
+    setEditorState("idle");
     if (!open || !activePromptId) return;
 
     const controller = new AbortController();
-    setCurrentState("loading");
+    setEditorState("loading");
     void requestJson<PromptDetail>(
       `/api/prompts/${encodeURIComponent(activePromptId)}`,
       { cache: "no-store", signal: controller.signal },
       "Prompt request failed.",
     )
       .then(({ prompt }) => {
-        setCurrentPrompt(prompt);
+        setEditorPrompt(prompt);
         setDraft(prompt.markdown);
         setMode(
           reviewRevisionKey && prompt.canUndo ? "changes" : historicalQuoteKey ? "read" : "edit",
         );
         setEditError(undefined);
-        setCurrentState("idle");
+        setEditorState("idle");
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setCurrentState("error");
+        setEditorState("error");
       });
     return () => controller.abort();
   }, [activePromptId, historicalQuoteKey, open, reviewRevisionKey]);
@@ -229,12 +230,12 @@ export function PromptContextPanel({
   useEffect(() => {
     setReviewedRevision(undefined);
     setReviewState("idle");
-    if (!open || !activePromptId || !currentPrompt?.canUndo) return;
+    if (!open || !activePromptId || !editorPrompt?.canUndo) return;
 
     const controller = new AbortController();
     setReviewState("loading");
     void requestJson<PromptRevisionResponse>(
-      `/api/prompts/${encodeURIComponent(activePromptId)}/revisions/${encodeURIComponent(currentPrompt.revisionId)}`,
+      `/api/prompts/${encodeURIComponent(activePromptId)}/revisions/${encodeURIComponent(editorPrompt.revisionId)}`,
       { cache: "no-store", signal: controller.signal },
       "Prompt revision request failed.",
     )
@@ -247,7 +248,7 @@ export function PromptContextPanel({
         setReviewState("error");
       });
     return () => controller.abort();
-  }, [activePromptId, currentPrompt?.canUndo, currentPrompt?.revisionId, open]);
+  }, [activePromptId, editorPrompt?.canUndo, editorPrompt?.revisionId, open]);
 
   useEffect(() => {
     if (!activePromptId) {
@@ -349,7 +350,7 @@ export function PromptContextPanel({
   function leavePrompt() {
     if (dirty && !window.confirm("Discard the unsaved prompt draft?")) return;
     setMode("edit");
-    setDraft(currentPrompt?.markdown ?? "");
+    setDraft(editorPrompt?.markdown ?? "");
     setEditError(undefined);
     setPanelView("explorer");
   }
@@ -362,10 +363,10 @@ export function PromptContextPanel({
   function selectMode(nextMode: PanelMode) {
     if (nextMode === mode) return;
     if (nextMode === "changes" && !changesAvailable) return;
-    if (nextMode === "edit" && (displayedRevision || currentState !== "idle")) return;
+    if (nextMode === "edit" && (displayedRevision || editorState !== "idle")) return;
     if (nextMode === "read" && dirty) {
       if (!window.confirm("Discard the unsaved prompt draft?")) return;
-      setDraft(currentPrompt?.markdown ?? "");
+      setDraft(editorPrompt?.markdown ?? "");
     }
     setEditError(undefined);
     setMode(nextMode);
@@ -419,12 +420,12 @@ export function PromptContextPanel({
   }
 
   async function savePrompt() {
-    if (!activePrompt || !currentPrompt || !dirty || saving) return;
+    if (!activePrompt || !editorPrompt || !dirty || saving) return;
     setSaving(true);
     setEditError(undefined);
     try {
       const prompt = await updatePrompt(activePrompt.id, {
-        expectedRevisionId: currentPrompt.revisionId,
+        expectedRevisionId: editorPrompt.revisionId,
         markdown: draft,
       });
       applyPromptUpdate(prompt);
@@ -438,13 +439,13 @@ export function PromptContextPanel({
   }
 
   async function navigateHistory(action: "redo" | "undo") {
-    if (!activePrompt || !currentPrompt || dirty || saving || historyAction) return;
+    if (!activePrompt || !editorPrompt || dirty || saving || historyAction) return;
     setHistoryAction(action);
     setEditError(undefined);
     try {
       const prompt = await updatePrompt(activePrompt.id, {
         action,
-        expectedRevisionId: currentPrompt.revisionId,
+        expectedRevisionId: editorPrompt.revisionId,
       });
       applyPromptUpdate(prompt, mode === "changes" && !prompt.canUndo ? "edit" : mode);
     } catch (error) {
@@ -456,11 +457,47 @@ export function PromptContextPanel({
     }
   }
 
-  function applyPromptUpdate(prompt: PromptCurrent, nextMode: PanelMode = "edit") {
-    setCurrentPrompt(prompt);
+  async function makeActive() {
+    if (
+      !activePrompt ||
+      !editorPrompt ||
+      dirty ||
+      saving ||
+      historyAction ||
+      activating ||
+      editorPrompt.revisionId === editorPrompt.activeRevisionId
+    )
+      return;
+    if (
+      !window.confirm(
+        `Make v${editorPrompt.revisionNumber} active? New chats, prompt search, and evaluations will use this version.`,
+      )
+    )
+      return;
+    setActivating(true);
+    setEditError(undefined);
+    try {
+      const prompt = await updatePrompt(activePrompt.id, {
+        action: "activate",
+        expectedActiveRevisionId: editorPrompt.activeRevisionId,
+        revisionId: editorPrompt.revisionId,
+      });
+      applyPromptUpdate(prompt, mode);
+      toast.success(`v${prompt.activeRevisionNumber} is active.`);
+    } catch (error) {
+      const message = readError(error);
+      setEditError(message);
+      toast.error(message);
+    } finally {
+      setActivating(false);
+    }
+  }
+
+  function applyPromptUpdate(prompt: PromptEditorSnapshot, nextMode: PanelMode = "edit") {
+    setEditorPrompt(prompt);
     setDraft(prompt.markdown);
     setMode(nextMode);
-    onPromptUpdated(prompt);
+    onPromptUpdated(projectActivePromptSummary(prompt));
   }
 
   function savePromptWithKeyboard(event: ReactKeyboardEvent<HTMLElement>) {
@@ -518,6 +555,12 @@ export function PromptContextPanel({
                 </h2>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   v{displayedPrompt.revisionNumber}
+                </span>
+                <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+                  Active
+                  {editorPrompt && editorPrompt.activeRevisionId !== editorPrompt.revisionId
+                    ? ` v${editorPrompt.activeRevisionNumber}`
+                    : ""}
                 </span>
               </div>
               <PromptStats className="block truncate text-[11px] leading-4" markdown={draft} />
@@ -664,7 +707,7 @@ export function PromptContextPanel({
               <button
                 aria-pressed={mode === "edit"}
                 className={`inline-flex h-8 min-w-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 ${compactToolbar ? "gap-1 px-1.5 text-[11px]" : "gap-2 px-3 text-xs"} ${mode === "edit" ? "bg-primary font-semibold text-primary-foreground" : "font-medium text-muted-foreground hover:text-foreground"}`}
-                disabled={Boolean(displayedRevision) || currentState !== "idle"}
+                disabled={Boolean(displayedRevision) || editorState !== "idle"}
                 onClick={() => selectMode("edit")}
                 type="button"
               >
@@ -686,7 +729,7 @@ export function PromptContextPanel({
                 <Button
                   aria-label="Undo last saved change"
                   className="ml-2 size-8"
-                  disabled={saving || Boolean(historyAction) || !currentPrompt?.canUndo}
+                  disabled={saving || Boolean(historyAction) || !editorPrompt?.canUndo}
                   onClick={() => void navigateHistory("undo")}
                   size="icon"
                   title="Undo saved revision"
@@ -701,7 +744,7 @@ export function PromptContextPanel({
                 <Button
                   aria-label="Redo saved change"
                   className="size-8"
-                  disabled={saving || Boolean(historyAction) || !currentPrompt?.canRedo}
+                  disabled={saving || Boolean(historyAction) || !editorPrompt?.canRedo}
                   onClick={() => void navigateHistory("redo")}
                   size="icon"
                   title="Redo saved revision"
@@ -716,6 +759,20 @@ export function PromptContextPanel({
               </>
             ) : null}
             <div className="flex-1" />
+            {!dirty && editorPrompt?.activeRevisionId !== editorPrompt?.revisionId ? (
+              <Button
+                className="h-8 px-2.5 text-xs"
+                disabled={activating || saving || Boolean(historyAction)}
+                onClick={() => void makeActive()}
+                size="sm"
+                variant="outline"
+              >
+                {activating ? (
+                  <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+                ) : null}
+                Make active
+              </Button>
+            ) : null}
             {dirty ? (
               <Button
                 className="h-8 px-2.5 text-xs"
@@ -753,7 +810,7 @@ export function PromptContextPanel({
                   }}
                   type="button"
                 >
-                  Return to current
+                  Return to prompt
                 </button>
               </div>
             ) : mode === "read" && selectedText ? (
@@ -789,8 +846,8 @@ export function PromptContextPanel({
                               : "Manual changes"}
                           </p>
                           <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                            v{currentPrompt?.revisionNumber} vs v
-                            {(currentPrompt?.revisionNumber ?? 1) - 1}
+                            v{editorPrompt?.revisionNumber} vs v
+                            {(editorPrompt?.revisionNumber ?? 1) - 1}
                           </span>
                         </div>
                         {reviewedRevision.revision.changeRequest ? (
@@ -845,13 +902,13 @@ export function PromptContextPanel({
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <MarkdownPreview
                   className="min-h-full px-4 py-4 text-sm [&_h1]:my-3! [&_h1]:text-lg! [&_h1]:leading-6! [&_h2]:my-2.5! [&_h2]:text-base! [&_h2]:leading-6! [&_h3]:my-2! [&_h3]:text-sm! [&_h3]:leading-5!"
-                  markdown={showingHistorical || currentState !== "idle" ? resolvedMarkdown : draft}
+                  markdown={showingHistorical || editorState !== "idle" ? resolvedMarkdown : draft}
                 />
               </div>
             ) : (
               <div className="relative min-h-0 flex-1 overflow-y-auto">
                 <pre
-                  aria-label={displayedRevision ? "Pinned prompt source" : "Latest prompt source"}
+                  aria-label={displayedRevision ? "Pinned prompt source" : "Prompt source"}
                   className="min-h-full whitespace-pre-wrap break-words py-4 font-mono text-xs leading-6 selection:bg-primary selection:text-primary-foreground"
                   onKeyUp={captureSelection}
                   onPointerUp={captureSelection}
@@ -902,7 +959,7 @@ export function PromptContextPanel({
                 href={`/evaluations?prompt=${activePrompt.id}`}
               >
                 <FlaskConical aria-hidden="true" className="size-4" />
-                Evaluate current
+                Evaluate active
               </Link>
             </div>
           </footer>
@@ -966,10 +1023,15 @@ function formatDate(value: string): string {
 async function updatePrompt(
   promptId: string,
   body:
+    | {
+        action: "activate";
+        expectedActiveRevisionId: string;
+        revisionId: string;
+      }
     | { action: "redo" | "undo"; expectedRevisionId: string }
     | { expectedRevisionId: string; markdown: string },
-): Promise<PromptCurrent> {
-  return requestJson<PromptCurrent>(
+): Promise<PromptEditorSnapshot> {
+  return requestJson<PromptEditorSnapshot>(
     `/api/prompts/${encodeURIComponent(promptId)}`,
     {
       body: JSON.stringify(body),
@@ -978,6 +1040,15 @@ async function updatePrompt(
     },
     "Prompt update failed.",
   );
+}
+
+function projectActivePromptSummary(prompt: PromptEditorSnapshot): PromptSummary {
+  const { markdown: _markdown, ...summary } = prompt;
+  return {
+    ...summary,
+    revisionId: prompt.activeRevisionId,
+    revisionNumber: prompt.activeRevisionNumber,
+  };
 }
 
 function getPanelMaxWidth(): number {

@@ -2,7 +2,7 @@
 
 import { getApplicationServices } from "vibe-prompting/server";
 
-import type { PromptCurrent, PromptDetail } from "@/contracts/prompts";
+import type { PromptDetail, PromptEditorSnapshot } from "@/contracts/prompts";
 
 import {
   promptErrorResponse,
@@ -23,7 +23,7 @@ export async function GET(_request: Request, context: RouteContext) {
     requireUuid(promptId, "Prompt ID");
     const services = await getApplicationServices();
     const [prompt, revisions] = await Promise.all([
-      services.prompts.getPrompt(promptId),
+      services.prompts.getEditorPrompt(promptId),
       services.prompts.listRevisions(promptId),
     ]);
     return Response.json(
@@ -45,23 +45,34 @@ export async function PATCH(request: Request, context: RouteContext) {
     const { promptId } = await context.params;
     requireUuid(promptId, "Prompt ID");
     const record = requireRecord(await request.json());
-    const expectedRevisionId = requireUuid(record.expectedRevisionId, "Expected revision ID");
     const services = await getApplicationServices();
-    let prompt: PromptCurrent;
-    if (record.action === "undo") {
-      prompt = await services.prompts.undo(promptId, expectedRevisionId);
+    let prompt: PromptEditorSnapshot;
+    if (record.action === "activate") {
+      prompt = await services.prompts.activateRevision(
+        promptId,
+        requireUuid(record.revisionId, "Revision ID"),
+        requireUuid(record.expectedActiveRevisionId, "Expected active revision ID"),
+      );
+    } else if (record.action === "undo") {
+      prompt = await services.prompts.undo(
+        promptId,
+        requireUuid(record.expectedRevisionId, "Expected revision ID"),
+      );
     } else if (record.action === "redo") {
-      prompt = await services.prompts.redo(promptId, expectedRevisionId);
+      prompt = await services.prompts.redo(
+        promptId,
+        requireUuid(record.expectedRevisionId, "Expected revision ID"),
+      );
     } else {
       if (record.action !== undefined)
-        throw new PromptRequestError("Prompt action must be undo or redo.");
+        throw new PromptRequestError("Prompt action must be activate, undo, or redo.");
       prompt = await services.prompts.appendHumanEdit({
         promptId,
         markdown: requireString(record.markdown, "Prompt Markdown"),
-        expectedRevisionId,
+        expectedRevisionId: requireUuid(record.expectedRevisionId, "Expected revision ID"),
       });
     }
-    return Response.json(prompt satisfies PromptCurrent, {
+    return Response.json(prompt satisfies PromptEditorSnapshot, {
       headers: { "cache-control": "no-store" },
     });
   } catch (error) {

@@ -1,6 +1,8 @@
 /** Owns browser-safe durable prompt and immutable revision shapes shared by routes and components. */
 
 export type PromptSummary = {
+  activeRevisionId: string;
+  activeRevisionNumber: number;
   canRedo: boolean;
   canUndo: boolean;
   createdAt: string;
@@ -12,7 +14,7 @@ export type PromptSummary = {
   updatedAt: string;
 };
 
-export type PromptCurrent = PromptSummary & { markdown: string };
+export type PromptEditorSnapshot = PromptSummary & { markdown: string };
 
 export type PromptRevisionSummary = {
   changeRequest: string | null;
@@ -24,7 +26,7 @@ export type PromptRevisionSummary = {
 };
 
 export type PromptRevision = PromptRevisionSummary & { markdown: string };
-export type PromptDetail = { prompt: PromptCurrent; revisions: PromptRevisionSummary[] };
+export type PromptDetail = { prompt: PromptEditorSnapshot; revisions: PromptRevisionSummary[] };
 export type PromptRevisionResponse = {
   parentMarkdown: string | null;
   revision: PromptRevision;

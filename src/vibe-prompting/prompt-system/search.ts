@@ -1,4 +1,4 @@
-/** Projects current prompt revisions into passages and maps shared hybrid-search hits back to prompt results. */
+/** Projects active prompt revisions into passages and maps shared hybrid-search hits back to prompt results. */
 
 import type { HybridSearch } from "../search.ts";
 import type { StoredPrompt } from "./system.ts";
@@ -34,14 +34,14 @@ type RankedPassage = SearchPassage & { keyword: number; score: number; semantic:
 
 export type PromptSearch = ReturnType<typeof createPromptSearch>;
 
-/** Adapts current prompt revisions into shared-search documents and groups passage hits by prompt. */
+/** Adapts active prompt revisions into shared-search documents and groups passage hits by prompt. */
 export function createPromptSearch(
   hybridSearch: HybridSearch,
-  listCurrentPrompts: () => Promise<StoredPrompt[]>,
+  listActivePrompts: () => Promise<StoredPrompt[]>,
 ) {
   /** Returns ranked passage excerpts, optionally restricted to one prompt. */
   async function searchPassages(query: string, promptId?: string): Promise<PromptPassageHit[]> {
-    const ranked = await rankCurrentPassages(query);
+    const ranked = await rankActivePassages(query);
     return ranked
       .filter((passage) => !promptId || passage.promptId === promptId)
       .slice(0, MAX_PASSAGE_RESULTS)
@@ -50,7 +50,7 @@ export function createPromptSearch(
 
   /** Returns the highest-ranked prompts while retaining up to three useful passages per prompt. */
   async function searchPrompts(query: string): Promise<StoredPromptSearchResult[]> {
-    const ranked = await rankCurrentPassages(query);
+    const ranked = await rankActivePassages(query);
     const results = new Map<string, StoredPromptSearchResult>();
     for (const passage of ranked) {
       let result = results.get(passage.promptId);
@@ -66,10 +66,10 @@ export function createPromptSearch(
     return [...results.values()];
   }
 
-  async function rankCurrentPassages(query: string): Promise<RankedPassage[]> {
+  async function rankActivePassages(query: string): Promise<RankedPassage[]> {
     const normalizedQuery = query.replace(/\s+/g, " ").trim();
     if (!normalizedQuery) return [];
-    const prompts = await listCurrentPrompts();
+    const prompts = await listActivePrompts();
     const passages = buildSearchPassages(prompts);
     if (passages.length === 0) return [];
     const hits = await hybridSearch.search(

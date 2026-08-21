@@ -71,7 +71,7 @@ export function PromptEvaluationView({
           <FlaskConical aria-hidden="true" className="mx-auto size-5 text-muted-foreground" />
           <h4 className="mt-3 font-medium">No evaluation results yet</h4>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Start a run to test the latest revision against examples and clear success criteria.
+            Start a run to test the active revision against examples and clear success criteria.
           </p>
         </div>
       ) : loading && !latestRun ? (

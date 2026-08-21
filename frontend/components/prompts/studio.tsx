@@ -130,8 +130,9 @@ export function PromptStudio({ initialPromptId }: { initialPromptId?: string }) 
               <FileText aria-hidden="true" className="mx-auto size-7 text-muted-foreground" />
               <h2 className="mt-4 text-lg font-semibold">Select a prompt file</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Inspect the latest content, edit it, or trace every change without leaving this
-                workspace.
+                {
+                  "Inspect prompt content, edit it, or trace every change without leaving this workspace."
+                }
               </p>
             </div>
           )}

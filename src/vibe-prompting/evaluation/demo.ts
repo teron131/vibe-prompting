@@ -130,8 +130,8 @@ async function seedCriteriaProfiles(sql: postgres.TransactionSql): Promise<void>
 
 async function seedPrompt(sql: postgres.TransactionSql): Promise<void> {
   await sql`
-    INSERT INTO prompts (id, title, current_revision_id, created_at, updated_at)
-    VALUES (${PROMPT_ID}, ${PROMPT_TITLE}, ${PROMPT_REVISION_ID}, '2026-08-17T00:00:00Z', '2026-08-17T00:00:00Z')
+    INSERT INTO prompts (id, title, current_revision_id, active_revision_id, created_at, updated_at)
+    VALUES (${PROMPT_ID}, ${PROMPT_TITLE}, ${PROMPT_REVISION_ID}, ${PROMPT_REVISION_ID}, '2026-08-17T00:00:00Z', '2026-08-17T00:00:00Z')
   `;
   await sql`
     INSERT INTO prompt_revisions (
