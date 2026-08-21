@@ -38,7 +38,7 @@ export function ModelSelector({
         )}
       >
         <ModelIcon model={selected} />
-        <span className="truncate">{selected?.label ?? "Select model"}</span>
+        <span className="hidden truncate sm:inline">{selected?.label ?? "Select model"}</span>
         <ChevronDown
           aria-hidden="true"
           className="size-3 shrink-0 text-muted-foreground transition-transform group-open/model:rotate-180"

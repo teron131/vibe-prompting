@@ -207,7 +207,7 @@ export function ChatComposer({
         {variant === "agent" && attachments.length ? (
           <AttachmentPreviews attachments={attachments} onChange={onAttachmentsChange} />
         ) : null}
-        {activePrompt || (variant === "agent" && quotes.length) ? (
+        {variant === "agent" && (activePrompt || quotes.length) ? (
           <div className="mb-2 flex flex-wrap gap-1.5 px-1">
             {activePrompt ? (
               <span className="inline-flex max-w-full items-center rounded-full bg-secondary text-xs font-medium">
@@ -348,7 +348,7 @@ export function ChatComposer({
           value={instruction}
         />
         <div className="mt-1 flex min-w-0 items-center gap-2">
-          <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
+          <div className="min-w-0 flex-1">
             <div className="flex w-max items-center gap-1 pr-1 [&>details]:shrink-0">
               {variant === "agent" ? (
                 <button

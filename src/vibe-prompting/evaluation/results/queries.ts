@@ -29,6 +29,8 @@ type ResultRow = {
   errorMessage: string | null;
   createdAt: Date;
   completedAt: Date | null;
+  targetRunId: string | null;
+  targetRunTurnId: string | null;
 };
 
 type ScoreRow = {
@@ -65,6 +67,7 @@ export function selectResultRows(
       evaluation_cases.input_json AS input, evaluation_cases.output_json AS output,
       evaluation_runs.id AS run_id,
       evaluation_runs.prompt_revision_id, evaluation_runs.target_model_id,
+      evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
       evaluation_runs.status, evaluation_runs.judge_model_ids,
       evaluation_runs.error_message, evaluation_runs.is_synthetic_example,
       evaluation_runs.created_at, evaluation_runs.completed_at, prompts.title AS prompt_title,
@@ -116,6 +119,7 @@ export function selectResultById(sql: DatabaseClient, caseId: string) {
       evaluation_cases.input_json AS input, evaluation_cases.output_json AS output,
       evaluation_runs.id AS run_id,
       evaluation_runs.prompt_revision_id, evaluation_runs.target_model_id,
+      evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
       evaluation_runs.status, evaluation_runs.judge_model_ids,
       evaluation_runs.error_message, evaluation_runs.is_synthetic_example,
       evaluation_runs.created_at, evaluation_runs.completed_at, prompts.title AS prompt_title,
@@ -178,6 +182,8 @@ export function projectCaseResults(rows: ResultRow[], scores: ScoreRow[]): Resul
     errorMessage: row.errorMessage,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
+    targetRunId: row.targetRunId,
+    targetRunTurnId: row.targetRunTurnId,
   }));
 }
 

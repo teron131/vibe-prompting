@@ -16,6 +16,10 @@ const TARGET_REVISION_ID = uuid("evaluation-demo-target-revision");
 const CHAT_ID = uuid("evaluation-demo-chat");
 const USER_MESSAGE_ID = uuid("evaluation-demo-chat-user-message");
 const ASSISTANT_MESSAGE_ID = uuid("evaluation-demo-chat-assistant-message");
+const TARGET_RUN_ID = uuid("evaluation-demo-multiturn-target-run");
+const TARGET_RUN_TURN_IDS = [0, 1, 2, 3, 4].map((position) =>
+  uuid(`evaluation-demo-multiturn-target-turn-${position}`),
+);
 const LEGACY_SYNTHETIC_RUN_ID = "2f9a8425-b58a-4c5d-a229-6df4e838afba";
 const PROMPT_TITLE = "Prompt and Evaluation Guide";
 const PROMPT_MARKDOWN = `# Prompt and Evaluation Guide
@@ -111,7 +115,8 @@ export async function ensureEvaluationDemo(database: Database): Promise<DemoSeed
     for (const [runIndex, run] of DEMO_RUNS.entries()) {
       await seedRun(sql, runIndex, run, modelId);
     }
-    return { caseCount: DEMO_RUNS.length, modelId, runCount: DEMO_RUNS.length };
+    await seedMultiturnRun(sql, modelId);
+    return { caseCount: DEMO_RUNS.length + 1, modelId, runCount: DEMO_RUNS.length + 1 };
   });
 }
 
@@ -285,6 +290,155 @@ async function seedRun(
         ${sql.json(criterion as unknown as postgres.JSONValue)}, ${modelId},
         ${sql.json(scoreValue(criterion) as postgres.JSONValue)},
         'The synthetic answer satisfies this criterion.', ${sql.json([run.output])}
+      )
+    `;
+  }
+}
+
+/** Adds one linked five-turn trace so the result explorer always has honest long-conversation presentation data. */
+async function seedMultiturnRun(sql: postgres.TransactionSql, modelId: string): Promise<void> {
+  const createdAt = "2026-08-21T02:30:00Z";
+  const completedAt = "2026-08-21T02:35:00Z";
+  const turns = [
+    {
+      activity: [
+        {
+          summary:
+            "Identified the durable prompt revision and evaluation record as the relevant product concepts.",
+          type: "reasoning" as const,
+        },
+      ],
+      completedAt: "2026-08-21T02:30:35Z",
+      input: "I have a saved prompt. What exactly stays fixed when I test it?",
+      output:
+        "The test pins the exact prompt revision, target profile revision, model, case inputs, and criteria so later comparisons refer to the same configuration.",
+    },
+    {
+      activity: [
+        {
+          callId: "demo-read-evaluation-run",
+          input: { runId: "example-run" },
+          name: "read_evaluation_run",
+          output: { fields: ["promptRevisionId", "targetModelId", "criteria", "scores"] },
+          state: "completed" as const,
+          summary: "Inspected the persisted evaluation fields.",
+          type: "tool" as const,
+        },
+      ],
+      completedAt: "2026-08-21T02:31:40Z",
+      input: "If I continue the conversation, does the next evaluation lose the earlier context?",
+      output:
+        "No. A recorded evaluation carries the completed user and assistant turns before the selected turn, then judges the selected response against that preserved trace.",
+    },
+    {
+      activity: [
+        {
+          summary: "Confirmed that reasoning and tool records belong to the full trace.",
+          type: "reasoning" as const,
+        },
+      ],
+      completedAt: "2026-08-21T02:32:35Z",
+      input: "Can reviewers inspect tool calls and reasoning activity for earlier turns?",
+      output:
+        "Yes. The full trace keeps each turn's visible response together with its recorded reasoning and tool activity, while the compact result stays focused on user and AI messages.",
+    },
+    {
+      activity: [],
+      completedAt: "2026-08-21T02:33:40Z",
+      input: "Should a long trace render every historical message immediately?",
+      output:
+        "Not necessarily. It can preserve the beginning and the evaluated ending, collapse the middle by default, and let the reviewer reveal every omitted message on demand.",
+    },
+    {
+      activity: [
+        {
+          summary: "Separated the compact scan view from the complete evidence view.",
+          type: "reasoning" as const,
+        },
+        {
+          callId: "demo-read-target-trace",
+          input: { targetRunId: TARGET_RUN_ID },
+          name: "read_target_run",
+          output: { selectedTurn: 5, turnCount: 5 },
+          state: "completed" as const,
+          summary: "Loaded the complete five-turn Target Run.",
+          type: "tool" as const,
+        },
+      ],
+      completedAt,
+      input: "How should I review this result without crowding the default results page?",
+      output:
+        "Keep the default view focused on the evaluated turn, the response, and a compact count of earlier context. Open the full trace when you need every turn, tool action, and attributed score together.",
+    },
+  ];
+  const instructionsHash = createHash("sha256").update(PROMPT_MARKDOWN).digest("hex");
+  await sql`
+    INSERT INTO target_runs (
+      id, prompt_id, prompt_revision_id, target_profile_id, target_profile_revision_id,
+      target_model_id, reasoning_effort, effective_instructions_hash, source, chat_id,
+      created_at, updated_at
+    )
+    VALUES (
+      ${TARGET_RUN_ID}, ${PROMPT_ID}, ${PROMPT_REVISION_ID}, ${TARGET_PROFILE_ID},
+      ${TARGET_REVISION_ID}, ${modelId}, 'medium', ${instructionsHash}, 'human', NULL,
+      ${createdAt}, ${completedAt}
+    )
+  `;
+  for (const [position, turn] of turns.entries()) {
+    await sql`
+      INSERT INTO target_run_turns (
+        id, run_id, position, input_text, output_text, activity_json, usage_json, status,
+        created_at, completed_at
+      )
+      VALUES (
+        ${TARGET_RUN_TURN_IDS[position]}, ${TARGET_RUN_ID}, ${position}, ${turn.input},
+        ${turn.output}, ${sql.json(turn.activity as postgres.JSONValue[])},
+        ${sql.json({ inputTokens: 420 + position * 180, outputTokens: 74 + position * 11, totalTokens: 494 + position * 191 })},
+        'completed', ${new Date(Date.parse(createdAt) + position * 60_000)}, ${turn.completedAt}
+      )
+    `;
+  }
+
+  const runId = uuid("evaluation-demo-multiturn-run");
+  const caseId = uuid("evaluation-demo-multiturn-case");
+  const criteria = [TOOL_USAGE, RESPONSE_QUALITY];
+  const messages = turns.flatMap((turn, position) => [
+    { content: turn.input, role: "user" as const },
+    ...(position < turns.length - 1 ? [{ content: turn.output, role: "assistant" as const }] : []),
+  ]);
+  await sql`
+    INSERT INTO evaluation_runs (
+      id, prompt_id, prompt_revision_id, source, target_model_id, judge_model_ids, status,
+      configuration_fingerprint, error_message, created_at, completed_at, target_profile_id,
+      target_profile_revision_id, effective_instructions_hash, is_synthetic_example,
+      target_run_id, target_run_turn_id
+    )
+    VALUES (
+      ${runId}, ${PROMPT_ID}, ${PROMPT_REVISION_ID}, 'human', ${modelId}, ${sql.array([modelId])},
+      'completed', ${fingerprint(99)}, NULL, ${createdAt}, ${completedAt}, ${TARGET_PROFILE_ID},
+      ${TARGET_REVISION_ID}, ${instructionsHash}, true, ${TARGET_RUN_ID}, ${TARGET_RUN_TURN_IDS[4]}
+    )
+  `;
+  await sql`
+    INSERT INTO evaluation_cases (id, run_id, position, input_json, criteria_json, output_json)
+    VALUES (
+      ${caseId}, ${runId}, 0, ${sql.json({ messages })},
+      ${sql.json(criteria as unknown as postgres.JSONValue[])}, ${sql.json(turns[4].output)}
+    )
+  `;
+  for (const [criterionPosition, criterion] of criteria.entries()) {
+    await sql`
+      INSERT INTO evaluation_scores (
+        id, case_id, criterion_position, data_type, criterion_json, judge_model_id,
+        value_json, comment, evidence_json
+      )
+      VALUES (
+        ${uuid(`evaluation-demo-multiturn-score-${criterionPosition}-${modelId}`)}, ${caseId},
+        ${criterionPosition}, ${criterion.type.toUpperCase()},
+        ${sql.json(criterion as unknown as postgres.JSONValue)}, ${modelId},
+        ${sql.json(scoreValue(criterion) as postgres.JSONValue)},
+        'The response preserves the evaluated turn while making the earlier conversation available as supporting evidence.',
+        ${sql.json([turns[1].input, turns[4].input, turns[4].output])}
       )
     `;
   }

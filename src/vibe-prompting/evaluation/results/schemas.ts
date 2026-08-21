@@ -50,6 +50,8 @@ export type ResultListItem = {
   errorMessage: string | null;
   createdAt: string;
   completedAt: string | null;
+  targetRunId: string | null;
+  targetRunTurnId: string | null;
 };
 
 export type EvaluationWorkspaceFacets = {

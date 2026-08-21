@@ -55,6 +55,8 @@ export type EvaluationResultItem = {
   scores: EvaluationResultScore[];
   status: EvaluationRunStatus;
   targetModelId: string;
+  targetRunId: string | null;
+  targetRunTurnId: string | null;
 };
 
 export type EvaluationWorkspaceFacets = {

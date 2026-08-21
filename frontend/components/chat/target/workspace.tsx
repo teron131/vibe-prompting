@@ -5,7 +5,6 @@
 import {
   FileText,
   FlaskConical,
-  History,
   LoaderCircle,
   MessageSquareQuote,
   Plus,
@@ -17,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Conversation as ConversationView } from "@/components/chat/elements/conversation";
+import { Message } from "@/components/chat/elements/message";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import type { ChatReasoningEffort, ConfiguredModel } from "@/contracts/chat";
@@ -219,17 +219,8 @@ export function TargetWorkspace({
       {activePrompt ? (
         <>
           <div className="shrink-0 border-b bg-muted/10 px-4 py-2 sm:px-6">
-            <div className="flex items-center gap-3">
-              <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                <FileText aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 truncate text-sm font-medium text-foreground">
-                  {run?.promptTitle ?? activePrompt.title}
-                </span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  v{run?.promptRevisionNumber ?? activePrompt.revisionNumber}
-                </span>
-              </div>
-              <div className="ml-auto flex shrink-0 items-center justify-end gap-1">
+            <div className="flex items-center justify-end">
+              <div className="flex shrink-0 items-center justify-end gap-1">
                 {run ? (
                   <button
                     aria-label="Quote Target Run in Agent"
@@ -257,15 +248,6 @@ export function TargetWorkspace({
                     <span className="hidden md:inline">Evaluate trace</span>
                   </Link>
                 ) : null}
-                <button
-                  aria-label="Open prompt"
-                  className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  onClick={onOpenPrompt}
-                  type="button"
-                >
-                  <History aria-hidden="true" className="size-3.5" />
-                  <span className="hidden sm:inline">Prompt</span>
-                </button>
                 {runs.length ? (
                   <Select
                     aria-label="Target Run history"
@@ -301,6 +283,11 @@ export function TargetWorkspace({
             </div>
           </div>
           <ConversationView containerRef={containerRef} onScroll={onScroll}>
+            <PromptContextMessage
+              onOpen={onOpenPrompt}
+              revisionNumber={run?.promptRevisionNumber ?? activePrompt.revisionNumber}
+              title={run?.promptTitle ?? activePrompt.title}
+            />
             {messages.length ? (
               messages.map((message, index) => (
                 <AssistantMessage
@@ -368,6 +355,36 @@ export function TargetWorkspace({
   );
 }
 
+function PromptContextMessage({
+  onOpen,
+  revisionNumber,
+  title,
+}: {
+  onOpen(): void;
+  revisionNumber: number;
+  title: string;
+}) {
+  return (
+    <Message role="user">
+      <button
+        aria-label={`Open ${title} prompt`}
+        className="w-fit max-w-full rounded-[1.35rem] rounded-br-md border bg-muted/50 px-4 py-3 text-left transition-colors hover:bg-accent"
+        onClick={onOpen}
+        type="button"
+      >
+        <span className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase text-muted-foreground">
+          <FileText aria-hidden="true" className="size-3.5" />
+          Prompt inserted
+        </span>
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="truncate text-sm font-medium text-foreground">{title}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">v{revisionNumber}</span>
+        </span>
+      </button>
+    </Message>
+  );
+}
+
 function formatRunOption(run: TargetRunSummary): string {
   const turns = `${run.turnCount} ${run.turnCount === 1 ? "turn" : "turns"}`;
   const identity = `${runDateFormatter.format(new Date(run.createdAt))} · ${turns}`;
@@ -381,8 +398,8 @@ function TargetEmptyState() {
         <FlaskConical aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
         <h2 className="mt-4 text-xl font-semibold">Test the selected target</h2>
         <p className="mt-2 text-balance text-sm leading-6 text-muted-foreground">
-          Start a multi-turn trace against the exact prompt revision shown above. The run is logged
-          with the prompt, not with Agent chat history.
+          Start a multi-turn trace against the exact prompt revision inserted above. The run is
+          logged with the prompt, not with Agent chat history.
         </p>
       </div>
     </div>

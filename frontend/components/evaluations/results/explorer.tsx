@@ -2,9 +2,18 @@
 
 "use client";
 
-import { CircleAlert, ExternalLink, LoaderCircle, Search, X } from "lucide-react";
+import {
+  CircleAlert,
+  ExternalLink,
+  LoaderCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import Link from "next/link";
-import { SyntheticEvent, useCallback, useEffect, useState } from "react";
+import { CSSProperties, SyntheticEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
 import { Button } from "@/components/ui/button";
@@ -25,9 +34,13 @@ import { formatDateTime } from "@/shared/date";
 import { EvaluationHelper } from "../shared/evaluation-helper";
 import { ClearFilters, FilterSelect, MoreFilters } from "../shared/filter-controls";
 import { evaluationFilterParams, parseEvaluationFilters } from "../shared/filter-state";
-import { EvaluationMarkdownValue } from "./markdown-value";
+import { evaluationInputPreview, EvaluationTraceViewer, evaluationTurnCount } from "./trace-viewer";
 
 const PAGE_SIZE = 25;
+const LIST_MIN_WIDTH = 224;
+const LIST_MAX_WIDTH = 560;
+const DETAIL_MIN_WIDTH = 320;
+const LIST_RESIZE_STEP = 24;
 
 export function EvaluationResultsExplorer() {
   const [filters, setFilters] = useState<ResultFilters>({});
@@ -39,9 +52,18 @@ export function EvaluationResultsExplorer() {
   const [total, setTotal] = useState(0);
   const [selectedCaseId, setSelectedCaseId] = useState<string>();
   const [mobilePane, setMobilePane] = useState<"detail" | "results">("results");
+  const [controlsOpen, setControlsOpen] = useState(true);
+  const [resultListOpen, setResultListOpen] = useState(true);
+  const [listWidth, setListWidth] = useState<number>();
+  const [resizingList, setResizingList] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const resultListRef = useRef<HTMLElement>(null);
+  const resizeOriginRef = useRef<
+    { pointerId: number; startWidth: number; startX: number } | undefined
+  >(undefined);
 
   useEffect(() => {
     const initialFilters = parseEvaluationFilters(window.location.search);
@@ -120,68 +142,131 @@ export function EvaluationResultsExplorer() {
     setFilters({});
   }
 
+  function boundedListWidth(width: number) {
+    const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+    const maximum = Math.min(
+      LIST_MAX_WIDTH,
+      Math.max(LIST_MIN_WIDTH, workspaceWidth - DETAIL_MIN_WIDTH),
+    );
+    return Math.min(maximum, Math.max(LIST_MIN_WIDTH, width));
+  }
+
+  function resizeListBy(delta: number) {
+    const currentWidth =
+      resultListRef.current?.getBoundingClientRect().width ?? listWidth ?? LIST_MIN_WIDTH;
+    setListWidth(boundedListWidth(currentWidth + delta));
+  }
+
+  function finishListResize(pointerId: number) {
+    if (resizeOriginRef.current?.pointerId !== pointerId) return;
+    resizeOriginRef.current = undefined;
+    setResizingList(false);
+  }
+
   return (
-    <div className="flex min-h-[calc(100vh-var(--header-height))] flex-col @min-[560px]:h-[calc(100vh-var(--header-height))] @min-[560px]:min-h-[36rem] @min-[560px]:overflow-hidden">
+    <div
+      className={cn(
+        "flex min-h-[calc(100vh-var(--header-height))] flex-col @min-[560px]:h-[calc(100vh-var(--header-height))] @min-[560px]:min-h-[36rem] @min-[560px]:overflow-hidden",
+        resizingList && "select-none cursor-col-resize",
+      )}
+    >
       <header className="border-b bg-muted/20 px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex items-baseline justify-between gap-4">
           <h1 className="text-base font-semibold tracking-tight">Result explorer</h1>
-          <div className="font-mono text-[11px] uppercase text-muted-foreground">
-            {total.toLocaleString()} cases · {items.length.toLocaleString()} loaded
+          <div className="flex items-center gap-1">
+            <div className="mr-1 hidden font-mono text-[11px] uppercase text-muted-foreground sm:block">
+              {total.toLocaleString()} cases · {items.length.toLocaleString()} loaded
+            </div>
+            <Button
+              aria-controls="result-explorer-controls"
+              aria-expanded={controlsOpen}
+              aria-label={controlsOpen ? "Hide search and filters" : "Show search and filters"}
+              className="size-8"
+              onClick={() => setControlsOpen((open) => !open)}
+              size="icon"
+              title={controlsOpen ? "Hide search and filters" : "Show search and filters"}
+              variant="ghost"
+            >
+              <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+            </Button>
+            <Button
+              aria-controls="evaluation-results-list"
+              aria-expanded={resultListOpen}
+              aria-label={resultListOpen ? "Hide result list" : "Show result list"}
+              className="hidden size-8 @min-[560px]:inline-flex"
+              onClick={() => setResultListOpen((open) => !open)}
+              size="icon"
+              title={resultListOpen ? "Hide result list" : "Show result list"}
+              variant="ghost"
+            >
+              {resultListOpen ? (
+                <PanelLeftClose aria-hidden="true" className="size-3.5" />
+              ) : (
+                <PanelLeftOpen aria-hidden="true" className="size-3.5" />
+              )}
+            </Button>
           </div>
         </div>
-        <form
-          className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap"
-          onSubmit={submitSearch}
-        >
-          <div className="relative col-span-2 min-w-0 sm:flex-1 sm:basis-56">
-            <Search
-              aria-hidden="true"
-              className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              aria-label="Search evaluation results"
-              className="h-8 pl-9 text-xs shadow-none"
-              onChange={(event) => setDraftSearch(event.target.value)}
-              placeholder="Find text in cases"
-              value={draftSearch}
+        {controlsOpen ? (
+          <div id="result-explorer-controls">
+            <form
+              className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap"
+              onSubmit={submitSearch}
+            >
+              <div className="relative col-span-2 min-w-0 sm:flex-1 sm:basis-56">
+                <Search
+                  aria-hidden="true"
+                  className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
+                  aria-label="Search evaluation results"
+                  className="h-8 pl-9 text-xs shadow-none"
+                  onChange={(event) => setDraftSearch(event.target.value)}
+                  placeholder="Find text in cases"
+                  value={draftSearch}
+                />
+              </div>
+              <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                in
+                <Select
+                  aria-label="Search field"
+                  className="h-8 w-auto text-xs shadow-none"
+                  onChange={(event) =>
+                    updateFilter(
+                      "searchField",
+                      (event.target.value === "all"
+                        ? undefined
+                        : event.target.value) as ResultFilters["searchField"],
+                    )
+                  }
+                  value={filters.searchField ?? "all"}
+                >
+                  <option value="all">All fields</option>
+                  <option value="input">Input</option>
+                  <option value="output">Output</option>
+                  <option value="comment">Rationale</option>
+                  <option value="evidence">Evidence</option>
+                </Select>
+              </label>
+              <Button size="sm" type="submit">
+                Search
+              </Button>
+            </form>
+            <EvaluationHelper className="mt-2 rounded-md border bg-accent/40 p-2" />
+            <ResultFiltersToolbar
+              clearFilters={clearFilters}
+              facets={facets}
+              filters={filters}
+              updateFilter={updateFilter}
             />
           </div>
-          <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-            in
-            <Select
-              aria-label="Search field"
-              className="h-8 w-auto text-xs shadow-none"
-              onChange={(event) =>
-                updateFilter(
-                  "searchField",
-                  (event.target.value === "all"
-                    ? undefined
-                    : event.target.value) as ResultFilters["searchField"],
-                )
-              }
-              value={filters.searchField ?? "all"}
-            >
-              <option value="all">All fields</option>
-              <option value="input">Input</option>
-              <option value="output">Output</option>
-              <option value="comment">Rationale</option>
-              <option value="evidence">Evidence</option>
-            </Select>
-          </label>
-          <Button size="sm" type="submit">
-            Search
-          </Button>
-        </form>
-        <EvaluationHelper className="mt-2 rounded-md border bg-accent/40 p-2" />
-        <ResultFiltersToolbar
-          clearFilters={clearFilters}
-          facets={facets}
-          filters={filters}
-          updateFilter={updateFilter}
-        />
+        ) : null}
       </header>
 
-      <div className="grid @min-[560px]:min-h-0 @min-[560px]:flex-1 @min-[560px]:grid-cols-[16rem_minmax(0,1fr)] @min-[760px]:grid-cols-[20rem_minmax(0,1fr)] @min-[1200px]:grid-cols-[23rem_minmax(0,1fr)]">
+      <div
+        className="grid @min-[560px]:min-h-0 @min-[560px]:flex @min-[560px]:flex-1"
+        ref={workspaceRef}
+      >
         <div className="border-b @min-[560px]:hidden">
           <div className="grid grid-cols-2">
             <button
@@ -217,9 +302,17 @@ export function EvaluationResultsExplorer() {
         <section
           aria-label="Evaluation result list"
           className={cn(
-            "min-h-0 border-r bg-muted/15 @min-[560px]:block @min-[560px]:overflow-y-auto",
+            "min-h-0 bg-muted/15 @min-[560px]:block @min-[560px]:w-[var(--results-list-width)] @min-[560px]:min-w-56 @min-[560px]:max-w-[calc(100%-20rem)] @min-[560px]:shrink-0 @min-[560px]:overflow-y-auto @min-[560px]:[--results-list-width:16rem] @min-[760px]:[--results-list-width:20rem] @min-[1200px]:[--results-list-width:23rem]",
             mobilePane === "results" ? "block" : "hidden",
+            !resultListOpen && "@min-[560px]:hidden",
           )}
+          id="evaluation-results-list"
+          ref={resultListRef}
+          style={
+            listWidth === undefined
+              ? undefined
+              : ({ "--results-list-width": `${listWidth}px` } as CSSProperties)
+          }
         >
           {loading ? (
             <LoadingState label="Loading evaluation results" />
@@ -271,17 +364,75 @@ export function EvaluationResultsExplorer() {
           )}
         </section>
 
+        {resultListOpen ? (
+          <div
+            aria-label="Resize result list"
+            aria-orientation="vertical"
+            aria-valuetext={
+              listWidth === undefined
+                ? "Default result list width"
+                : `${Math.round(listWidth)} pixels`
+            }
+            className="group relative z-10 hidden w-1.5 shrink-0 cursor-col-resize touch-none outline-none @min-[560px]:block"
+            onDoubleClick={() => setListWidth(undefined)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                resizeListBy(-LIST_RESIZE_STEP);
+              } else if (event.key === "ArrowRight") {
+                event.preventDefault();
+                resizeListBy(LIST_RESIZE_STEP);
+              } else if (event.key === "Home") {
+                event.preventDefault();
+                setListWidth(LIST_MIN_WIDTH);
+              } else if (event.key === "End") {
+                event.preventDefault();
+                setListWidth(boundedListWidth(LIST_MAX_WIDTH));
+              }
+            }}
+            onLostPointerCapture={(event) => finishListResize(event.pointerId)}
+            onPointerCancel={(event) => finishListResize(event.pointerId)}
+            onPointerDown={(event) => {
+              if (event.button !== 0 || !resultListRef.current) return;
+              event.preventDefault();
+              resizeOriginRef.current = {
+                pointerId: event.pointerId,
+                startWidth: resultListRef.current.getBoundingClientRect().width,
+                startX: event.clientX,
+              };
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setResizingList(true);
+            }}
+            onPointerMove={(event) => {
+              const origin = resizeOriginRef.current;
+              if (!origin || origin.pointerId !== event.pointerId) return;
+              setListWidth(boundedListWidth(origin.startWidth + event.clientX - origin.startX));
+            }}
+            onPointerUp={(event) => {
+              if (resizeOriginRef.current?.pointerId !== event.pointerId) return;
+              event.currentTarget.releasePointerCapture(event.pointerId);
+              finishListResize(event.pointerId);
+            }}
+            role="separator"
+            tabIndex={0}
+            title="Drag to resize. Double-click to reset."
+          >
+            <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/50 group-focus-visible:w-0.5 group-focus-visible:bg-ring" />
+          </div>
+        ) : null}
+
         <section
           aria-label="Selected evaluation result"
           className={cn(
-            "min-w-0 bg-background @min-[560px]:block @min-[560px]:overflow-y-auto",
+            "min-w-0 bg-background @min-[560px]:block @min-[560px]:flex-1 @min-[560px]:overflow-y-auto",
             mobilePane === "detail" ? "block" : "hidden",
           )}
         >
           {selected ? (
             <>
               <p aria-live="polite" className="sr-only">
-                Case {selected.position + 1} selected, {selected.promptTitle}, {selected.status}.
+                {selected.promptTitle} version {selected.promptRevisionNumber} selected,{" "}
+                {selected.status}.
               </p>
               <ResultDetailPane item={selected} search={filters.search} searchField={searchField} />
             </>
@@ -503,6 +654,7 @@ function ResultRow({
   selected: boolean;
 }) {
   const marks = scoreMarks(item);
+  const turnCount = evaluationTurnCount(item);
   return (
     <button
       aria-pressed={selected}
@@ -514,10 +666,17 @@ function ResultRow({
       type="button"
     >
       <div className="flex items-center justify-between gap-3">
-        <span
-          className={cn("min-w-0 truncate text-sm", selected ? "font-semibold" : "font-medium")}
-        >
-          {item.promptTitle} · v{item.promptRevisionNumber}
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            className={cn("min-w-0 truncate text-sm", selected ? "font-semibold" : "font-medium")}
+          >
+            {item.promptTitle} · v{item.promptRevisionNumber}
+          </span>
+          {turnCount > 1 ? (
+            <span className="shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              {turnCount} turns
+            </span>
+          ) : null}
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
           {related ? (
@@ -529,7 +688,7 @@ function ResultRow({
         </span>
       </div>
       <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-        <HighlightedText search={search} value={stringify(item.input)} />
+        <HighlightedText search={search} value={evaluationInputPreview(item)} />
       </p>
       <div className="mt-2 flex items-center justify-between gap-3">
         <div className="flex min-w-0 gap-2 font-mono text-[11px]">
@@ -562,7 +721,9 @@ function ResultDetailPane({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold">Case {item.position + 1}</h2>
+              <h2 className="text-lg font-semibold">
+                {item.promptTitle} · v{item.promptRevisionNumber}
+              </h2>
               {item.isSyntheticExample ? (
                 <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[11px] font-medium uppercase text-muted-foreground">
                   Synthetic
@@ -570,9 +731,6 @@ function ResultDetailPane({
               ) : null}
               <Status status={item.status} />
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {item.promptTitle} · v{item.promptRevisionNumber}
-            </p>
           </div>
           <Link
             className="inline-flex items-center gap-1.5 text-xs font-medium hover:underline"
@@ -602,32 +760,7 @@ function ResultDetailPane({
         ) : null}
       </header>
 
-      <div className="grid @min-[900px]:grid-cols-2">
-        <EvaluationMarkdownValue
-          className="@min-[900px]:pr-5"
-          key={`${item.caseId}-input`}
-          label="Input"
-          source={
-            <HighlightedText
-              search={searchForField(search, searchField, "input")}
-              value={stringify(item.input)}
-            />
-          }
-          value={item.input}
-        />
-        <EvaluationMarkdownValue
-          className="border-t @min-[900px]:border-t-0 @min-[900px]:border-l @min-[900px]:pl-5"
-          key={`${item.caseId}-output`}
-          label="Target output"
-          source={
-            <HighlightedText
-              search={searchForField(search, searchField, "output")}
-              value={stringify(item.output)}
-            />
-          }
-          value={item.output}
-        />
-      </div>
+      <EvaluationTraceViewer item={item} />
 
       <section className="pt-5">
         <div className="flex items-baseline justify-between gap-4 pb-3">
