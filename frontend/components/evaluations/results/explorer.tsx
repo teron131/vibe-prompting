@@ -3,6 +3,9 @@
 "use client";
 
 import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
   CircleAlert,
   ExternalLink,
   LoaderCircle,
@@ -41,6 +44,8 @@ const PAGE_SIZE = 25;
 const LIST_MIN_WIDTH = 224;
 const LIST_MAX_WIDTH = 560;
 const DETAIL_MIN_WIDTH = 320;
+const CONTROLS_OPEN_STORAGE_KEY = "evaluation-results-controls-open";
+const RESULT_LIST_OPEN_STORAGE_KEY = "evaluation-results-list-open";
 
 export function EvaluationResultsExplorer() {
   const [filters, setFilters] = useState<ResultFilters>({});
@@ -52,21 +57,43 @@ export function EvaluationResultsExplorer() {
   const [total, setTotal] = useState(0);
   const [selectedCaseId, setSelectedCaseId] = useState<string>();
   const [mobilePane, setMobilePane] = useState<"detail" | "results">("results");
-  const [controlsOpen, setControlsOpen] = useState(true);
-  const [resultListOpen, setResultListOpen] = useState(true);
+  const [controlsOpen, setControlsOpen] = useState<boolean | null>(null);
+  const [resultListOpen, setResultListOpen] = useState<boolean | null>(null);
+  const [detailScrolled, setDetailScrolled] = useState(false);
   const [listWidth, setListWidth] = useState<number>();
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
   const workspaceRef = useRef<HTMLDivElement>(null);
   const resultListRef = useRef<HTMLElement>(null);
+  const detailScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const initialFilters = parseEvaluationFilters(window.location.search);
+    const storedControlsOpen = window.localStorage.getItem(CONTROLS_OPEN_STORAGE_KEY);
+    const storedResultListOpen = window.localStorage.getItem(RESULT_LIST_OPEN_STORAGE_KEY);
     setFilters(initialFilters);
     setDraftSearch(initialFilters.search ?? "");
+    setControlsOpen(storedControlsOpen === null ? true : storedControlsOpen === "true");
+    setResultListOpen(storedResultListOpen === null ? true : storedResultListOpen === "true");
     setReady(true);
   }, []);
+
+  function toggleControls() {
+    setControlsOpen((open) => {
+      const next = !open;
+      window.localStorage.setItem(CONTROLS_OPEN_STORAGE_KEY, String(next));
+      return next;
+    });
+  }
+
+  function toggleResultList() {
+    setResultListOpen((open) => {
+      const next = !open;
+      window.localStorage.setItem(RESULT_LIST_OPEN_STORAGE_KEY, String(next));
+      return next;
+    });
+  }
 
   const load = useCallback(
     async (cursor?: string) => {
@@ -153,34 +180,20 @@ export function EvaluationResultsExplorer() {
             <div className="mr-1 hidden font-mono text-[11px] uppercase text-muted-foreground sm:block">
               {total.toLocaleString()} cases · {items.length.toLocaleString()} loaded
             </div>
-            <Button
-              aria-controls="result-explorer-controls"
-              aria-expanded={controlsOpen}
-              aria-label={controlsOpen ? "Hide search and filters" : "Show search and filters"}
-              className="size-8"
-              onClick={() => setControlsOpen((open) => !open)}
-              size="icon"
-              title={controlsOpen ? "Hide search and filters" : "Show search and filters"}
-              variant="ghost"
-            >
-              <SlidersHorizontal aria-hidden="true" className="size-3.5" />
-            </Button>
-            <Button
-              aria-controls="evaluation-results-list"
-              aria-expanded={resultListOpen}
-              aria-label={resultListOpen ? "Hide result list" : "Show result list"}
-              className="hidden size-8 @min-[560px]:inline-flex"
-              onClick={() => setResultListOpen((open) => !open)}
-              size="icon"
-              title={resultListOpen ? "Hide result list" : "Show result list"}
-              variant="ghost"
-            >
-              {resultListOpen ? (
-                <PanelLeftClose aria-hidden="true" className="size-3.5" />
-              ) : (
-                <PanelLeftOpen aria-hidden="true" className="size-3.5" />
-              )}
-            </Button>
+            {controlsOpen !== null ? (
+              <Button
+                aria-controls="result-explorer-controls"
+                aria-expanded={controlsOpen}
+                aria-label={controlsOpen ? "Hide search and filters" : "Show search and filters"}
+                className="size-8"
+                onClick={toggleControls}
+                size="icon"
+                title={controlsOpen ? "Hide search and filters" : "Show search and filters"}
+                variant="ghost"
+              >
+                <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+              </Button>
+            ) : null}
           </div>
         </div>
         {controlsOpen ? (
@@ -356,22 +369,65 @@ export function EvaluationResultsExplorer() {
         <section
           aria-label="Selected evaluation result"
           className={cn(
-            "min-w-0 bg-background @min-[560px]:block @min-[560px]:flex-1 @min-[560px]:overflow-y-auto",
+            "relative min-w-0 bg-background @min-[560px]:block @min-[560px]:flex-1 @min-[560px]:overflow-hidden",
             mobilePane === "detail" ? "block" : "hidden",
           )}
         >
-          {selected ? (
-            <>
-              <p aria-live="polite" className="sr-only">
-                {selected.promptTitle} version {selected.promptRevisionNumber} selected,{" "}
-                {selected.status}.
-              </p>
-              <ResultDetailPane item={selected} search={filters.search} searchField={searchField} />
-            </>
-          ) : items.length ? (
-            <div className="grid min-h-72 place-items-center p-6 text-sm text-muted-foreground">
-              Select a case to inspect its output and attributed score evidence.
-            </div>
+          <div
+            className="@min-[560px]:h-full @min-[560px]:overflow-y-auto"
+            onScroll={(event) => setDetailScrolled(event.currentTarget.scrollTop > 240)}
+            ref={detailScrollRef}
+          >
+            {selected ? (
+              <>
+                <p aria-live="polite" className="sr-only">
+                  {selected.promptTitle} version {selected.promptRevisionNumber} selected,{" "}
+                  {selected.status}.
+                </p>
+                <ResultDetailPane
+                  item={selected}
+                  search={filters.search}
+                  searchField={searchField}
+                />
+              </>
+            ) : items.length ? (
+              <div className="grid min-h-72 place-items-center p-6 text-sm text-muted-foreground">
+                Select a case to inspect its output and attributed score evidence.
+              </div>
+            ) : null}
+          </div>
+          {resultListOpen !== null ? (
+            <Button
+              aria-controls="evaluation-results-list"
+              aria-expanded={resultListOpen}
+              aria-label={resultListOpen ? "Collapse result list" : "Expand result list"}
+              className={cn(
+                "absolute top-5 left-[var(--page-gutter)] z-20 hidden size-7 shrink-0 bg-background/95 backdrop-blur-sm @min-[560px]:inline-flex",
+                detailScrolled && "shadow-sm ring-1 ring-border",
+              )}
+              onClick={toggleResultList}
+              size="icon"
+              title={resultListOpen ? "Collapse result list" : "Expand result list"}
+              variant="ghost"
+            >
+              {resultListOpen ? (
+                <PanelLeftClose aria-hidden="true" className="size-3.5" />
+              ) : (
+                <PanelLeftOpen aria-hidden="true" className="size-3.5" />
+              )}
+            </Button>
+          ) : null}
+          {detailScrolled ? (
+            <Button
+              aria-label="Back to top"
+              className="absolute right-[var(--page-gutter)] bottom-4 z-20 hidden size-9 bg-background/95 shadow-sm backdrop-blur-sm @min-[560px]:inline-flex"
+              onClick={() => detailScrollRef.current?.scrollTo({ behavior: "smooth", top: 0 })}
+              size="icon"
+              title="Back to top"
+              variant="outline"
+            >
+              <ArrowUp aria-hidden="true" className="size-4" />
+            </Button>
           ) : null}
         </section>
       </div>
@@ -647,11 +703,46 @@ function ResultDetailPane({
   search?: string;
   searchField: NonNullable<ResultFilters["searchField"]>;
 }) {
+  const scoreTableRef = useRef<HTMLDivElement>(null);
+  const [scoreTableScroll, setScoreTableScroll] = useState({ backward: false, forward: false });
+
+  const updateScoreTableScroll = useCallback(() => {
+    const container = scoreTableRef.current;
+    if (!container) return;
+    setScoreTableScroll({
+      backward: container.scrollLeft > 1,
+      forward: container.scrollLeft + container.clientWidth < container.scrollWidth - 1,
+    });
+  }, []);
+
+  useEffect(() => {
+    const container = scoreTableRef.current;
+    if (!container) return;
+    container.scrollLeft = 0;
+    const frame = window.requestAnimationFrame(updateScoreTableScroll);
+    const observer = new ResizeObserver(updateScoreTableScroll);
+    observer.observe(container);
+    if (container.firstElementChild) observer.observe(container.firstElementChild);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [item.caseId, updateScoreTableScroll]);
+
+  function scrollScoreTable(direction: -1 | 1) {
+    const container = scoreTableRef.current;
+    if (!container) return;
+    container.scrollBy({
+      behavior: "smooth",
+      left: direction * Math.max(240, container.clientWidth * 0.8),
+    });
+  }
+
   return (
     <article className="page-gutter py-5 lg:py-6">
       <header className="border-b pb-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-4 @min-[560px]:pl-9">
+          <div className="flex min-w-0 items-start gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold">
                 {item.promptTitle} · v{item.promptRevisionNumber}
@@ -695,58 +786,142 @@ function ResultDetailPane({
       <EvaluationTraceViewer item={item} />
 
       <section className="pt-5">
-        <div className="flex items-baseline justify-between gap-4 pb-3">
+        <div className="flex items-center justify-between gap-4 pb-3">
           <h3 className="text-sm font-semibold">Attributed score evidence</h3>
-          <span className="font-mono text-[11px] text-muted-foreground">
-            {item.scores.length} score facts
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="font-mono text-[11px] text-muted-foreground">
+              {item.scores.length} score facts
+            </span>
+            <div
+              aria-label="Scroll score evidence table"
+              className="flex items-center gap-1"
+              role="group"
+            >
+              <Button
+                aria-controls="score-evidence-table"
+                aria-label="Scroll score evidence left"
+                className="size-7"
+                disabled={!scoreTableScroll.backward}
+                onClick={() => scrollScoreTable(-1)}
+                size="icon"
+                title="Scroll score evidence left"
+                variant="outline"
+              >
+                <ArrowLeft aria-hidden="true" className="size-3.5" />
+              </Button>
+              <Button
+                aria-controls="score-evidence-table"
+                aria-label="Scroll score evidence right"
+                className="size-7"
+                disabled={!scoreTableScroll.forward}
+                onClick={() => scrollScoreTable(1)}
+                size="icon"
+                title="Scroll score evidence right"
+                variant="outline"
+              >
+                <ArrowRight aria-hidden="true" className="size-3.5" />
+              </Button>
+            </div>
+          </div>
         </div>
         {item.scores.length ? (
-          <div className="divide-y">
-            {item.scores.map((score) => (
-              <div className="grid gap-4 py-4 xl:grid-cols-[14rem_minmax(0,1fr)]" key={score.id}>
-                <div>
-                  <div className="font-mono text-[11px] uppercase text-muted-foreground">
-                    C{score.criterionPosition + 1} · {score.dataType}
-                  </div>
-                  <div className="mt-1 text-sm font-medium">{score.criterion.instruction}</div>
-                  <div
-                    className={cn(
-                      "mt-2 font-mono text-xs font-semibold",
-                      scoreColor(formatScore(score.value)),
-                    )}
+          <div
+            aria-label="Scrollable score evidence table"
+            className="overflow-x-auto overscroll-x-contain border-y [scrollbar-gutter:stable] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            id="score-evidence-table"
+            onScroll={updateScoreTableScroll}
+            ref={scoreTableRef}
+            role="region"
+            tabIndex={0}
+          >
+            <table className="w-full min-w-[52rem] border-collapse text-xs">
+              <caption className="sr-only">
+                Persisted score facts for the selected evaluation case.
+              </caption>
+              <thead className="bg-muted/35 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="w-64 border-r px-4 py-2 text-left font-medium" scope="col">
+                    Criterion
+                  </th>
+                  <th
+                    className="w-px whitespace-nowrap border-r px-3 py-2 text-left font-medium"
+                    scope="col"
                   >
-                    {formatScore(score.value)}
-                  </div>
-                </div>
-                <div className="min-w-0">
-                  <ModelIdentityLabel
-                    className="text-muted-foreground"
-                    labelClassName="font-mono text-[11px]"
-                    modelId={score.judgeModelId}
-                    variant="short-id"
-                  />
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                    <HighlightedText
-                      search={searchForField(search, searchField, "comment")}
-                      value={score.comment}
-                    />
-                  </p>
-                  {score.evidence.length ? (
-                    <ul className="mt-3 space-y-1.5 text-xs leading-relaxed">
-                      {score.evidence.map((evidence) => (
-                        <li className="border-l pl-3" key={evidence}>
-                          <HighlightedText
-                            search={searchForField(search, searchField, "evidence")}
-                            value={evidence}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+                    Result
+                  </th>
+                  <th
+                    className="w-px whitespace-nowrap border-r px-3 py-2 text-left font-medium"
+                    scope="col"
+                  >
+                    Judge
+                  </th>
+                  <th className="px-4 py-2 text-left font-medium" scope="col">
+                    Rationale and evidence
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {item.scores.map((score) => (
+                  <tr className="align-top" key={score.id}>
+                    <th className="border-r px-4 py-3 text-left font-normal" scope="row">
+                      <span className="font-mono text-[11px] uppercase text-muted-foreground">
+                        C{score.criterionPosition + 1} · {score.dataType}
+                      </span>
+                      <span className="mt-1 block max-w-sm text-sm font-medium leading-5">
+                        {score.criterion.instruction}
+                      </span>
+                    </th>
+                    <td className="w-px whitespace-nowrap border-r px-3 py-3">
+                      <span
+                        className={cn(
+                          "font-mono text-xs font-semibold",
+                          scoreColor(formatScore(score.value)),
+                        )}
+                      >
+                        {formatScore(score.value)}
+                      </span>
+                    </td>
+                    <td className="w-px whitespace-nowrap border-r px-3 py-3">
+                      <ModelIdentityLabel
+                        className="text-muted-foreground"
+                        labelClassName="font-mono text-[11px]"
+                        modelId={score.judgeModelId}
+                        variant="short-id"
+                      />
+                    </td>
+                    <td className="min-w-80 px-4 py-3">
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        <HighlightedText
+                          search={searchForField(search, searchField, "comment")}
+                          value={score.comment}
+                        />
+                      </p>
+                      {score.evidence.length ? (
+                        <ul className="mt-3 space-y-1.5 text-xs leading-relaxed">
+                          {score.evidence.map((evidence) => (
+                            <li
+                              className="grid grid-cols-[0.375rem_minmax(0,1fr)] items-start gap-2.5"
+                              key={evidence}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="mt-[0.6em] size-1.5 rounded-full bg-muted-foreground/50"
+                              />
+                              <span>
+                                <HighlightedText
+                                  search={searchForField(search, searchField, "evidence")}
+                                  value={evidence}
+                                />
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <p className="py-5 text-sm text-muted-foreground">

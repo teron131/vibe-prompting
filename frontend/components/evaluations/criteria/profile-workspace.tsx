@@ -2,7 +2,17 @@
 
 "use client";
 
-import { ArrowDown, ArrowUp, Copy, LoaderCircle, Plus, Save, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  LoaderCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Save,
+  Trash2,
+} from "lucide-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -27,6 +37,7 @@ const readError = createErrorReader("The criteria profile request failed.");
 const PROFILE_LIST_MIN_WIDTH = 224;
 const PROFILE_LIST_MAX_WIDTH = 480;
 const PROFILE_EDITOR_MIN_WIDTH = 400;
+const PROFILE_LIST_OPEN_STORAGE_KEY = "evaluation-criteria-profile-list-open";
 
 type Draft = CriteriaProfileInput & { id?: string };
 type CriterionType = Criterion["type"];
@@ -38,6 +49,8 @@ export function CriteriaProfileWorkspace() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editorScrolled, setEditorScrolled] = useState(false);
+  const [profileListOpen, setProfileListOpen] = useState<boolean | null>(null);
   const [profileListWidth, setProfileListWidth] = useState<number>();
   const workspaceRef = useRef<HTMLDivElement>(null);
   const profileListRef = useRef<HTMLElement>(null);
@@ -45,6 +58,18 @@ export function CriteriaProfileWorkspace() {
   useEffect(() => {
     setConfirmingDelete(false);
   }, [draft?.id]);
+
+  useEffect(() => {
+    const storedProfileListOpen = window.localStorage.getItem(PROFILE_LIST_OPEN_STORAGE_KEY);
+    setProfileListOpen(storedProfileListOpen === null ? true : storedProfileListOpen === "true");
+  }, []);
+
+  useEffect(() => {
+    const updateEditorScrolled = () => setEditorScrolled(window.scrollY > 240);
+    updateEditorScrolled();
+    window.addEventListener("scroll", updateEditorScrolled, { passive: true });
+    return () => window.removeEventListener("scroll", updateEditorScrolled);
+  }, []);
 
   useEffect(() => {
     void criteriaApi
@@ -130,9 +155,22 @@ export function CriteriaProfileWorkspace() {
     );
   }
 
+  function toggleProfileList() {
+    setProfileListOpen((open) => {
+      const next = !open;
+      window.localStorage.setItem(PROFILE_LIST_OPEN_STORAGE_KEY, String(next));
+      return next;
+    });
+  }
+
   return (
     <div
-      className="mx-auto grid min-h-[calc(100dvh-var(--header-height))] w-full max-w-[1480px] @min-[620px]:grid-cols-[var(--criteria-list-width)_1px_minmax(0,1fr)] @min-[620px]:[--criteria-list-width:16rem] @min-[900px]:[--criteria-list-width:18rem] @min-[1200px]:[--criteria-list-width:20rem]"
+      className={cn(
+        "mx-auto grid min-h-[calc(100dvh-var(--header-height))] w-full max-w-[1480px]",
+        profileListOpen === true
+          ? "@min-[620px]:grid-cols-[var(--criteria-list-width)_1px_minmax(0,1fr)] @min-[620px]:[--criteria-list-width:16rem] @min-[900px]:[--criteria-list-width:18rem] @min-[1200px]:[--criteria-list-width:20rem]"
+          : "@min-[620px]:grid-cols-[minmax(0,1fr)]",
+      )}
       ref={workspaceRef}
       style={
         profileListWidth === undefined
@@ -140,7 +178,14 @@ export function CriteriaProfileWorkspace() {
           : ({ "--criteria-list-width": `${profileListWidth}px` } as CSSProperties)
       }
     >
-      <aside className="border-b bg-muted/25 @min-[620px]:border-b-0" ref={profileListRef}>
+      <aside
+        className={cn(
+          "border-b bg-muted/25 @min-[620px]:border-b-0",
+          profileListOpen !== true && "@min-[620px]:hidden",
+        )}
+        id="criteria-profile-list"
+        ref={profileListRef}
+      >
         <div className="p-4 sm:p-5 @min-[620px]:sticky @min-[620px]:top-0 @min-[620px]:max-h-[calc(100dvh-var(--header-height))] @min-[620px]:overflow-y-auto xl:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -201,21 +246,50 @@ export function CriteriaProfileWorkspace() {
         </div>
       </aside>
 
-      <ResizableDivider
-        ariaLabel="Resize criteria profile list"
-        className="hidden @min-[620px]:block"
-        defaultValueText="Default criteria profile list width"
-        maxSize={maximumProfileListWidth}
-        minSize={PROFILE_LIST_MIN_WIDTH}
-        onSizeChange={setProfileListWidth}
-        panelRef={profileListRef}
-        size={profileListWidth}
-      />
+      {profileListOpen === true ? (
+        <ResizableDivider
+          ariaLabel="Resize criteria profile list"
+          className="hidden @min-[620px]:block"
+          defaultValueText="Default criteria profile list width"
+          maxSize={maximumProfileListWidth}
+          minSize={PROFILE_LIST_MIN_WIDTH}
+          onSizeChange={setProfileListWidth}
+          panelRef={profileListRef}
+          size={profileListWidth}
+        />
+      ) : null}
 
-      <section className="min-w-0 bg-background px-4 py-5 sm:px-6 min-[840px]:px-7 xl:px-10 xl:py-8">
+      <section className="relative min-w-0 bg-background px-4 py-5 sm:px-6 min-[840px]:px-7 xl:px-10 xl:py-8">
+        {profileListOpen !== null ? (
+          <Button
+            aria-controls="criteria-profile-list"
+            aria-expanded={profileListOpen}
+            aria-label={
+              profileListOpen ? "Collapse criteria profile list" : "Expand criteria profile list"
+            }
+            className={cn(
+              "z-20 hidden bg-background/95 backdrop-blur-sm @min-[620px]:inline-flex",
+              editorScrolled
+                ? "fixed right-4 bottom-4 size-9 shadow-sm"
+                : "absolute top-5 left-4 size-7 sm:left-6 min-[840px]:left-7 xl:top-8 xl:left-10",
+            )}
+            onClick={toggleProfileList}
+            size="icon"
+            title={
+              profileListOpen ? "Collapse criteria profile list" : "Expand criteria profile list"
+            }
+            variant={editorScrolled ? "outline" : "ghost"}
+          >
+            {profileListOpen ? (
+              <PanelLeftClose aria-hidden="true" className="size-3.5" />
+            ) : (
+              <PanelLeftOpen aria-hidden="true" className="size-3.5" />
+            )}
+          </Button>
+        ) : null}
         {draft ? (
           <div className="max-w-4xl">
-            <header className="flex flex-col gap-4 pb-6 @min-[820px]:flex-row @min-[820px]:items-end @min-[820px]:justify-between">
+            <header className="flex flex-col gap-4 pb-6 @min-[620px]:pl-9 @min-[820px]:flex-row @min-[820px]:items-end @min-[820px]:justify-between">
               <div className="min-w-0 flex-1">
                 <label className="text-xs font-medium" htmlFor="criteria-profile-name">
                   Profile name
