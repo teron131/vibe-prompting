@@ -44,8 +44,6 @@ const indexedCaseResultSchema = z.object({
   result: evaluatedCaseSchema,
 });
 
-export type EvaluatorCaseResult = z.infer<typeof evaluatedCaseSchema>;
-
 const EvaluatorInput = new StateSchema({
   name: z.string().trim().min(1).default("evaluation"),
   target: targetSchema,

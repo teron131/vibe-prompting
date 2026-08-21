@@ -17,21 +17,14 @@ type ResultRow = {
   caseId: string;
   runId: string;
   position: number;
-  promptId: string;
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
-  targetProfileId: string | null;
-  targetProfileRevisionId: string | null;
-  targetProfileName: string | null;
   targetModelId: string;
   judgeModelIds: string[];
-  source: "ai" | "human";
   status: EvaluationRunStatus;
   input: unknown;
   output: unknown | null;
-  configurationFingerprint: string;
-  effectiveInstructionsHash: string | null;
   isSyntheticExample: boolean;
   errorMessage: string | null;
   createdAt: Date;
@@ -70,20 +63,16 @@ export function selectResultRows(
     SELECT
       evaluation_cases.id AS case_id, evaluation_cases.position,
       evaluation_cases.input_json AS input, evaluation_cases.output_json AS output,
-      evaluation_runs.id AS run_id, evaluation_runs.prompt_id,
+      evaluation_runs.id AS run_id,
       evaluation_runs.prompt_revision_id, evaluation_runs.target_model_id,
-      evaluation_runs.status, evaluation_runs.source, evaluation_runs.judge_model_ids,
-      evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
-      evaluation_runs.is_synthetic_example, evaluation_runs.effective_instructions_hash,
-      evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
+      evaluation_runs.status, evaluation_runs.judge_model_ids,
+      evaluation_runs.error_message, evaluation_runs.is_synthetic_example,
       evaluation_runs.created_at, evaluation_runs.completed_at, prompts.title AS prompt_title,
-      prompt_revisions.revision_number AS prompt_revision_number,
-      target_profiles.name AS target_profile_name
+      prompt_revisions.revision_number AS prompt_revision_number
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
-    LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     WHERE
       (${filters.runId}::uuid IS NULL OR evaluation_runs.id = ${filters.runId})
       AND
@@ -125,20 +114,16 @@ export function selectResultById(sql: DatabaseClient, caseId: string) {
     SELECT
       evaluation_cases.id AS case_id, evaluation_cases.position,
       evaluation_cases.input_json AS input, evaluation_cases.output_json AS output,
-      evaluation_runs.id AS run_id, evaluation_runs.prompt_id,
+      evaluation_runs.id AS run_id,
       evaluation_runs.prompt_revision_id, evaluation_runs.target_model_id,
-      evaluation_runs.status, evaluation_runs.source, evaluation_runs.judge_model_ids,
-      evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
-      evaluation_runs.is_synthetic_example, evaluation_runs.effective_instructions_hash,
-      evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
+      evaluation_runs.status, evaluation_runs.judge_model_ids,
+      evaluation_runs.error_message, evaluation_runs.is_synthetic_example,
       evaluation_runs.created_at, evaluation_runs.completed_at, prompts.title AS prompt_title,
-      prompt_revisions.revision_number AS prompt_revision_number,
-      target_profiles.name AS target_profile_name
+      prompt_revisions.revision_number AS prompt_revision_number
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
-    LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     WHERE evaluation_cases.id = ${caseId}
   `;
 }
@@ -180,22 +165,15 @@ export function projectCaseResults(rows: ResultRow[], scores: ScoreRow[]): Resul
     caseId: row.caseId,
     runId: row.runId,
     position: row.position,
-    promptId: row.promptId,
     promptRevisionId: row.promptRevisionId,
     promptRevisionNumber: row.promptRevisionNumber,
     promptTitle: row.promptTitle,
-    targetProfileId: row.targetProfileId,
-    targetProfileRevisionId: row.targetProfileRevisionId,
-    targetProfileName: row.targetProfileName,
     targetModelId: row.targetModelId,
     judgeModelIds: row.judgeModelIds,
-    source: row.source,
     status: row.status,
     input: row.input,
     output: row.output,
     scores: byCase.get(row.caseId) ?? [],
-    configurationFingerprint: row.configurationFingerprint,
-    effectiveInstructionsHash: row.effectiveInstructionsHash,
     isSyntheticExample: row.isSyntheticExample,
     errorMessage: row.errorMessage,
     createdAt: row.createdAt.toISOString(),
@@ -209,7 +187,6 @@ export function countFilteredCases(sql: DatabaseClient, filters: NormalizedFilte
     SELECT count(*)::integer AS count
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     WHERE
       (${filters.runId}::uuid IS NULL OR evaluation_runs.id = ${filters.runId})
       AND
@@ -266,7 +243,6 @@ export async function selectSearchDocuments(
       END AS text
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     WHERE
       (${filters.runId}::uuid IS NULL OR evaluation_runs.id = ${filters.runId})
       AND
@@ -352,7 +328,6 @@ function selectRunFacet(
     SELECT ${expression} AS value, count(DISTINCT evaluation_cases.id)::integer AS count
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     LEFT JOIN evaluation_scores ON evaluation_scores.case_id = evaluation_cases.id
     WHERE ${filterConditions(sql, filters)}
     GROUP BY ${expression}
@@ -371,7 +346,6 @@ function selectScoreFacet(
     SELECT ${expression} AS value, count(DISTINCT evaluation_cases.id)::integer AS count
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     JOIN evaluation_scores ON evaluation_scores.case_id = evaluation_cases.id
     WHERE ${filterConditions(sql, filters)}
     GROUP BY ${expression}
@@ -409,7 +383,6 @@ export function selectTotals(sql: DatabaseClient, filters: NormalizedFilters) {
       count(DISTINCT evaluation_scores.id)::integer AS scores
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     LEFT JOIN evaluation_scores ON evaluation_scores.case_id = evaluation_cases.id
     WHERE ${filterConditions(sql, filters)}
   `;
@@ -434,7 +407,6 @@ export function selectBooleanAggregates(sql: DatabaseClient, filters: Normalized
     FROM evaluation_scores
     JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     WHERE evaluation_scores.data_type = 'BOOLEAN' AND ${filterConditions(sql, filters)}
     GROUP BY evaluation_scores.criterion_position, evaluation_scores.criterion_json->>'instruction'
     ORDER BY evaluation_scores.criterion_position, criterion
@@ -453,7 +425,6 @@ export function selectCategoricalAggregates(sql: DatabaseClient, filters: Normal
     FROM evaluation_scores
     JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     WHERE evaluation_scores.data_type = 'CATEGORICAL' AND ${filterConditions(sql, filters)}
     GROUP BY evaluation_scores.criterion_position, evaluation_scores.criterion_json->>'instruction', evaluation_scores.value_json
     ORDER BY evaluation_scores.criterion_position, count DESC, category
@@ -489,7 +460,6 @@ export function selectNumericAggregates(sql: DatabaseClient, filters: Normalized
     FROM evaluation_scores
     JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     WHERE evaluation_scores.data_type = 'NUMERIC' AND jsonb_typeof(evaluation_scores.value_json) = 'number' AND ${filterConditions(sql, filters)}
     GROUP BY evaluation_scores.criterion_position, evaluation_scores.criterion_json->>'instruction'
     ORDER BY evaluation_scores.criterion_position, criterion
@@ -517,7 +487,6 @@ export function selectExecutionSummary(sql: DatabaseClient, filters: NormalizedF
         evaluation_runs.completed_at
       FROM evaluation_cases
       JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-      JOIN prompts ON prompts.id = evaluation_runs.prompt_id
       LEFT JOIN evaluation_scores ON evaluation_scores.case_id = evaluation_cases.id
       WHERE ${filterConditions(sql, filters)}
     ), run_durations AS (
@@ -556,7 +525,6 @@ export function selectReliabilitySummary(sql: DatabaseClient, filters: Normalize
       FROM evaluation_scores
       JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
       JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-      JOIN prompts ON prompts.id = evaluation_runs.prompt_id
       WHERE evaluation_scores.data_type IN ('BOOLEAN', 'CATEGORICAL') AND ${filterConditions(sql, filters)}
       GROUP BY evaluation_scores.case_id, evaluation_scores.criterion_position, evaluation_scores.data_type
     )
@@ -578,7 +546,6 @@ export function selectTimeline(sql: DatabaseClient, filters: NormalizedFilters) 
       count(DISTINCT evaluation_scores.id)::integer AS scores
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     LEFT JOIN evaluation_scores ON evaluation_scores.case_id = evaluation_cases.id
     WHERE ${filterConditions(sql, filters)}
     GROUP BY date_trunc('day', evaluation_runs.created_at)
@@ -620,7 +587,6 @@ export function selectNumericQueryRows(
       FROM evaluation_scores
       JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
       JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-      JOIN prompts ON prompts.id = evaluation_runs.prompt_id
       WHERE evaluation_scores.data_type = 'NUMERIC'
         AND jsonb_typeof(evaluation_scores.value_json) = 'number'
         AND ${filterConditions(sql, filters)}

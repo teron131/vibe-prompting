@@ -102,11 +102,9 @@ export type EvaluationBatchStart = {
 export type EvaluationBatchStatus = { runs: EvaluationRunSummary[] };
 
 export type CriteriaProfile = {
-  createdAt: string;
   criteria: Criterion[];
   id: string;
   name: string;
-  updatedAt: string;
 };
 
 export type CriteriaProfileInput = { criteria: Criterion[]; name: string };

@@ -1,4 +1,4 @@
-/** Returns one evaluation case with its exact run provenance and complete judge-attributed score evidence. */
+/** Returns one evaluation case with its browser-visible run context and complete judge-attributed score evidence. */
 
 import { getApplicationServices } from "vibe-prompting/server";
 

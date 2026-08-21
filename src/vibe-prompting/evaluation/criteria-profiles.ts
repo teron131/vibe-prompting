@@ -17,16 +17,12 @@ type ProfileRow = {
   id: string;
   name: string;
   criteria: unknown;
-  createdAt: Date;
-  updatedAt: Date;
 };
 
 export type CriteriaProfile = {
   id: string;
   name: string;
   criteria: Criterion[];
-  createdAt: string;
-  updatedAt: string;
 };
 
 export type CriteriaProfileInput = z.infer<typeof criteriaProfileInputSchema>;
@@ -54,7 +50,7 @@ export class CriteriaProfiles {
   async list(): Promise<CriteriaProfile[]> {
     return this.#database.run(async (sql) => {
       const rows = await sql<ProfileRow[]>`
-        SELECT id, name, criteria_json AS criteria, created_at, updated_at
+        SELECT id, name, criteria_json AS criteria
         FROM evaluation_criteria_profiles
         ORDER BY lower(name), id
       `;
@@ -79,7 +75,7 @@ export class CriteriaProfiles {
           ${input.name},
           ${sql.json(input.criteria as postgres.JSONValue[])}
         )
-        RETURNING id, name, criteria_json AS criteria, created_at, updated_at
+        RETURNING id, name, criteria_json AS criteria
       `;
       if (!row) throw new Error("Criteria profile creation returned no record.");
       return parseProfile(row);
@@ -96,10 +92,9 @@ export class CriteriaProfiles {
         UPDATE evaluation_criteria_profiles
         SET
           name = ${input.name},
-          criteria_json = ${sql.json(input.criteria as postgres.JSONValue[])},
-          updated_at = now()
+          criteria_json = ${sql.json(input.criteria as postgres.JSONValue[])}
         WHERE id = ${id}
-        RETURNING id, name, criteria_json AS criteria, created_at, updated_at
+        RETURNING id, name, criteria_json AS criteria
       `;
       if (!row) throw new Error("Criteria profile update returned no record.");
       return parseProfile(row);
@@ -117,7 +112,7 @@ export class CriteriaProfiles {
 
 async function requireProfile(sql: DatabaseClient, id: string): Promise<CriteriaProfile> {
   const [row] = await sql<ProfileRow[]>`
-    SELECT id, name, criteria_json AS criteria, created_at, updated_at
+    SELECT id, name, criteria_json AS criteria
     FROM evaluation_criteria_profiles
     WHERE id = ${id}
   `;
@@ -145,8 +140,6 @@ function parseProfile(row: ProfileRow): CriteriaProfile {
     id: row.id,
     name: row.name,
     criteria: criteriaSchema.parse(row.criteria),
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
   };
 }
 

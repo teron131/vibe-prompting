@@ -38,8 +38,8 @@ import {
   normalizeFilters,
   parseQueryInput,
   projectFilters,
-  type ResultDetail,
   type ResultFilters,
+  type ResultListItem,
 } from "./schemas.ts";
 
 /** Reads result cases and score facts while applying one consistent filter set to every view. */
@@ -90,7 +90,7 @@ export class EvaluationResults {
   }
 
   /** Loads one case with its score facts and raises a typed not-found error for unknown IDs. */
-  async getResult(caseId: string): Promise<ResultDetail> {
+  async getResult(caseId: string): Promise<ResultListItem> {
     const parsedId = parseQueryInput(z.uuid(), caseId);
     return this.#database.run(async (sql) => {
       const rows = await selectResultById(sql, parsedId);

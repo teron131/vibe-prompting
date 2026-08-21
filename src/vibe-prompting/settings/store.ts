@@ -184,8 +184,7 @@ export class ApplicationSettingsStore {
         ON CONFLICT (singleton) DO UPDATE
         SET model_catalog = EXCLUDED.model_catalog,
             helper_model = EXCLUDED.helper_model,
-            provider_overrides = EXCLUDED.provider_overrides,
-            updated_at = now()
+            provider_overrides = EXCLUDED.provider_overrides
         RETURNING model_catalog, helper_model, provider_overrides
       `;
       if (!saved) throw new Error("Application settings could not be saved.");

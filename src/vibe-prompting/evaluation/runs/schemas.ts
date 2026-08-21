@@ -65,7 +65,7 @@ export type StoredEvaluationScore = {
   evidence: string[];
 };
 
-export type StoredEvaluationCase = {
+type StoredEvaluationCase = {
   id: string;
   position: number;
   input: unknown;

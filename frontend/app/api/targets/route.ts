@@ -21,9 +21,12 @@ export async function GET(request: Request) {
   try {
     const services = await getApplicationServices();
     const profile = await services.targets.getProfileForPrompt(promptId);
-    return Response.json({ profile } satisfies TargetProfileResponse, {
-      headers: NO_STORE_HEADERS,
-    });
+    return Response.json(
+      {
+        profile: { configuration: profile.configuration, name: profile.name },
+      } satisfies TargetProfileResponse,
+      { headers: NO_STORE_HEADERS },
+    );
   } catch (error) {
     if (error && typeof error === "object" && "statusCode" in error && error.statusCode === 404) {
       return Response.json({ profile: null } satisfies TargetProfileResponse, {

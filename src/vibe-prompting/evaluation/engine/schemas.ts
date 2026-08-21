@@ -10,7 +10,7 @@ export const evaluationSubjectSchema = z.object({
 });
 
 export type EvaluationSubject = z.infer<typeof evaluationSubjectSchema>;
-export type JudgeScoreType = "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
+type JudgeScoreType = "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
 
 export type EvaluatorScore = {
   criterionName: string;
@@ -154,7 +154,6 @@ export const evaluationReportSchema = z.object({
 
 export type EvaluationCriterion = z.infer<typeof criterionSchema>;
 export type EvaluationCriteria = z.infer<typeof evaluationCriteriaSchema>;
-export type EvaluationResult = z.infer<typeof evaluationResultSchema>;
 export type EvaluationReport = z.infer<typeof evaluationReportSchema>;
 
 export function createEvaluationReportSchema(criteria: EvaluationCriteria) {

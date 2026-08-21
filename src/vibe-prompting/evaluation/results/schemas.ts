@@ -37,29 +37,20 @@ export type ResultListItem = {
   caseId: string;
   runId: string;
   position: number;
-  promptId: string;
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
-  targetProfileId: string | null;
-  targetProfileRevisionId: string | null;
-  targetProfileName: string | null;
   targetModelId: string;
   judgeModelIds: string[];
-  source: "ai" | "human";
   status: EvaluationRunStatus;
   input: unknown;
   output: unknown | null;
   scores: ResultScore[];
-  configurationFingerprint: string;
-  effectiveInstructionsHash: string | null;
   isSyntheticExample: boolean;
   errorMessage: string | null;
   createdAt: string;
   completedAt: string | null;
 };
-
-export type ResultDetail = ResultListItem;
 
 export type EvaluationWorkspaceFacets = {
   prompts: Array<{ count: number; id: string; label: string }>;

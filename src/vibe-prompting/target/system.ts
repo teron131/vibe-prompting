@@ -13,14 +13,10 @@ import type { Target } from "./api.ts";
 
 export type TargetProfile = {
   configuration: TargetConfiguration;
-  createdAt: string;
   id: string;
   instructions: string;
   name: string;
-  promptId: string;
   revisionId: string;
-  revisionNumber: number;
-  updatedAt: string;
 };
 
 export type PinnedTarget = {
@@ -43,14 +39,10 @@ export class TargetProfileError extends Error {
 
 type ProfileRow = {
   configuration: unknown;
-  createdAt: Date;
   id: string;
   instructions: string;
   name: string;
-  promptId: string;
   revisionId: string;
-  revisionNumber: number;
-  updatedAt: Date;
 };
 
 type ProfileHeadRow = {
@@ -185,7 +177,7 @@ export class TargetSystem {
       `;
       await sql`
         UPDATE target_profiles
-        SET current_revision_id = ${revisionId}, updated_at = now()
+        SET current_revision_id = ${revisionId}
         WHERE id = ${input.profileId}
       `;
       return requireProfileForPrompt(sql, current.promptId);
@@ -236,13 +228,9 @@ async function requireProfileForPrompt(
     SELECT
       target_profiles.id,
       target_profiles.name,
-      target_profiles.prompt_id,
       target_profiles.current_revision_id AS revision_id,
-      target_profile_revisions.revision_number,
       target_profile_revisions.instructions,
-      target_profile_revisions.configuration,
-      target_profiles.created_at,
-      target_profiles.updated_at
+      target_profile_revisions.configuration
     FROM target_profiles
     JOIN target_profile_revisions
       ON target_profile_revisions.id = target_profiles.current_revision_id
@@ -251,13 +239,9 @@ async function requireProfileForPrompt(
   if (!row) throw new TargetProfileNotFoundError(promptId);
   return {
     configuration: targetConfigurationSchema.parse(row.configuration),
-    createdAt: row.createdAt.toISOString(),
     id: row.id,
     instructions: row.instructions,
     name: row.name,
-    promptId: row.promptId,
     revisionId: row.revisionId,
-    revisionNumber: row.revisionNumber,
-    updatedAt: row.updatedAt.toISOString(),
   };
 }

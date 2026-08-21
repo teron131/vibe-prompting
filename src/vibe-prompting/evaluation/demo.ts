@@ -145,15 +145,15 @@ async function seedPrompt(sql: postgres.TransactionSql): Promise<void> {
 
 async function seedTarget(sql: postgres.TransactionSql): Promise<void> {
   await sql`
-    INSERT INTO target_profiles (id, name, prompt_id, current_revision_id, created_at, updated_at)
-    VALUES (${TARGET_PROFILE_ID}, 'AI SDK agent', ${PROMPT_ID}, ${TARGET_REVISION_ID}, '2026-08-17T00:00:00Z', '2026-08-17T00:00:00Z')
+    INSERT INTO target_profiles (id, name, prompt_id, current_revision_id)
+    VALUES (${TARGET_PROFILE_ID}, 'AI SDK agent', ${PROMPT_ID}, ${TARGET_REVISION_ID})
   `;
   await sql`
     INSERT INTO target_profile_revisions (
-      id, target_profile_id, parent_revision_id, revision_number, instructions, configuration, created_at
+      id, target_profile_id, parent_revision_id, revision_number, instructions, configuration
     )
     VALUES (
-      ${TARGET_REVISION_ID}, ${TARGET_PROFILE_ID}, NULL, 1, '', ${sql.json({})}, '2026-08-17T00:00:00Z'
+      ${TARGET_REVISION_ID}, ${TARGET_PROFILE_ID}, NULL, 1, '', ${sql.json({})}
     )
   `;
 }

@@ -84,6 +84,16 @@ const MIGRATIONS = [
       readFile(new URL("../../migrations/014_helper_model_setting.sql", import.meta.url), "utf8"),
     version: 14,
   },
+  {
+    load: () =>
+      readFile(new URL("../../migrations/015_schema_optimization.sql", import.meta.url), "utf8"),
+    version: 15,
+  },
+  {
+    load: () =>
+      readFile(new URL("../../migrations/016_backend_schema_cleanup.sql", import.meta.url), "utf8"),
+    version: 16,
+  },
 ];
 
 export type DatabaseClient = postgres.Sql | postgres.TransactionSql;

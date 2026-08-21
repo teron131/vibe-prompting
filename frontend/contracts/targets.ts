@@ -8,14 +8,7 @@ export type TargetConfiguration = {
 
 export type TargetProfile = {
   configuration: TargetConfiguration;
-  createdAt: string;
-  id: string;
-  instructions: string;
   name: string;
-  promptId: string;
-  revisionId: string;
-  revisionNumber: number;
-  updatedAt: string;
 };
 
 export type TargetProfileResponse = { profile: TargetProfile | null };

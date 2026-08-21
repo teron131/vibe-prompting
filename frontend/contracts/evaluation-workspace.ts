@@ -41,31 +41,21 @@ export type EvaluationResultScore = {
 export type EvaluationResultItem = {
   caseId: string;
   completedAt: string | null;
-  configurationFingerprint: string;
   createdAt: string;
-  effectiveInstructionsHash: string | null;
   errorMessage: string | null;
   input: unknown;
   isSyntheticExample: boolean;
   judgeModelIds: string[];
   output: unknown | null;
   position: number;
-  promptId: string;
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
   runId: string;
   scores: EvaluationResultScore[];
-  source: "ai" | "human";
   status: EvaluationRunStatus;
   targetModelId: string;
-  targetProfileId: string | null;
-  targetProfileName: string | null;
-  targetProfileRevisionId: string | null;
 };
-
-export type ResultListItem = EvaluationResultItem;
-export type ResultDetail = EvaluationResultItem;
 
 export type EvaluationWorkspaceFacets = {
   dataTypes: Array<{ count: number; value: EvaluationDataType }>;
@@ -175,5 +165,3 @@ export type EvaluationQueryResponse = {
   rows: Array<{ count?: number; label: string; value: number }>;
   value: number | null;
 };
-
-export type EvaluationStructuredQueryResponse = EvaluationQueryResponse;

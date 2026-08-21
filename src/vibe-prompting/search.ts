@@ -222,8 +222,7 @@ async function upsertEmbeddings<T>(
           owner_id = EXCLUDED.owner_id,
           content_hash = EXCLUDED.content_hash,
           model = EXCLUDED.model,
-          embedding = EXCLUDED.embedding,
-          indexed_at = now()
+          embedding = EXCLUDED.embedding
       `;
     }
   });
