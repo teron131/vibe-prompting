@@ -27,6 +27,7 @@ type RunSummaryRow = {
   status: EvaluationRunStatus;
   promptId: string;
   promptRevisionId: string;
+  promptRevisionNumber: number;
   promptTitle: string;
   targetProfileId: string | null;
   targetProfileRevisionId: string | null;
@@ -80,6 +81,7 @@ type TrendSourceRow = {
 type BooleanTrendRow = {
   id: string;
   promptRevisionId: string;
+  promptRevisionNumber: number;
   completedAt: Date | null;
   createdAt: Date;
   criterionPosition: number | null;
@@ -239,8 +241,14 @@ export class EvaluationRunStore {
     const rows = await this.#database.run(
       (sql) => sql<BooleanTrendRow[]>`
         WITH compatible_runs AS (
-          SELECT id, prompt_revision_id, created_at, completed_at
+          SELECT
+            evaluation_runs.id,
+            evaluation_runs.prompt_revision_id,
+            prompt_revisions.revision_number AS prompt_revision_number,
+            evaluation_runs.created_at,
+            evaluation_runs.completed_at
           FROM evaluation_runs
+          JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
           WHERE prompt_id = ${source.promptId}
             AND configuration_fingerprint = ${source.configurationFingerprint}
             AND status = 'completed'
@@ -264,6 +272,7 @@ export class EvaluationRunStore {
         SELECT
           compatible_runs.id,
           compatible_runs.prompt_revision_id,
+          compatible_runs.prompt_revision_number,
           compatible_runs.created_at,
           compatible_runs.completed_at,
           boolean_scores.criterion_position,
@@ -395,7 +404,9 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
       target_profile_revisions.configuration AS target_configuration,
       evaluation_runs.created_at, evaluation_runs.completed_at,
       target_profiles.name AS target_profile_name,
-      prompts.title AS prompt_title, prompt_revisions.markdown AS prompt_markdown,
+      prompts.title AS prompt_title,
+      prompt_revisions.revision_number AS prompt_revision_number,
+      prompt_revisions.markdown AS prompt_markdown,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
@@ -407,7 +418,7 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
     WHERE evaluation_runs.id = ${runId}
     GROUP BY
-      evaluation_runs.id, prompts.title, prompt_revisions.markdown,
+      evaluation_runs.id, prompts.title, prompt_revisions.revision_number, prompt_revisions.markdown,
       target_profiles.name, target_profile_revisions.configuration
   `;
 }
@@ -425,13 +436,14 @@ function selectRunRows(sql: DatabaseClient, limit: number) {
       evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
       evaluation_runs.created_at, evaluation_runs.completed_at,
       target_profiles.name AS target_profile_name,
-      prompts.title AS prompt_title,
+      prompts.title AS prompt_title, prompt_revisions.revision_number AS prompt_revision_number,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
+    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
     LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
-    GROUP BY evaluation_runs.id, prompts.title, target_profiles.name
+    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.revision_number, target_profiles.name
     ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
     LIMIT ${limit}
   `;
@@ -450,14 +462,15 @@ function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, limit: nu
       evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
       evaluation_runs.created_at, evaluation_runs.completed_at,
       target_profiles.name AS target_profile_name,
-      prompts.title AS prompt_title,
+      prompts.title AS prompt_title, prompt_revisions.revision_number AS prompt_revision_number,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
+    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
     LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
     WHERE evaluation_runs.prompt_id = ${promptId}
-    GROUP BY evaluation_runs.id, prompts.title, target_profiles.name
+    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.revision_number, target_profiles.name
     ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
     LIMIT ${limit}
   `;
@@ -494,6 +507,7 @@ function projectRunSummary(row: RunSummaryRow): EvaluationRunSummary {
     status: row.status,
     promptId: row.promptId,
     promptRevisionId: row.promptRevisionId,
+    promptRevisionNumber: row.promptRevisionNumber,
     promptTitle: row.promptTitle,
     targetProfileId: row.targetProfileId,
     targetProfileRevisionId: row.targetProfileRevisionId,
@@ -518,6 +532,7 @@ function projectBooleanTrendRows(rows: BooleanTrendRow[]): BooleanTrendPoint[] {
     {
       runId: string;
       revisionId: string;
+      revisionNumber: number;
       completedAt: string;
       rates: Map<number, { criterion: string; passed: number; total: number }>;
     }
@@ -526,6 +541,7 @@ function projectBooleanTrendRows(rows: BooleanTrendRow[]): BooleanTrendPoint[] {
     const point = points.get(row.id) ?? {
       runId: row.id,
       revisionId: row.promptRevisionId,
+      revisionNumber: row.promptRevisionNumber,
       completedAt: (row.completedAt ?? row.createdAt).toISOString(),
       rates: new Map(),
     };
@@ -541,9 +557,10 @@ function projectBooleanTrendRows(rows: BooleanTrendRow[]): BooleanTrendPoint[] {
     point.rates.set(row.criterionPosition, rate);
   }
   if (points.size < 2) return [];
-  return [...points.values()].map(({ runId, revisionId, completedAt, rates }) => ({
+  return [...points.values()].map(({ runId, revisionId, revisionNumber, completedAt, rates }) => ({
     runId,
     revisionId,
+    revisionNumber,
     completedAt,
     rates: [...rates.entries()].map(([criterionPosition, value]) => ({
       criterionPosition,

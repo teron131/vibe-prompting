@@ -19,6 +19,7 @@ type ResultRow = {
   position: number;
   promptId: string;
   promptRevisionId: string;
+  promptRevisionNumber: number;
   promptTitle: string;
   targetProfileId: string | null;
   targetProfileRevisionId: string | null;
@@ -76,10 +77,12 @@ export function selectResultRows(
       evaluation_runs.is_synthetic_example, evaluation_runs.effective_instructions_hash,
       evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
       evaluation_runs.created_at, evaluation_runs.completed_at, prompts.title AS prompt_title,
+      prompt_revisions.revision_number AS prompt_revision_number,
       target_profiles.name AS target_profile_name
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
+    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
     LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     WHERE
       (${filters.runId}::uuid IS NULL OR evaluation_runs.id = ${filters.runId})
@@ -129,10 +132,12 @@ export function selectResultById(sql: DatabaseClient, caseId: string) {
       evaluation_runs.is_synthetic_example, evaluation_runs.effective_instructions_hash,
       evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
       evaluation_runs.created_at, evaluation_runs.completed_at, prompts.title AS prompt_title,
+      prompt_revisions.revision_number AS prompt_revision_number,
       target_profiles.name AS target_profile_name
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
+    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
     LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     WHERE evaluation_cases.id = ${caseId}
   `;
@@ -177,6 +182,7 @@ export function projectCaseResults(rows: ResultRow[], scores: ScoreRow[]): Resul
     position: row.position,
     promptId: row.promptId,
     promptRevisionId: row.promptRevisionId,
+    promptRevisionNumber: row.promptRevisionNumber,
     promptTitle: row.promptTitle,
     targetProfileId: row.targetProfileId,
     targetProfileRevisionId: row.targetProfileRevisionId,

@@ -85,9 +85,9 @@ export function RevisionTrend({ points }: { points: BooleanTrendPoint[] }) {
                 className="min-w-0 text-center font-mono text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                 href={`/evaluations/${point.runId}`}
                 key={point.runId}
-                title={`${point.revisionId} · ${formatDate(point.completedAt)}`}
+                title={`v${point.revisionNumber} · ${point.revisionId} · ${formatDate(point.completedAt)}`}
               >
-                <span className="block font-medium">{point.revisionId.slice(0, 6)}</span>
+                <span className="block font-medium">v{point.revisionNumber}</span>
                 <span className="mt-0.5 block whitespace-nowrap">
                   {formatDate(point.completedAt)}
                 </span>

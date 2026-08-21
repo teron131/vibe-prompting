@@ -37,6 +37,7 @@ export type EvaluationRunSummary = {
   status: EvaluationRunStatus;
   promptId: string;
   promptRevisionId: string;
+  promptRevisionNumber: number;
   promptTitle: string;
   targetProfileId: string | null;
   targetProfileRevisionId: string | null;
@@ -82,6 +83,7 @@ export type StoredEvaluationRun = EvaluationRunSummary & {
 export type BooleanTrendPoint = {
   runId: string;
   revisionId: string;
+  revisionNumber: number;
   completedAt: string;
   rates: Array<{ criterionPosition: number; criterion: string; passed: number; total: number }>;
 };

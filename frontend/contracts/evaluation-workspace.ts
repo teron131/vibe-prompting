@@ -52,6 +52,7 @@ export type EvaluationResultItem = {
   position: number;
   promptId: string;
   promptRevisionId: string;
+  promptRevisionNumber: number;
   promptTitle: string;
   runId: string;
   scores: EvaluationResultScore[];

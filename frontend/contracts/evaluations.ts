@@ -22,6 +22,7 @@ export type EvaluationRunSummary = {
   judgeModelIds: string[];
   promptId: string;
   promptRevisionId: string;
+  promptRevisionNumber: number;
   promptTitle: string;
   source: "ai" | "human";
   status: EvaluationRunStatus;
@@ -118,6 +119,7 @@ export type BooleanTrendPoint = {
   completedAt: string;
   rates: Array<{ criterion: string; criterionPosition: number; passed: number; total: number }>;
   revisionId: string;
+  revisionNumber: number;
   runId: string;
 };
 

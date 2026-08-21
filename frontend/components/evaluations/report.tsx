@@ -132,6 +132,9 @@ export function EvaluationReport({ runId }: { runId: string }) {
               <h2 className="min-w-0 truncate text-xl font-semibold tracking-tight sm:text-2xl">
                 {run.promptTitle}
               </h2>
+              <span className="rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
+                v{run.promptRevisionNumber}
+              </span>
               {run.isSyntheticExample ? (
                 <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   Synthetic example
@@ -171,7 +174,9 @@ export function EvaluationReport({ runId }: { runId: string }) {
             <ModelIdentityLabel labelClassName="font-mono" modelId={run.targetModelId} />
           </ProvenanceDatum>
           <ProvenanceDatum label="Prompt revision">
-            <span className="break-all font-mono">{run.promptRevisionId}</span>
+            <span className="font-mono" title={run.promptRevisionId}>
+              v{run.promptRevisionNumber} · {run.promptRevisionId.slice(0, 8)}
+            </span>
           </ProvenanceDatum>
           <ProvenanceDatum label="Cases">
             <span className="font-mono">

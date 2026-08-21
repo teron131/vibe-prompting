@@ -517,7 +517,7 @@ function ResultRow({
         <span
           className={cn("min-w-0 truncate text-sm", selected ? "font-semibold" : "font-medium")}
         >
-          {item.promptTitle}
+          {item.promptTitle} · v{item.promptRevisionNumber}
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
           {related ? (
@@ -570,7 +570,9 @@ function ResultDetailPane({
               ) : null}
               <Status status={item.status} />
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">{item.promptTitle}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {item.promptTitle} · v{item.promptRevisionNumber}
+            </p>
           </div>
           <Link
             className="inline-flex items-center gap-1.5 text-xs font-medium hover:underline"
@@ -582,7 +584,10 @@ function ResultDetailPane({
         </div>
         <dl className="mt-4 grid gap-x-6 gap-y-2 pt-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
           <ModelMetadata label="Target" modelIds={[item.targetModelId]} />
-          <Metadata label="Revision" value={item.promptRevisionId.slice(0, 8)} />
+          <Metadata
+            label="Revision"
+            value={`v${item.promptRevisionNumber} · ${item.promptRevisionId.slice(0, 8)}`}
+          />
           <ModelMetadata label="Judges" modelIds={item.judgeModelIds} />
           <Metadata
             label="Completed"

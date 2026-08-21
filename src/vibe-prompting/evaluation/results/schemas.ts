@@ -39,6 +39,7 @@ export type ResultListItem = {
   position: number;
   promptId: string;
   promptRevisionId: string;
+  promptRevisionNumber: number;
   promptTitle: string;
   targetProfileId: string | null;
   targetProfileRevisionId: string | null;

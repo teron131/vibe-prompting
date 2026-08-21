@@ -336,7 +336,7 @@ export function EvaluationRunBuilder() {
               <option value="">Choose a prompt revision</option>
               {prompts.map((prompt) => (
                 <option key={prompt.id} value={prompt.id}>
-                  {prompt.title} · V{prompt.revisionNumber}
+                  {prompt.title} · v{prompt.revisionNumber}
                 </option>
               ))}
             </Select>
