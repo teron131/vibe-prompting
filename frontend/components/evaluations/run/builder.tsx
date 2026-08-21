@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
@@ -24,6 +24,7 @@ import {
 } from "@/components/evaluations/run/selectors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResizableDivider } from "@/components/ui/resizable-divider";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
@@ -67,6 +68,9 @@ const TRACKED_BATCH_STORAGE_KEY = "vibe-prompting.evaluation-batch.v1";
 const TERMINAL_STATUSES = new Set<EvaluationRunStatus>(["completed", "failed", "interrupted"]);
 const evaluationApi = createApiRequester({}, (status) => `Request failed with ${status}.`);
 const readError = createErrorReader("The evaluation request failed.");
+const MANIFEST_MIN_WIDTH = 256;
+const MANIFEST_MAX_WIDTH = 560;
+const RUN_FORM_MIN_WIDTH = 440;
 
 export function EvaluationRunBuilder({
   targetRunId,
@@ -104,6 +108,9 @@ function EvaluationBatchRunBuilder() {
   const [trackedBatch, setTrackedBatch] = useState<TrackedBatch | null>(null);
   const [batchStatusError, setBatchStatusError] = useState<string>();
   const [batchRetry, setBatchRetry] = useState(0);
+  const [manifestWidth, setManifestWidth] = useState<number>();
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const manifestRef = useRef<HTMLElement>(null);
   const trackedRunIds = trackedBatch?.runIds.join(",") ?? "";
   const selectedPrompt = prompts.find(({ id }) => id === promptId);
   const request = useMemo(
@@ -333,10 +340,27 @@ function EvaluationBatchRunBuilder() {
     promptId,
     targetModelIds,
   });
+  const maximumManifestWidth = () => {
+    const workspaceWidth =
+      workspaceRef.current?.getBoundingClientRect().width ??
+      MANIFEST_MAX_WIDTH + RUN_FORM_MIN_WIDTH;
+    return Math.min(
+      MANIFEST_MAX_WIDTH,
+      Math.max(MANIFEST_MIN_WIDTH, workspaceWidth - RUN_FORM_MIN_WIDTH),
+    );
+  };
 
   return (
-    <div className="mx-auto grid w-full max-w-[1480px] grid-cols-1 bg-muted/15 @min-[720px]:grid-cols-[minmax(0,1fr)_18rem] @min-[900px]:grid-cols-[minmax(0,1fr)_20rem] @min-[1200px]:grid-cols-[minmax(0,1fr)_25rem]">
-      <section className="min-w-0 bg-background px-4 py-5 sm:px-6 @min-[720px]:border-r xl:px-10 xl:py-8">
+    <div
+      className="mx-auto grid w-full max-w-[1480px] grid-cols-1 bg-muted/15 @min-[720px]:grid-cols-[minmax(0,1fr)_1px_var(--run-manifest-width)] @min-[720px]:[--run-manifest-width:18rem] @min-[900px]:[--run-manifest-width:20rem] @min-[1200px]:[--run-manifest-width:25rem]"
+      ref={workspaceRef}
+      style={
+        manifestWidth === undefined
+          ? undefined
+          : ({ "--run-manifest-width": `${manifestWidth}px` } as CSSProperties)
+      }
+    >
+      <section className="min-w-0 bg-background px-4 py-5 sm:px-6 xl:px-10 xl:py-8">
         <div className="mb-6 max-w-2xl xl:mb-8">
           <h2 className="text-xl font-semibold tracking-[-0.02em]">
             Configure an evaluation matrix
@@ -537,7 +561,19 @@ function EvaluationBatchRunBuilder() {
         </RunSection>
       </section>
 
-      <aside className="border-t bg-muted/35 @min-[720px]:border-t-0">
+      <ResizableDivider
+        ariaLabel="Resize execution manifest"
+        className="hidden @min-[720px]:block"
+        defaultValueText="Default execution manifest width"
+        maxSize={maximumManifestWidth}
+        minSize={MANIFEST_MIN_WIDTH}
+        onSizeChange={setManifestWidth}
+        panelRef={manifestRef}
+        panelSide="right"
+        size={manifestWidth}
+      />
+
+      <aside className="border-t bg-muted/35 @min-[720px]:border-t-0" ref={manifestRef}>
         <div className="flex min-h-[calc(100dvh-var(--header-height))] flex-col px-4 py-5 sm:px-6 @min-[720px]:sticky @min-[720px]:top-0 @min-[720px]:max-h-[calc(100dvh-var(--header-height))] @min-[720px]:overflow-y-auto @min-[720px]:px-5 xl:px-6 xl:py-8">
           {trackedBatch ? (
             <BatchMonitor

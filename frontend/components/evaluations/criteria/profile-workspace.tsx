@@ -3,12 +3,13 @@
 "use client";
 
 import { ArrowDown, ArrowUp, Copy, LoaderCircle, Plus, Save, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { CriterionTypeIcon } from "@/components/evaluations/shared/criterion-type-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResizableDivider } from "@/components/ui/resizable-divider";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
@@ -23,6 +24,9 @@ import { createApiRequester, createErrorReader } from "@/shared/api";
 
 const criteriaApi = createApiRequester({}, (status) => `Request failed with ${status}.`);
 const readError = createErrorReader("The criteria profile request failed.");
+const PROFILE_LIST_MIN_WIDTH = 224;
+const PROFILE_LIST_MAX_WIDTH = 480;
+const PROFILE_EDITOR_MIN_WIDTH = 400;
 
 type Draft = CriteriaProfileInput & { id?: string };
 type CriterionType = Criterion["type"];
@@ -34,6 +38,9 @@ export function CriteriaProfileWorkspace() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [profileListWidth, setProfileListWidth] = useState<number>();
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const profileListRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setConfirmingDelete(false);
@@ -113,9 +120,27 @@ export function CriteriaProfileWorkspace() {
     }
   }
 
+  function maximumProfileListWidth() {
+    const workspaceWidth =
+      workspaceRef.current?.getBoundingClientRect().width ??
+      PROFILE_LIST_MAX_WIDTH + PROFILE_EDITOR_MIN_WIDTH;
+    return Math.min(
+      PROFILE_LIST_MAX_WIDTH,
+      Math.max(PROFILE_LIST_MIN_WIDTH, workspaceWidth - PROFILE_EDITOR_MIN_WIDTH),
+    );
+  }
+
   return (
-    <div className="mx-auto grid min-h-[calc(100dvh-var(--header-height))] w-full max-w-[1480px] @min-[620px]:grid-cols-[16rem_minmax(0,1fr)] @min-[900px]:grid-cols-[18rem_minmax(0,1fr)] @min-[1200px]:grid-cols-[20rem_minmax(0,1fr)]">
-      <aside className="border-b bg-muted/25 @min-[620px]:border-r @min-[620px]:border-b-0">
+    <div
+      className="mx-auto grid min-h-[calc(100dvh-var(--header-height))] w-full max-w-[1480px] @min-[620px]:grid-cols-[var(--criteria-list-width)_1px_minmax(0,1fr)] @min-[620px]:[--criteria-list-width:16rem] @min-[900px]:[--criteria-list-width:18rem] @min-[1200px]:[--criteria-list-width:20rem]"
+      ref={workspaceRef}
+      style={
+        profileListWidth === undefined
+          ? undefined
+          : ({ "--criteria-list-width": `${profileListWidth}px` } as CSSProperties)
+      }
+    >
+      <aside className="border-b bg-muted/25 @min-[620px]:border-b-0" ref={profileListRef}>
         <div className="p-4 sm:p-5 @min-[620px]:sticky @min-[620px]:top-0 @min-[620px]:max-h-[calc(100dvh-var(--header-height))] @min-[620px]:overflow-y-auto xl:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -175,6 +200,17 @@ export function CriteriaProfileWorkspace() {
           )}
         </div>
       </aside>
+
+      <ResizableDivider
+        ariaLabel="Resize criteria profile list"
+        className="hidden @min-[620px]:block"
+        defaultValueText="Default criteria profile list width"
+        maxSize={maximumProfileListWidth}
+        minSize={PROFILE_LIST_MIN_WIDTH}
+        onSizeChange={setProfileListWidth}
+        panelRef={profileListRef}
+        size={profileListWidth}
+      />
 
       <section className="min-w-0 bg-background px-4 py-5 sm:px-6 min-[840px]:px-7 xl:px-10 xl:py-8">
         {draft ? (

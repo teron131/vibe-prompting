@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 
+import { ResizableDivider } from "@/components/ui/resizable-divider";
 import { cn } from "@/components/ui/utils";
 
 import { AppSidebar } from "./app-sidebar";
@@ -26,14 +27,22 @@ type SidebarContextValue = {
 const SidebarContext = createContext<SidebarContextValue | null>(null);
 const SIDEBAR_MEDIA_QUERY = "(min-width: 768px)";
 const SIDEBAR_OPEN_STORAGE_KEY = "vibe-prompting:workspace-sidebar-open";
+const SIDEBAR_DEFAULT_WIDTH = 256;
+const SIDEBAR_MIN_WIDTH = 224;
+const SIDEBAR_MAX_WIDTH = 416;
+const WORKSPACE_CONTENT_MIN_WIDTH = 480;
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [sidebarDocked, setSidebarDocked] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState<number>();
+  const [resizingSidebar, setResizingSidebar] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previousPathnameRef = useRef(pathname);
   const returnFocusRef = useRef<HTMLElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
   const closeSidebar = useCallback(() => {
     setSidebarOpen(false);
     if (sidebarDocked) persistSidebarOpenPreference(false);
@@ -93,9 +102,19 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [closeSidebar, sidebarDocked, sidebarOpen]);
 
+  const maximumSidebarWidth = () => {
+    const shellWidth =
+      shellRef.current?.getBoundingClientRect().width ??
+      SIDEBAR_MAX_WIDTH + WORKSPACE_CONTENT_MIN_WIDTH;
+    return Math.min(
+      SIDEBAR_MAX_WIDTH,
+      Math.max(SIDEBAR_MIN_WIDTH, shellWidth - WORKSPACE_CONTENT_MIN_WIDTH),
+    );
+  };
+
   return (
     <SidebarContext.Provider value={context}>
-      <div className="min-h-dvh bg-background">
+      <div className="min-h-dvh bg-background" ref={shellRef}>
         <button
           aria-hidden="true"
           className={cn(
@@ -115,13 +134,36 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             sidebarOpen ? "translate-x-0" : "-translate-x-full",
           )}
           inert={!sidebarOpen}
+          ref={sidebarRef}
           role={sidebarDocked ? undefined : "dialog"}
+          style={sidebarDocked && sidebarWidth !== undefined ? { width: sidebarWidth } : undefined}
         >
           <AppSidebar closeButtonRef={closeButtonRef} onClose={closeSidebar} />
+          {sidebarDocked && sidebarOpen ? (
+            <ResizableDivider
+              ariaLabel="Resize workspace sidebar"
+              className="absolute inset-y-0 right-0 translate-x-1/2"
+              defaultValueText="Default workspace sidebar width"
+              maxSize={maximumSidebarWidth}
+              minSize={SIDEBAR_MIN_WIDTH}
+              onDraggingChange={setResizingSidebar}
+              onSizeChange={setSidebarWidth}
+              panelRef={sidebarRef}
+              size={sidebarWidth}
+            />
+          ) : null}
         </aside>
         <div
-          className={cn("min-h-dvh transition-[padding] duration-200", sidebarOpen && "md:pl-64")}
+          className={cn(
+            "min-h-dvh transition-[padding] duration-200",
+            resizingSidebar && "transition-none",
+          )}
           inert={sidebarOpen && !sidebarDocked}
+          style={
+            sidebarOpen && sidebarDocked
+              ? { paddingLeft: sidebarWidth ?? SIDEBAR_DEFAULT_WIDTH }
+              : undefined
+          }
         >
           {children}
         </div>

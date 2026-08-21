@@ -18,6 +18,7 @@ import { CSSProperties, SyntheticEvent, useCallback, useEffect, useRef, useState
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResizableDivider } from "@/components/ui/resizable-divider";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
 import type {
@@ -40,7 +41,6 @@ const PAGE_SIZE = 25;
 const LIST_MIN_WIDTH = 224;
 const LIST_MAX_WIDTH = 560;
 const DETAIL_MIN_WIDTH = 320;
-const LIST_RESIZE_STEP = 24;
 
 export function EvaluationResultsExplorer() {
   const [filters, setFilters] = useState<ResultFilters>({});
@@ -55,15 +55,11 @@ export function EvaluationResultsExplorer() {
   const [controlsOpen, setControlsOpen] = useState(true);
   const [resultListOpen, setResultListOpen] = useState(true);
   const [listWidth, setListWidth] = useState<number>();
-  const [resizingList, setResizingList] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
   const workspaceRef = useRef<HTMLDivElement>(null);
   const resultListRef = useRef<HTMLElement>(null);
-  const resizeOriginRef = useRef<
-    { pointerId: number; startWidth: number; startX: number } | undefined
-  >(undefined);
 
   useEffect(() => {
     const initialFilters = parseEvaluationFilters(window.location.search);
@@ -142,34 +138,14 @@ export function EvaluationResultsExplorer() {
     setFilters({});
   }
 
-  function boundedListWidth(width: number) {
-    const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-    const maximum = Math.min(
-      LIST_MAX_WIDTH,
-      Math.max(LIST_MIN_WIDTH, workspaceWidth - DETAIL_MIN_WIDTH),
-    );
-    return Math.min(maximum, Math.max(LIST_MIN_WIDTH, width));
-  }
-
-  function resizeListBy(delta: number) {
-    const currentWidth =
-      resultListRef.current?.getBoundingClientRect().width ?? listWidth ?? LIST_MIN_WIDTH;
-    setListWidth(boundedListWidth(currentWidth + delta));
-  }
-
-  function finishListResize(pointerId: number) {
-    if (resizeOriginRef.current?.pointerId !== pointerId) return;
-    resizeOriginRef.current = undefined;
-    setResizingList(false);
+  function maximumListWidth() {
+    const workspaceWidth =
+      workspaceRef.current?.getBoundingClientRect().width ?? LIST_MAX_WIDTH + DETAIL_MIN_WIDTH;
+    return Math.min(LIST_MAX_WIDTH, Math.max(LIST_MIN_WIDTH, workspaceWidth - DETAIL_MIN_WIDTH));
   }
 
   return (
-    <div
-      className={cn(
-        "flex min-h-[calc(100dvh-var(--header-height))] w-full min-w-0 max-w-full flex-col @min-[560px]:h-[calc(100dvh-var(--header-height))] @min-[560px]:min-h-[36rem] @min-[560px]:overflow-hidden",
-        resizingList && "select-none cursor-col-resize",
-      )}
-    >
+    <div className="flex min-h-[calc(100dvh-var(--header-height))] w-full min-w-0 max-w-full flex-col @min-[560px]:h-[calc(100dvh-var(--header-height))] @min-[560px]:min-h-[36rem] @min-[560px]:overflow-hidden">
       <header className="page-gutter border-b bg-muted/20 py-3">
         <div className="flex items-baseline justify-between gap-4">
           <h1 className="text-base font-semibold tracking-tight">Result explorer</h1>
@@ -365,60 +341,16 @@ export function EvaluationResultsExplorer() {
         </section>
 
         {resultListOpen ? (
-          <div
-            aria-label="Resize result list"
-            aria-orientation="vertical"
-            aria-valuetext={
-              listWidth === undefined
-                ? "Default result list width"
-                : `${Math.round(listWidth)} pixels`
-            }
-            className="group relative z-10 hidden w-1.5 shrink-0 cursor-col-resize touch-none outline-none @min-[560px]:block"
-            onDoubleClick={() => setListWidth(undefined)}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowLeft") {
-                event.preventDefault();
-                resizeListBy(-LIST_RESIZE_STEP);
-              } else if (event.key === "ArrowRight") {
-                event.preventDefault();
-                resizeListBy(LIST_RESIZE_STEP);
-              } else if (event.key === "Home") {
-                event.preventDefault();
-                setListWidth(LIST_MIN_WIDTH);
-              } else if (event.key === "End") {
-                event.preventDefault();
-                setListWidth(boundedListWidth(LIST_MAX_WIDTH));
-              }
-            }}
-            onLostPointerCapture={(event) => finishListResize(event.pointerId)}
-            onPointerCancel={(event) => finishListResize(event.pointerId)}
-            onPointerDown={(event) => {
-              if (event.button !== 0 || !resultListRef.current) return;
-              event.preventDefault();
-              resizeOriginRef.current = {
-                pointerId: event.pointerId,
-                startWidth: resultListRef.current.getBoundingClientRect().width,
-                startX: event.clientX,
-              };
-              event.currentTarget.setPointerCapture(event.pointerId);
-              setResizingList(true);
-            }}
-            onPointerMove={(event) => {
-              const origin = resizeOriginRef.current;
-              if (!origin || origin.pointerId !== event.pointerId) return;
-              setListWidth(boundedListWidth(origin.startWidth + event.clientX - origin.startX));
-            }}
-            onPointerUp={(event) => {
-              if (resizeOriginRef.current?.pointerId !== event.pointerId) return;
-              event.currentTarget.releasePointerCapture(event.pointerId);
-              finishListResize(event.pointerId);
-            }}
-            role="separator"
-            tabIndex={0}
-            title="Drag to resize. Double-click to reset."
-          >
-            <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/50 group-focus-visible:w-0.5 group-focus-visible:bg-ring" />
-          </div>
+          <ResizableDivider
+            ariaLabel="Resize result list"
+            className="hidden @min-[560px]:block"
+            defaultValueText="Default result list width"
+            maxSize={maximumListWidth}
+            minSize={LIST_MIN_WIDTH}
+            onSizeChange={setListWidth}
+            panelRef={resultListRef}
+            size={listWidth}
+          />
         ) : null}
 
         <section
