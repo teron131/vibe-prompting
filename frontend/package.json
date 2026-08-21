@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "WATCHPACK_POLLING=true next dev --webpack --hostname localhost --port 8001",
+    "dev": "WATCHPACK_POLLING=true next dev --turbopack --hostname localhost --port 8001",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0 --port ${PORT:-8080}",
     "typecheck": "tsc --noEmit"
