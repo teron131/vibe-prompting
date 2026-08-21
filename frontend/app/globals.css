@@ -36,8 +36,21 @@
   --sidebar-border: hsl(220 13% 91%);
   --radius: 0.75rem;
   --header-height: 44px;
+  --page-gutter: 1rem;
   --user-bubble-bg: hsl(240 10% 3.9%);
   --user-bubble-fg: hsl(0 0% 98%);
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --page-gutter: 1.5rem;
+  }
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --page-gutter: 2rem;
+  }
 }
 
 .dark {
@@ -136,6 +149,17 @@
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .page-bleed {
+    margin-inline: calc(var(--page-gutter) * -1);
+    padding-inline: var(--page-gutter);
+  }
+
+  .page-gutter {
+    padding-inline: var(--page-gutter);
   }
 }
 

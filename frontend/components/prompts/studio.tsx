@@ -111,7 +111,7 @@ export function PromptStudio({ initialPromptId }: { initialPromptId?: string }) 
           )}
         >
           {activePromptId ? (
-            <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+            <div className="page-gutter mx-auto w-full max-w-6xl py-4 sm:py-6">
               <nav aria-label="Prompt navigation" className="mb-4 lg:hidden">
                 <Button onClick={closePrompt} size="sm" variant="ghost">
                   <ArrowLeft aria-hidden="true" className="size-4" />

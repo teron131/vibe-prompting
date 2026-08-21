@@ -152,7 +152,7 @@ export function EvaluationAnalyticsDashboard() {
 
   return (
     <div>
-      <header className="bg-background px-4 py-4 sm:px-6 lg:px-8">
+      <header className="page-gutter bg-background py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Criterion analytics</h1>
@@ -170,7 +170,7 @@ export function EvaluationAnalyticsDashboard() {
         </div>
       </header>
 
-      <div className="border-b bg-muted/25 px-4 py-3 sm:px-6 lg:px-8">
+      <div className="page-gutter border-b bg-muted/25 py-3">
         <EvaluationHelper className="max-w-5xl" />
         <AnalyticsFilters
           baselineValue={baselineValue}
@@ -196,10 +196,7 @@ export function EvaluationAnalyticsDashboard() {
       ) : error && !data ? (
         <ErrorState message={error} retry={() => void load()} />
       ) : data ? (
-        <main
-          aria-busy={loading}
-          className="min-w-0 bg-background px-4 py-5 sm:px-6 lg:px-8 lg:py-6"
-        >
+        <main aria-busy={loading} className="page-gutter min-w-0 bg-background py-5 lg:py-6">
           {error ? (
             <div className="mb-5 flex items-start gap-2 rounded-lg bg-destructive/5 p-3 text-sm text-destructive">
               <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />

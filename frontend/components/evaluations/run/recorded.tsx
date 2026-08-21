@@ -131,7 +131,7 @@ export function RecordedEvaluationBuilder({
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:px-8 lg:py-8">
+    <div className="page-gutter mx-auto grid w-full max-w-6xl gap-6 py-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:py-8">
       <section className="min-w-0">
         <div className="flex items-start gap-3">
           <div className="grid size-9 shrink-0 place-items-center rounded-lg border bg-muted/30">

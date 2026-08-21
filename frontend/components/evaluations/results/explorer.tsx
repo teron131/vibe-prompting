@@ -170,7 +170,7 @@ export function EvaluationResultsExplorer() {
         resizingList && "select-none cursor-col-resize",
       )}
     >
-      <header className="border-b bg-muted/20 px-4 py-3 sm:px-6 lg:px-8">
+      <header className="page-gutter border-b bg-muted/20 py-3">
         <div className="flex items-baseline justify-between gap-4">
           <h1 className="text-base font-semibold tracking-tight">Result explorer</h1>
           <div className="flex items-center gap-1">
@@ -716,7 +716,7 @@ function ResultDetailPane({
   searchField: NonNullable<ResultFilters["searchField"]>;
 }) {
   return (
-    <article className="px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+    <article className="page-gutter py-5 lg:py-6">
       <header className="border-b pb-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

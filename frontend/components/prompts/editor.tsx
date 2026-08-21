@@ -7,9 +7,9 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { MarkdownPreview } from "@/components/prompts/artifact";
 import { PromptDiff } from "@/components/prompts/diff";
 import { PromptEvaluationView } from "@/components/prompts/evaluation-view";
+import { MarkdownPreview } from "@/components/prompts/markdown-preview";
 import { PromptStats } from "@/components/prompts/stats";
 import { PromptViewModeControl } from "@/components/prompts/view-mode-control";
 import { Button } from "@/components/ui/button";

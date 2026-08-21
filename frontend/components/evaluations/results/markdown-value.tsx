@@ -4,7 +4,7 @@
 
 import { ReactNode, useState } from "react";
 
-import { MarkdownPreview } from "@/components/prompts/artifact";
+import { MarkdownPreview } from "@/components/prompts/markdown-preview";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 

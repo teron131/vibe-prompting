@@ -16,7 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
-import { MarkdownPreview } from "@/components/prompts/artifact";
+import { MarkdownPreview } from "@/components/prompts/markdown-preview";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import type {
@@ -117,7 +117,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
     );
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-7">
+    <main className="page-gutter mx-auto w-full max-w-7xl py-5 sm:py-7">
       <header className="border-b pb-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
@@ -255,7 +255,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
       </header>
       <nav
         aria-label="Report view"
-        className="sticky top-0 z-10 -mx-4 flex border-b bg-background/95 px-4 backdrop-blur sm:-mx-6 sm:px-6"
+        className="page-bleed sticky top-0 z-10 flex border-b bg-background/95 backdrop-blur"
       >
         <button
           className={cn(

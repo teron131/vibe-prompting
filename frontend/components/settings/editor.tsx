@@ -36,7 +36,7 @@ type ProviderDraft = {
   clearApiKey: boolean;
 };
 
-export function SettingsPage() {
+export function SettingsEditor() {
   const [settings, setSettings] = useState<SettingsResponse>();
   const [helperModel, setHelperModel] = useState<SettingsModel>({ id: "", platform: "llm" });
   const [models, setModels] = useState<SettingsModel[]>([]);
@@ -107,7 +107,7 @@ export function SettingsPage() {
 
   if (!settings && !error) {
     return (
-      <div className="mx-auto flex min-h-[calc(100dvh-var(--header-height))] max-w-5xl items-center justify-center px-5">
+      <div className="page-gutter mx-auto flex min-h-[calc(100dvh-var(--header-height))] max-w-5xl items-center justify-center">
         <LoaderCircle
           aria-label="Loading settings"
           className="size-5 animate-spin text-muted-foreground"
@@ -117,7 +117,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
+    <div className="page-gutter mx-auto w-full max-w-5xl py-8 sm:py-10">
       <div className="max-w-2xl">
         <h2 className="text-xl font-semibold tracking-tight">Models and provider access</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">

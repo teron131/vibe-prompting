@@ -27,8 +27,8 @@ import type {
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { MarkdownPreview } from "@/components/prompts/artifact";
 import { PromptDiff } from "@/components/prompts/diff";
+import { MarkdownPreview } from "@/components/prompts/markdown-preview";
 import { PromptStats } from "@/components/prompts/stats";
 import { usePromptSearch } from "@/components/prompts/use-search";
 import { type PromptViewMode, PromptViewModeControl } from "@/components/prompts/view-mode-control";

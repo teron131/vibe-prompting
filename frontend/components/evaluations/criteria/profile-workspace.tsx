@@ -27,7 +27,7 @@ const readError = createErrorReader("The criteria profile request failed.");
 type Draft = CriteriaProfileInput & { id?: string };
 type CriterionType = Criterion["type"];
 
-export function CriteriaManager() {
+export function CriteriaProfileWorkspace() {
   const [profiles, setProfiles] = useState<CriteriaProfile[]>([]);
   const [draft, setDraft] = useState<Draft>();
   const [loading, setLoading] = useState(true);
