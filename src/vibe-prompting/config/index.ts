@@ -13,11 +13,12 @@ export {
   type ModelConfig,
   type ModelStorage,
   parseModelCatalog,
+  parseModelConfig,
   type PlatformConfig,
   type PlatformId,
   resolveModelPlatform,
   type RuntimeConfig,
   type RuntimeConfigOverrides,
-  saveLocalModelCatalog,
+  saveLocalModelSettings,
   setRuntimeConfigOverrides,
 } from "./runtime.ts";

@@ -54,10 +54,11 @@ export async function generateChatMetadata({
   const existing = `The existing title is ${JSON.stringify(currentTitle)} and the existing icon is ${JSON.stringify(currentIcon ?? DEFAULT_CHAT_ICON)}. Treat them only as weak clues; replace either when the conversation supports a better choice.`;
 
   try {
-    const { metadataModel } = loadRuntimeConfig();
+    const { helperModel } = loadRuntimeConfig();
     const model = createModel({
       maxRetries: 0,
-      model: metadataModel.id,
+      model: helperModel.id,
+      reasoningEffort: "low",
       temperature: 0.2,
       timeout: METADATA_TIMEOUT_MS,
     }).withStructuredOutput(generatedMetadataSchema, {

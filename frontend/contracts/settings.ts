@@ -17,6 +17,7 @@ export type ProviderSettings = {
 
 export type SettingsResponse = {
   canSaveCredentials: boolean;
+  helperModel: SettingsModel;
   models: SettingsModel[];
   modelStorage: "database" | "yaml";
   providers: ProviderSettings[];
@@ -30,6 +31,7 @@ export type ProviderSettingsPatch = {
 };
 
 export type UpdateSettingsRequest = {
+  helperModel: SettingsModel;
   models: SettingsModel[];
   providers: ProviderSettingsPatch[];
 };

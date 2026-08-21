@@ -38,7 +38,7 @@ const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 16;
+const APPLICATION_SERVICES_VERSION = 17;
 
 /** Resolves configured model identities after the shared services and database are ready. */
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
@@ -54,7 +54,7 @@ export async function getModelIdentity(id: string): Promise<ConfiguredModel> {
   return { id, ...identity };
 }
 
-/** Checks only user-configured target models, excluding helper and metadata-only models. */
+/** Checks only user-configured target models, excluding the helper model. */
 export async function isConfiguredModelId(id: string): Promise<boolean> {
   await getApplicationServices();
   return loadRuntimeConfig().models.some((model) => model.id === id);

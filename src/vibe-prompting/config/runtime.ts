@@ -57,7 +57,6 @@ const fileConfigSchema = z
   .object({
     models: modelCatalogSchema,
     helper_model: modelConfigSchema,
-    metadataModel: modelConfigSchema,
     embeddingModel: modelConfigSchema,
   })
   .strict();
@@ -69,7 +68,6 @@ export type ModelStorage = "database" | "yaml";
 export type RuntimeConfig = {
   models: ModelConfig[];
   helperModel: ModelConfig;
-  metadataModel: ModelConfig;
   embeddingModel: ModelConfig;
   platforms: Record<PlatformId, PlatformConfig>;
   exa: {
@@ -78,6 +76,7 @@ export type RuntimeConfig = {
 };
 
 export type RuntimeConfigOverrides = {
+  helperModel?: ModelConfig;
   models?: ModelConfig[];
   platforms?: Partial<Record<PlatformId, Partial<Pick<PlatformConfig, "apiKey" | "baseURL">>>>;
 };
@@ -120,7 +119,6 @@ export function loadBaseRuntimeConfig(
   const config: RuntimeConfig = {
     models: fileConfig.models,
     helperModel: fileConfig.helper_model,
-    metadataModel: fileConfig.metadataModel,
     embeddingModel: fileConfig.embeddingModel,
     platforms: {
       cliproxy: {
@@ -167,14 +165,21 @@ export function parseModelCatalog(value: unknown): ModelConfig[] {
   return modelCatalogSchema.parse(value);
 }
 
-/** Atomically replaces only the local YAML model catalogue while retaining its specialized models and comments. */
-export async function saveLocalModelCatalog(
+/** Validates one model configuration used by a specialized runtime role. */
+export function parseModelConfig(value: unknown): ModelConfig {
+  return modelConfigSchema.parse(value);
+}
+
+/** Atomically replaces the local YAML model settings while retaining unrelated specialized models and comments. */
+export async function saveLocalModelSettings(
   models: ModelConfig[],
+  helperModel: ModelConfig,
   configPath: string = resolveRuntimeFile(CONFIG_PATH),
 ): Promise<void> {
   const source = readFileSync(configPath, "utf8");
   const document = parseDocument(source);
   document.set("models", parseModelCatalog(models));
+  document.set("helper_model", parseModelConfig(helperModel));
   fileConfigSchema.parse(document.toJS());
   const temporaryPath = join(dirname(configPath), `.${basename(configPath)}.${randomUUID()}.tmp`);
   try {
@@ -258,6 +263,7 @@ function applyRuntimeOverrides(config: RuntimeConfig): RuntimeConfig {
   }
   return {
     ...config,
+    helperModel: runtimeOverrides.helperModel ?? config.helperModel,
     models: runtimeOverrides.models ?? config.models,
     platforms,
   };

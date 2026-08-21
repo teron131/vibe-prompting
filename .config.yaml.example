@@ -14,7 +14,3 @@ embeddingModel:
 helper_model:
   id: gemini-3.7-flash
   platform: gemini
-
-metadataModel:
-  id: gemini-3.7-flash
-  platform: gemini

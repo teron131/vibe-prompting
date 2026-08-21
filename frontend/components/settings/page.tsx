@@ -38,6 +38,7 @@ type ProviderDraft = {
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<SettingsResponse>();
+  const [helperModel, setHelperModel] = useState<SettingsModel>({ id: "", platform: "llm" });
   const [models, setModels] = useState<SettingsModel[]>([]);
   const [providerDrafts, setProviderDrafts] = useState<
     Partial<Record<SettingsPlatformId, ProviderDraft>>
@@ -51,6 +52,7 @@ export function SettingsPage() {
       .then((loaded) => {
         if (!active) return;
         setSettings(loaded);
+        setHelperModel(loaded.helperModel);
         setModels(loaded.models);
         setProviderDrafts(createProviderDrafts(loaded.providers));
       })
@@ -62,17 +64,18 @@ export function SettingsPage() {
 
   const dirty = useMemo(() => {
     if (!settings) return false;
+    if (JSON.stringify(helperModel) !== JSON.stringify(settings.helperModel)) return true;
     if (JSON.stringify(models) !== JSON.stringify(settings.models)) return true;
     return settings.providers.some((provider) => {
       const draft = providerDrafts[provider.id];
       return Boolean(draft && toProviderPatch(provider, draft));
     });
-  }, [models, providerDrafts, settings]);
+  }, [helperModel, models, providerDrafts, settings]);
   const canAddModel = Boolean(models.at(-1)?.id.trim());
 
   const save = async () => {
     if (!settings) return;
-    const validationError = validateModels(models);
+    const validationError = validateModels(models, helperModel);
     if (validationError) {
       setError(validationError);
       return;
@@ -86,11 +89,12 @@ export function SettingsPage() {
         return patch ? [patch] : [];
       });
       const updated = await settingsApi.json<SettingsResponse>("/api/settings", {
-        body: JSON.stringify({ models, providers } satisfies UpdateSettingsRequest),
+        body: JSON.stringify({ helperModel, models, providers } satisfies UpdateSettingsRequest),
         headers: { "content-type": "application/json" },
         method: "PUT",
       });
       setSettings(updated);
+      setHelperModel(updated.helperModel);
       setModels(updated.models);
       setProviderDrafts(createProviderDrafts(updated.providers));
       toast.success("Settings saved");
@@ -167,6 +171,18 @@ export function SettingsPage() {
             </div>
           </section>
 
+          <section className="mt-12" aria-labelledby="helper-model-title">
+            <div className="border-b pb-3">
+              <h3 className="text-sm font-semibold" id="helper-model-title">
+                Helper Model
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Handles small background tasks across the app at low reasoning effort.
+              </p>
+            </div>
+            <HelperModelRow model={helperModel} onChange={setHelperModel} />
+          </section>
+
           <section className="mt-12" aria-labelledby="provider-access-title">
             <div className="border-b pb-3">
               <h3 className="text-sm font-semibold" id="provider-access-title">
@@ -193,7 +209,16 @@ export function SettingsPage() {
 
           <div className="mt-10 flex items-center justify-between gap-4 border-t pt-5">
             <p className="text-xs text-muted-foreground">
-              Model identities and logos are resolved through Models.dev.
+              Model identities and logos are resolved through{" "}
+              <a
+                className="font-medium text-foreground underline underline-offset-2"
+                href="https://models.dev"
+                rel="noreferrer"
+                target="_blank"
+              >
+                Models.dev
+              </a>
+              .
             </p>
             <Button disabled={!dirty || saving} onClick={save}>
               {saving ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}
@@ -202,6 +227,25 @@ export function SettingsPage() {
           </div>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function HelperModelRow({
+  model,
+  onChange,
+}: {
+  model: SettingsModel;
+  onChange(model: SettingsModel): void;
+}) {
+  return (
+    <div className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_13rem] sm:items-center">
+      <ModelFields
+        connectionLabel="Helper Model connection"
+        idLabel="Helper Model ID"
+        model={model}
+        onChange={onChange}
+      />
     </div>
   );
 }
@@ -217,45 +261,14 @@ function ModelRow({
   canRemove: boolean;
   setModels: Dispatch<SetStateAction<SettingsModel[]>>;
 }) {
-  const modelId = model.id.trim();
-  const debouncedModelId = useDebouncedValue(modelId, 300);
-  const identity = useModelIdentity(undefined, debouncedModelId || undefined);
-  const pending = Boolean(modelId && (debouncedModelId !== modelId || !identity));
-
   return (
     <div className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_13rem_auto] sm:items-center">
-      <label className="grid gap-1.5">
-        <span className="text-xs font-medium text-muted-foreground">Model ID</span>
-        <div className="flex items-center gap-2">
-          <ModelIcon model={identity} />
-          <div className="relative min-w-0 flex-1">
-            <Input
-              aria-label={`Model ${index + 1} ID`}
-              className="pr-10"
-              onChange={(event) => updateModel(index, { id: event.target.value }, setModels)}
-              placeholder="model-name or provider/model-name"
-              value={model.id}
-            />
-            <ModelIdentityStatus identity={identity} pending={pending} visible={Boolean(modelId)} />
-          </div>
-        </div>
-      </label>
-      <label className="grid gap-1.5">
-        <span className="text-xs font-medium text-muted-foreground">Connection</span>
-        <Select
-          aria-label={`Model ${index + 1} connection`}
-          onChange={(event) =>
-            updateModel(index, { platform: event.target.value as SettingsPlatformId }, setModels)
-          }
-          value={model.platform}
-        >
-          {PLATFORM_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
-      </label>
+      <ModelFields
+        connectionLabel={`Model ${index + 1} connection`}
+        idLabel={`Model ${index + 1} ID`}
+        model={model}
+        onChange={(next) => updateModel(index, next, setModels)}
+      />
       <Button
         aria-label={`Remove ${model.id || `model ${index + 1}`}`}
         className="self-end text-muted-foreground hover:text-destructive sm:self-auto"
@@ -268,6 +281,60 @@ function ModelRow({
         <Trash2 aria-hidden="true" className="size-4" />
       </Button>
     </div>
+  );
+}
+
+function ModelFields({
+  connectionLabel,
+  idLabel,
+  model,
+  onChange,
+}: {
+  connectionLabel: string;
+  idLabel: string;
+  model: SettingsModel;
+  onChange(model: SettingsModel): void;
+}) {
+  const modelId = model.id.trim();
+  const debouncedModelId = useDebouncedValue(modelId, 300);
+  const identity = useModelIdentity(undefined, debouncedModelId || undefined);
+  const pending = Boolean(modelId && (debouncedModelId !== modelId || !identity));
+
+  return (
+    <>
+      <label className="grid gap-1.5">
+        <span className="text-xs font-medium text-muted-foreground">Model ID</span>
+        <div className="flex items-center gap-2">
+          <ModelIcon model={identity} />
+          <div className="relative min-w-0 flex-1">
+            <Input
+              aria-label={idLabel}
+              className="pr-10"
+              onChange={(event) => onChange({ ...model, id: event.target.value })}
+              placeholder="model-name or provider/model-name"
+              value={model.id}
+            />
+            <ModelIdentityStatus identity={identity} pending={pending} visible={Boolean(modelId)} />
+          </div>
+        </div>
+      </label>
+      <label className="grid gap-1.5">
+        <span className="text-xs font-medium text-muted-foreground">Connection</span>
+        <Select
+          aria-label={connectionLabel}
+          onChange={(event) =>
+            onChange({ ...model, platform: event.target.value as SettingsPlatformId })
+          }
+          value={model.platform}
+        >
+          {PLATFORM_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Select>
+      </label>
+    </>
   );
 }
 
@@ -443,7 +510,8 @@ function removeModel(
   setModels((current) => current.filter((_, item) => item !== index));
 }
 
-function validateModels(models: SettingsModel[]): string | undefined {
+function validateModels(models: SettingsModel[], helperModel: SettingsModel): string | undefined {
+  if (!helperModel.id.trim()) return "The Helper Model needs a model ID.";
   if (!models.length) return "Add at least one model.";
   const normalized = models.map(({ id }) => id.trim());
   if (normalized.some((id) => !id)) return "Every model needs an ID.";

@@ -35,7 +35,7 @@ export function createModel({
   const runtime = loadRuntimeConfig();
   const modelConfig =
     runtime.models.find((candidate) => candidate.id === modelId) ??
-    [runtime.helperModel, runtime.metadataModel].find((candidate) => candidate.id === modelId);
+    (runtime.helperModel.id === modelId ? runtime.helperModel : undefined);
   if (!modelConfig) throw new Error(`Model is not configured: ${modelId}.`);
 
   const platform = resolveModelPlatform(modelConfig, runtime);

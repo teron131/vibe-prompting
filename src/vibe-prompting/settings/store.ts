@@ -11,8 +11,9 @@ import {
   type ModelConfig,
   type ModelStorage,
   parseModelCatalog,
+  parseModelConfig,
   type PlatformId,
-  saveLocalModelCatalog,
+  saveLocalModelSettings,
   setRuntimeConfigOverrides,
 } from "../config/index.ts";
 import type { Database, DatabaseClient } from "../database.ts";
@@ -40,6 +41,7 @@ const providerPatchSchema = z
       });
   });
 const updateSettingsSchema = z.object({
+  helperModel: z.unknown(),
   models: z.unknown(),
   providers: z.array(providerPatchSchema).optional().default([]),
 });
@@ -53,7 +55,11 @@ const providerOverridesSchema = z
 
 type ProviderOverride = { apiKey?: EncryptedSecret; baseURL?: string };
 type ProviderOverrides = Partial<Record<PlatformId, ProviderOverride>>;
-type SettingsRow = { modelCatalog: unknown; providerOverrides: unknown };
+type SettingsRow = {
+  helperModel: unknown;
+  modelCatalog: unknown;
+  providerOverrides: unknown;
+};
 
 export type ProviderSettings = {
   id: PlatformId;
@@ -64,6 +70,7 @@ export type ProviderSettings = {
 };
 
 export type ApplicationSettings = {
+  helperModel: ModelConfig;
   modelStorage: ModelStorage;
   models: ModelConfig[];
   providers: ProviderSettings[];
@@ -75,6 +82,7 @@ export type UpdateApplicationSettings = z.infer<typeof updateSettingsSchema>;
 export class ApplicationSettingsStore {
   readonly #database: Database;
   readonly #environment: NodeJS.ProcessEnv;
+  #helperModel: ModelConfig = { id: "", platform: "llm" };
   #models: ModelConfig[] = [];
   #providerOverrides: ProviderOverrides = {};
 
@@ -87,9 +95,11 @@ export class ApplicationSettingsStore {
     const baseConfig = loadBaseRuntimeConfig(this.#environment);
     const row = await this.#database.run(async (sql) => {
       await sql`
-        INSERT INTO application_settings (singleton, model_catalog, provider_overrides)
-        VALUES (true, ${sql.json(baseConfig.models)}, ${sql.json({})})
-        ON CONFLICT (singleton) DO NOTHING
+        INSERT INTO application_settings (singleton, model_catalog, helper_model, provider_overrides)
+        VALUES (true, ${sql.json(baseConfig.models)}, ${sql.json(baseConfig.helperModel)}, ${sql.json({})})
+        ON CONFLICT (singleton) DO UPDATE
+        SET helper_model = EXCLUDED.helper_model
+        WHERE application_settings.helper_model IS NULL
       `;
       return readSettings(sql);
     });
@@ -97,6 +107,8 @@ export class ApplicationSettingsStore {
     const modelStorage = getModelStorage(this.#environment);
     this.#models =
       modelStorage === "database" ? parseModelCatalog(row.modelCatalog) : baseConfig.models;
+    this.#helperModel =
+      modelStorage === "database" ? parseModelConfig(row.helperModel) : baseConfig.helperModel;
     this.#providerOverrides = parseProviderOverrides(row.providerOverrides);
     this.#applyRuntimeOverlay();
   }
@@ -105,6 +117,7 @@ export class ApplicationSettingsStore {
     const effective = loadRuntimeConfig(this.#environment);
     const base = loadBaseRuntimeConfig(this.#environment);
     return {
+      helperModel: this.#helperModel,
       modelStorage: getModelStorage(this.#environment),
       models: this.#models,
       providers: providerIds.map((id) => {
@@ -128,6 +141,7 @@ export class ApplicationSettingsStore {
 
   async update(value: unknown): Promise<ApplicationSettings> {
     const input = updateSettingsSchema.parse(value);
+    const helperModel = parseModelConfig(input.helperModel);
     const models = parseModelCatalog(input.models);
     const encryptionSecret = readEncryptionSecret(this.#environment);
     const providerPatches = input.providers.map((patch) => {
@@ -147,7 +161,8 @@ export class ApplicationSettingsStore {
         }),
       };
     });
-    if (getModelStorage(this.#environment) === "yaml") await saveLocalModelCatalog(models);
+    if (getModelStorage(this.#environment) === "yaml")
+      await saveLocalModelSettings(models, helperModel);
 
     const row = await this.#database.transaction(async (sql) => {
       const current = await readSettings(sql, true);
@@ -164,19 +179,21 @@ export class ApplicationSettingsStore {
         else delete overrides[patch.id];
       }
       const [saved] = await sql<SettingsRow[]>`
-        INSERT INTO application_settings (singleton, model_catalog, provider_overrides)
-        VALUES (true, ${sql.json(models)}, ${sql.json(overrides)})
+        INSERT INTO application_settings (singleton, model_catalog, helper_model, provider_overrides)
+        VALUES (true, ${sql.json(models)}, ${sql.json(helperModel)}, ${sql.json(overrides)})
         ON CONFLICT (singleton) DO UPDATE
         SET model_catalog = EXCLUDED.model_catalog,
+            helper_model = EXCLUDED.helper_model,
             provider_overrides = EXCLUDED.provider_overrides,
             updated_at = now()
-        RETURNING model_catalog, provider_overrides
+        RETURNING model_catalog, helper_model, provider_overrides
       `;
       if (!saved) throw new Error("Application settings could not be saved.");
       return saved;
     });
 
     this.#models = models;
+    this.#helperModel = parseModelConfig(row.helperModel);
     this.#providerOverrides = parseProviderOverrides(row.providerOverrides);
     this.#applyRuntimeOverlay();
     return this.get();
@@ -200,7 +217,7 @@ export class ApplicationSettingsStore {
         ];
       }),
     );
-    setRuntimeConfigOverrides({ models: this.#models, platforms });
+    setRuntimeConfigOverrides({ helperModel: this.#helperModel, models: this.#models, platforms });
   }
 }
 
@@ -232,10 +249,10 @@ async function readSettings(sql: DatabaseClient, lock = false): Promise<Settings
   const rows = lock
     ? await sql<
         SettingsRow[]
-      >`SELECT model_catalog, provider_overrides FROM application_settings WHERE singleton = true FOR UPDATE`
+      >`SELECT model_catalog, helper_model, provider_overrides FROM application_settings WHERE singleton = true FOR UPDATE`
     : await sql<
         SettingsRow[]
-      >`SELECT model_catalog, provider_overrides FROM application_settings WHERE singleton = true`;
+      >`SELECT model_catalog, helper_model, provider_overrides FROM application_settings WHERE singleton = true`;
   return rows[0];
 }
 
