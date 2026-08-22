@@ -9,6 +9,7 @@ import {
   googleCallbackUrl,
   oauthCookieNames,
   oauthCookieOptions,
+  publicApplicationUrl,
   safeReturnPath,
 } from "@/auth/google";
 
@@ -39,6 +40,6 @@ export async function GET(request: NextRequest) {
     );
     return response;
   } catch {
-    return NextResponse.redirect(new URL("/login?error=oauth-unavailable", request.url));
+    return NextResponse.redirect(publicApplicationUrl(request, "/login?error=oauth-unavailable"));
   }
 }

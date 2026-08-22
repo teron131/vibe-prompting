@@ -1,4 +1,4 @@
-/** Owns Google OpenID Connect discovery and the authorization-code flow's deployment URL boundary. */
+/** Owns deployed authentication URLs and Google OpenID Connect discovery for the authorization-code flow. */
 
 import "server-only";
 import type { NextRequest } from "next/server";
@@ -42,12 +42,16 @@ export function getGoogleOpenIdConfiguration(): Promise<oidc.Configuration> {
 }
 
 export function googleCallbackUrl(request: NextRequest): string {
+  return publicApplicationUrl(request, "/api/auth/google/callback").toString();
+}
+
+export function publicApplicationUrl(request: NextRequest, path: string): URL {
   const configuredBaseUrl = process.env.APP_BASE_URL?.trim();
   if (!configuredBaseUrl && process.env.NODE_ENV === "production") {
     throw new Error("APP_BASE_URL is required for deployed Google authentication.");
   }
   const baseUrl = configuredBaseUrl ? new URL(configuredBaseUrl) : request.nextUrl;
-  return new URL("/api/auth/google/callback", baseUrl.origin).toString();
+  return new URL(path, baseUrl.origin);
 }
 
 export function safeReturnPath(value: string | null | undefined): string {

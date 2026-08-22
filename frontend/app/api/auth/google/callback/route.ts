@@ -7,9 +7,9 @@ import { getApplicationServices } from "vibe-prompting/server";
 
 import {
   getGoogleOpenIdConfiguration,
-  googleCallbackUrl,
   oauthCookieNames,
   oauthCookieOptions,
+  publicApplicationUrl,
   safeReturnPath,
 } from "@/auth/google";
 import { SESSION_DURATION_SECONDS, sessionCookieName, sessionCookieOptions } from "@/auth/session";
@@ -23,17 +23,14 @@ export async function GET(request: NextRequest) {
 
   try {
     const configuration = await getGoogleOpenIdConfiguration();
-    const tokens = await oidc.authorizationCodeGrant(
-      configuration,
-      new URL(request.url),
-      {
-        expectedNonce: nonce,
-        expectedState: state,
-        idTokenExpected: true,
-        pkceCodeVerifier: verifier,
-      },
-      { redirect_uri: googleCallbackUrl(request) },
-    );
+    const callbackUrl = publicApplicationUrl(request, "/api/auth/google/callback");
+    callbackUrl.search = request.nextUrl.search;
+    const tokens = await oidc.authorizationCodeGrant(configuration, callbackUrl, {
+      expectedNonce: nonce,
+      expectedState: state,
+      idTokenExpected: true,
+      pkceCodeVerifier: verifier,
+    });
     const claims = tokens.claims();
     if (
       !claims ||
@@ -53,7 +50,7 @@ export async function GET(request: NextRequest) {
     const expiresAt = new Date(Date.now() + SESSION_DURATION_SECONDS * 1000);
     const sessionToken = await services.auth.createSession(user.id, expiresAt);
     const response = NextResponse.redirect(
-      new URL(user.membershipStatus === "active" ? returnPath : "/access", request.url),
+      publicApplicationUrl(request, user.membershipStatus === "active" ? returnPath : "/access"),
     );
     response.cookies.set(sessionCookieName(), sessionToken, sessionCookieOptions(expiresAt));
     clearOAuthCookies(response);
@@ -67,7 +64,7 @@ export async function GET(request: NextRequest) {
 }
 
 function oauthFailure(request: NextRequest, error: string): NextResponseType {
-  const response = NextResponse.redirect(new URL(`/login?error=${error}`, request.url));
+  const response = NextResponse.redirect(publicApplicationUrl(request, `/login?error=${error}`));
   clearOAuthCookies(response);
   return response;
 }
