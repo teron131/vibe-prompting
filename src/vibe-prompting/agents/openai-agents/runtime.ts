@@ -89,6 +89,7 @@ export type ChatConversationMessage = {
 };
 
 export type ChatRunInput = {
+  actorUserId: string;
   attachments: ChatAttachment[];
   chatId: string;
   enabledTools: ChatToolId[];
@@ -181,11 +182,23 @@ export async function streamChatRun(
   const toolDefinitions: AgentTool[] = [];
   const promptToolsEnabled = enabled.has("prompt-library");
   const evaluationsEnabled = enabled.has("evaluations");
-  if (promptToolsEnabled) toolDefinitions.push(...createPromptLibraryTools(input.prompts));
+  if (promptToolsEnabled) {
+    toolDefinitions.push(...createPromptLibraryTools(input.prompts, input.actorUserId));
+  }
   if (evaluationsEnabled)
     toolDefinitions.push(
-      createEvaluationTool(input.evaluations, input.chatId, getEvaluationModelReferences),
-      ...createTargetRunTools(input.targetRuns, input.chatId, getEvaluationModelReferences),
+      createEvaluationTool(
+        input.evaluations,
+        input.actorUserId,
+        input.chatId,
+        getEvaluationModelReferences,
+      ),
+      ...createTargetRunTools(
+        input.targetRuns,
+        input.actorUserId,
+        input.chatId,
+        getEvaluationModelReferences,
+      ),
       ...createEvaluationDataTools(input.evaluationResults),
     );
   if (enabled.has("web-search")) toolDefinitions.push(createExaSearchTool());

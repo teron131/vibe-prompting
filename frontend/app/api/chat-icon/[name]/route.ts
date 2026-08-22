@@ -1,10 +1,13 @@
 /** Serves validated Lucide icons as cacheable SVG masks for chat history. */
 
+import { requireActiveSessionUser } from "@/auth/session";
+
 import { renderLucideIcon } from "../lucide-icons";
 
 const ICON_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 export async function GET(_request: Request, context: RouteContext<"/api/chat-icon/[name]">) {
+  await requireActiveSessionUser();
   const { name } = await context.params;
   if (!ICON_NAME_PATTERN.test(name)) {
     return new Response(null, { status: 404 });

@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import type postgres from "postgres";
 
-import type { Database, DatabaseClient } from "../database.ts";
+import type { Database, DatabaseClient } from "../database/index.ts";
 import type { HybridSearch } from "../search.ts";
 import { type ChatMetadata, validateChatMetadata } from "./metadata.ts";
 
@@ -76,6 +76,8 @@ type ChatRow = {
   title: string;
   updatedAt: Date;
 };
+
+type ChatListRow = ChatRow & { cursorUpdatedAt: string };
 
 type ChatSearchRow = ChatRow & { searchText: string };
 
@@ -169,21 +171,26 @@ export class ConversationStore {
 
   /** Creates a chat and its first user turn under one usage-checked transaction. */
   async createWithUserMessage(
+    ownerUserId: string,
     input: Omit<UserMessageInput, "chatId"> & { chatId?: string },
   ): Promise<Conversation> {
     const chatId = input.chatId ?? randomUUID();
     const title = deriveTitle(input.instruction);
     return this.#database.transaction(async (sql) => {
       await claimChatUsage(sql);
-      await sql`
-        INSERT INTO chats (id, title, model_id, workspace_context_json)
+      const inserted = await sql`
+        INSERT INTO chats (id, owner_user_id, title, model_id, workspace_context_json)
         VALUES (
           ${chatId},
+          ${ownerUserId},
           ${title},
           ${input.modelId},
           ${sql.json(input.context as unknown as postgres.JSONValue)}
         )
+        ON CONFLICT (id) DO NOTHING
+        RETURNING id
       `;
+      if (inserted.length === 0) throw new ChatNotFoundError(chatId);
       await insertMessage(sql, {
         chatId,
         id: input.messageId,
@@ -191,13 +198,13 @@ export class ConversationStore {
         parts: projectUserMessageParts(input),
         role: "user",
       });
-      return requireConversation(sql, chatId);
+      return requireConversation(sql, ownerUserId, chatId);
     });
   }
 
-  async appendUserMessage(input: UserMessageInput): Promise<Conversation> {
+  async appendUserMessage(ownerUserId: string, input: UserMessageInput): Promise<Conversation> {
     return this.#database.transaction(async (sql) => {
-      await requireChat(sql, input.chatId);
+      await requireChat(sql, ownerUserId, input.chatId);
       await claimChatUsage(sql);
       await insertMessage(sql, {
         chatId: input.chatId,
@@ -206,12 +213,13 @@ export class ConversationStore {
         parts: projectUserMessageParts(input),
         role: "user",
       });
-      await updateChatForUserMessage(sql, input);
-      return requireConversation(sql, input.chatId);
+      await updateChatForUserMessage(sql, ownerUserId, input);
+      return requireConversation(sql, ownerUserId, input.chatId);
     });
   }
 
   async replaceUserMessage(
+    ownerUserId: string,
     input: UserMessageInput & { replaceFromMessageId: string },
   ): Promise<Conversation> {
     return this.#database.transaction(async (sql) => {
@@ -220,11 +228,15 @@ export class ConversationStore {
           "A replacement must reuse the selected user message ID.",
         );
       }
-      await requireChat(sql, input.chatId);
+      await requireChat(sql, ownerUserId, input.chatId);
       const [target] = await sql<Array<{ createdAt: Date; id: string; role: string }>>`
-        SELECT id, role, created_at
+        SELECT chat_messages.id, chat_messages.role, chat_messages.created_at
         FROM chat_messages
-        WHERE chat_id = ${input.chatId} AND id = ${input.replaceFromMessageId}
+        JOIN chats ON chats.id = chat_messages.chat_id
+        WHERE
+          chat_messages.chat_id = ${input.chatId}
+          AND chats.owner_user_id = ${ownerUserId}
+          AND chat_messages.id = ${input.replaceFromMessageId}
         FOR UPDATE
       `;
       if (!target) throw new ChatMessageNotFoundError(input.chatId, input.replaceFromMessageId);
@@ -247,50 +259,79 @@ export class ConversationStore {
         parts: projectUserMessageParts(input),
         role: "user",
       });
-      await updateChatForUserMessage(sql, input);
-      return requireConversation(sql, input.chatId);
+      await updateChatForUserMessage(sql, ownerUserId, input);
+      return requireConversation(sql, ownerUserId, input.chatId);
     });
   }
 
-  async appendAssistantMessage(input: {
-    chatId: string;
-    metadata: Record<string, unknown>;
-    parts: StoredMessagePart[];
-  }): Promise<Conversation> {
+  async appendAssistantMessage(
+    ownerUserId: string,
+    input: {
+      chatId: string;
+      metadata: Record<string, unknown>;
+      parts: StoredMessagePart[];
+    },
+  ): Promise<Conversation> {
     return this.#database.transaction(async (sql) => {
-      await requireChat(sql, input.chatId);
+      await requireChat(sql, ownerUserId, input.chatId);
       await insertMessage(sql, {
         chatId: input.chatId,
         metadata: input.metadata,
         parts: input.parts,
         role: "assistant",
       });
-      await touchChat(sql, input.chatId);
-      return requireConversation(sql, input.chatId);
+      await touchChat(sql, ownerUserId, input.chatId);
+      return requireConversation(sql, ownerUserId, input.chatId);
     });
   }
 
   /** Loads one chat with its workspace context and ordered message history. */
-  async getConversation(chatId: string): Promise<Conversation> {
-    return this.#database.run((sql) => requireConversation(sql, chatId));
+  async getConversation(ownerUserId: string, chatId: string): Promise<Conversation> {
+    return this.#database.run((sql) => requireConversation(sql, ownerUserId, chatId));
+  }
+
+  /** Resolves an owned chat or a globally unused identifier before a create-or-append flow touches run state. */
+  async findConversation(ownerUserId: string, chatId: string): Promise<Conversation | null> {
+    return this.#database.run(async (sql) => {
+      const [row] = await sql<Array<{ ownerUserId: string }>>`
+        SELECT owner_user_id
+        FROM chats
+        WHERE id = ${chatId}
+      `;
+      if (!row) return null;
+      if (row.ownerUserId !== ownerUserId) throw new ChatNotFoundError(chatId);
+      return requireConversation(sql, ownerUserId, chatId);
+    });
+  }
+
+  async requireChat(ownerUserId: string, chatId: string): Promise<ChatSummary> {
+    return this.#database.run((sql) => requireChat(sql, ownerUserId, chatId));
   }
 
   /** Lists chats with a stable updated-at cursor instead of offset pagination. */
-  async listChats(input: { cursor?: string; limit?: number } = {}): Promise<ChatPage> {
+  async listChats(
+    ownerUserId: string,
+    input: { cursor?: string; limit?: number } = {},
+  ): Promise<ChatPage> {
     const limit = Math.min(Math.max(input.limit ?? 30, 1), 100);
     const cursor = input.cursor ? decodeCursor(input.cursor) : undefined;
     return this.#database.run(async (sql) => {
       const rows = cursor
-        ? await sql<ChatRow[]>`
-            SELECT id, title, icon, model_id, created_at, updated_at
+        ? await sql<ChatListRow[]>`
+            SELECT id, title, icon, model_id, created_at, updated_at,
+              updated_at::text AS cursor_updated_at
             FROM chats
-            WHERE (updated_at, id) < (${cursor.updatedAt}::timestamptz, ${cursor.id}::uuid)
+            WHERE
+              owner_user_id = ${ownerUserId}
+              AND (updated_at, id) < (${cursor.updatedAt}::text::timestamptz, ${cursor.id}::uuid)
             ORDER BY updated_at DESC, id DESC
             LIMIT ${limit + 1}
           `
-        : await sql<ChatRow[]>`
-            SELECT id, title, icon, model_id, created_at, updated_at
+        : await sql<ChatListRow[]>`
+            SELECT id, title, icon, model_id, created_at, updated_at,
+              updated_at::text AS cursor_updated_at
             FROM chats
+            WHERE owner_user_id = ${ownerUserId}
             ORDER BY updated_at DESC, id DESC
             LIMIT ${limit + 1}
           `;
@@ -300,15 +341,13 @@ export class ConversationStore {
       return {
         chats: visibleRows.map(projectChat),
         nextCursor:
-          hasMore && last
-            ? encodeCursor({ id: last.id, updatedAt: last.updatedAt.toISOString() })
-            : null,
+          hasMore && last ? encodeCursor({ id: last.id, updatedAt: last.cursorUpdatedAt }) : null,
       };
     });
   }
 
   /** Searches chat titles and message text after releasing the database connection for embedding work. */
-  async searchChats(query: string, limit = 30): Promise<ChatSummary[]> {
+  async searchChats(ownerUserId: string, query: string, limit = 30): Promise<ChatSummary[]> {
     const normalized = query.trim();
     if (!normalized) return [];
     const rows = await this.#database.run(
@@ -323,6 +362,7 @@ export class ConversationStore {
         COALESCE(string_agg(chat_messages.text_content, E'\n' ORDER BY chat_messages.created_at, chat_messages.id), '') AS search_text
       FROM chats
       LEFT JOIN chat_messages ON chat_messages.chat_id = chats.id
+      WHERE chats.owner_user_id = ${ownerUserId}
       GROUP BY chats.id
       ORDER BY chats.updated_at DESC, chats.id DESC
     `,
@@ -342,13 +382,16 @@ export class ConversationStore {
     return hits.slice(0, Math.min(Math.max(limit, 1), 100)).map(({ document }) => document.value);
   }
 
-  async updateMetadata(input: { chatId: string } & ChatMetadata): Promise<ChatSummary> {
+  async updateMetadata(
+    ownerUserId: string,
+    input: { chatId: string } & ChatMetadata,
+  ): Promise<ChatSummary> {
     const metadata = validateChatMetadata(input);
     return this.#database.run(async (sql) => {
       const [row] = await sql<ChatRow[]>`
         UPDATE chats
         SET title = ${metadata.title}, icon = ${metadata.icon}
-        WHERE id = ${input.chatId}
+        WHERE id = ${input.chatId} AND owner_user_id = ${ownerUserId}
         RETURNING id, title, icon, model_id, created_at, updated_at
       `;
       if (!row) throw new ChatNotFoundError(input.chatId);
@@ -356,11 +399,11 @@ export class ConversationStore {
     });
   }
 
-  async deleteChat(chatId: string): Promise<void> {
+  async deleteChat(ownerUserId: string, chatId: string): Promise<void> {
     await this.#database.run(async (sql) => {
       const rows = await sql`
         DELETE FROM chats
-        WHERE id = ${chatId}
+        WHERE id = ${chatId} AND owner_user_id = ${ownerUserId}
         RETURNING id
       `;
       if (rows.length === 0) throw new ChatNotFoundError(chatId);
@@ -401,18 +444,23 @@ async function claimChatUsage(sql: DatabaseClient): Promise<void> {
   await sql`INSERT INTO chat_usage_events DEFAULT VALUES`;
 }
 
-async function requireConversation(sql: DatabaseClient, chatId: string): Promise<Conversation> {
-  const row = await requireChatRow(sql, chatId);
+async function requireConversation(
+  sql: DatabaseClient,
+  ownerUserId: string,
+  chatId: string,
+): Promise<Conversation> {
+  const row = await requireChatRow(sql, ownerUserId, chatId);
   const rows = await sql<MessageRow[]>`
     SELECT
-      id,
-      chat_id,
-      role,
-      parts_json AS parts,
-      metadata_json AS metadata,
-      created_at
+      chat_messages.id,
+      chat_messages.chat_id,
+      chat_messages.role,
+      chat_messages.parts_json AS parts,
+      chat_messages.metadata_json AS metadata,
+      chat_messages.created_at
     FROM chat_messages
-    WHERE chat_id = ${chatId}
+    JOIN chats ON chats.id = chat_messages.chat_id
+    WHERE chat_messages.chat_id = ${chatId} AND chats.owner_user_id = ${ownerUserId}
     ORDER BY created_at, id
   `;
   return {
@@ -422,11 +470,19 @@ async function requireConversation(sql: DatabaseClient, chatId: string): Promise
   };
 }
 
-async function requireChat(sql: DatabaseClient, chatId: string): Promise<ChatSummary> {
-  return projectChat(await requireChatRow(sql, chatId));
+async function requireChat(
+  sql: DatabaseClient,
+  ownerUserId: string,
+  chatId: string,
+): Promise<ChatSummary> {
+  return projectChat(await requireChatRow(sql, ownerUserId, chatId));
 }
 
-async function requireChatRow(sql: DatabaseClient, chatId: string): Promise<ConversationRow> {
+async function requireChatRow(
+  sql: DatabaseClient,
+  ownerUserId: string,
+  chatId: string,
+): Promise<ConversationRow> {
   const [row] = await sql<ConversationRow[]>`
     SELECT
       id,
@@ -437,7 +493,7 @@ async function requireChatRow(sql: DatabaseClient, chatId: string): Promise<Conv
       created_at,
       updated_at
     FROM chats
-    WHERE id = ${chatId}
+    WHERE id = ${chatId} AND owner_user_id = ${ownerUserId}
   `;
   if (!row) throw new ChatNotFoundError(chatId);
   return row;
@@ -489,6 +545,7 @@ function projectUserMessageParts(
 
 async function updateChatForUserMessage(
   sql: DatabaseClient,
+  ownerUserId: string,
   input: Pick<UserMessageInput, "chatId" | "context" | "modelId">,
 ): Promise<void> {
   await sql`
@@ -497,15 +554,15 @@ async function updateChatForUserMessage(
       model_id = ${input.modelId},
       workspace_context_json = ${sql.json(input.context as unknown as postgres.JSONValue)},
       updated_at = NOW()
-    WHERE id = ${input.chatId}
+    WHERE id = ${input.chatId} AND owner_user_id = ${ownerUserId}
   `;
 }
 
-async function touchChat(sql: DatabaseClient, chatId: string): Promise<void> {
+async function touchChat(sql: DatabaseClient, ownerUserId: string, chatId: string): Promise<void> {
   await sql`
     UPDATE chats
     SET updated_at = now()
-    WHERE id = ${chatId}
+    WHERE id = ${chatId} AND owner_user_id = ${ownerUserId}
   `;
 }
 

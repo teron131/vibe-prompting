@@ -2,7 +2,7 @@
 
 "use client";
 
-import { FlaskConical, MessageSquareText, Settings, Sparkles, X } from "lucide-react";
+import { FlaskConical, LogOut, MessageSquareText, Settings, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { RefObject } from "react";
@@ -21,9 +21,11 @@ const links = [
 
 export function AppSidebar({
   closeButtonRef,
+  currentUser,
   onClose,
 }: {
   closeButtonRef: RefObject<HTMLButtonElement | null>;
+  currentUser: { email: string; name: string | null };
   onClose(): void;
 }) {
   const pathname = usePathname();
@@ -77,6 +79,32 @@ export function AppSidebar({
           <ChatHistory />
         </div>
       </div>
+      <div className="border-t border-sidebar-border p-1.5">
+        <div className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1">
+          <div
+            aria-hidden="true"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground text-[10px] font-semibold text-background"
+          >
+            {userInitial(currentUser)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium">{currentUser.name ?? currentUser.email}</p>
+            {currentUser.name ? (
+              <p className="truncate text-[10px] text-muted-foreground">{currentUser.email}</p>
+            ) : null}
+          </div>
+          <form action="/api/auth/logout" method="post">
+            <button
+              aria-label="Sign out"
+              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              title="Sign out"
+              type="submit"
+            >
+              <LogOut aria-hidden="true" className="size-3.5" />
+            </button>
+          </form>
+        </div>
+      </div>
       <div className="flex items-center justify-between gap-2 border-t border-sidebar-border p-1.5">
         <SidebarThemeToggle />
         <Link
@@ -95,4 +123,8 @@ export function AppSidebar({
       </div>
     </div>
   );
+}
+
+function userInitial(user: { email: string; name: string | null }): string {
+  return (user.name?.trim() || user.email).slice(0, 1).toUpperCase();
 }

@@ -11,7 +11,7 @@ import {
   SEARCH_EMBEDDING_DIMENSIONS,
   SEARCH_EMBEDDING_MODEL,
 } from "./clients/embedding.ts";
-import type { Database } from "./database.ts";
+import type { Database } from "./database/index.ts";
 
 const MIN_SEMANTIC_SIMILARITY = 0.6;
 const SEMANTIC_SIMILARITY_WINDOW = 0.08;

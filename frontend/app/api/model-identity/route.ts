@@ -2,7 +2,10 @@
 
 import { getModelIdentity } from "vibe-prompting/server";
 
+import { requireActiveSessionUser } from "@/auth/session";
+
 export async function GET(request: Request) {
+  await requireActiveSessionUser();
   const modelId = new URL(request.url).searchParams.get("modelId")?.trim();
   if (!modelId || modelId.length > 200) {
     return Response.json({ error: "A valid modelId is required." }, { status: 400 });

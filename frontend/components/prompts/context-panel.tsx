@@ -11,10 +11,8 @@ import {
   LoaderCircle,
   MessageCircleMore,
   Quote,
-  Redo2,
   Save,
   Search,
-  Undo2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -29,6 +27,7 @@ import { toast } from "sonner";
 
 import { PromptDiff } from "@/components/prompts/diff";
 import { MarkdownPreview } from "@/components/prompts/markdown-preview";
+import { promptRevisionAuthorLabel } from "@/components/prompts/revision-author";
 import { PromptStats } from "@/components/prompts/stats";
 import { usePromptSearch } from "@/components/prompts/use-search";
 import { type PromptViewMode, PromptViewModeControl } from "@/components/prompts/view-mode-control";
@@ -46,7 +45,8 @@ import type {
   PromptSummary,
 } from "@/contracts/prompts";
 import type { TargetRunsResponse, TargetRunSummary } from "@/contracts/target-runs";
-import { createErrorReader, requestJson } from "@/shared/api";
+import { ApiRequestError, createErrorReader, requestJson } from "@/shared/api";
+import { memberDisplayName } from "@/shared/member";
 
 const DEFAULT_PANEL_WIDTH = 384;
 const MAX_PANEL_WIDTH = 768;
@@ -95,8 +95,9 @@ export function PromptContextPanel({
   const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<PromptViewMode>("edit");
   const [editError, setEditError] = useState<string>();
+  const [staleWrite, setStaleWrite] = useState(false);
+  const [loadingLatest, setLoadingLatest] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [historyAction, setHistoryAction] = useState<"redo" | "undo">();
   const [activating, setActivating] = useState(false);
   const [latestRun, setLatestRun] = useState<EvaluationRunSummary>();
   const [runState, setRunState] = useState<"error" | "idle" | "loading">("idle");
@@ -153,7 +154,7 @@ export function PromptContextPanel({
   const displayedRevisionId = displayedRevision?.id ?? editorPrompt?.revisionId;
   const displayedPrompt = editorPrompt ?? activePrompt;
   const dirty = Boolean(editorPrompt && draft !== editorPrompt.markdown);
-  const changesAvailable = Boolean(editorPrompt?.canUndo);
+  const changesAvailable = Boolean(editorPrompt && editorPrompt.revisionNumber > 1);
   const compactToolbar = panelWidth < 560;
   const matchingHighlight =
     activePromptId &&
@@ -221,9 +222,14 @@ export function PromptContextPanel({
         setEditorPrompt(prompt);
         setDraft(prompt.markdown);
         setMode(
-          reviewRevisionKey && prompt.canUndo ? "changes" : historicalQuoteKey ? "read" : "edit",
+          reviewRevisionKey && prompt.revisionNumber > 1
+            ? "changes"
+            : historicalQuoteKey
+              ? "read"
+              : "edit",
         );
         setEditError(undefined);
+        setStaleWrite(false);
         setEditorState("idle");
       })
       .catch((error: unknown) => {
@@ -236,7 +242,7 @@ export function PromptContextPanel({
   useEffect(() => {
     setReviewedRevision(undefined);
     setReviewState("idle");
-    if (!open || !activePromptId || !editorPrompt?.canUndo) return;
+    if (!open || !activePromptId || !editorPrompt || editorPrompt.revisionNumber <= 1) return;
 
     const controller = new AbortController();
     setReviewState("loading");
@@ -254,7 +260,7 @@ export function PromptContextPanel({
         setReviewState("error");
       });
     return () => controller.abort();
-  }, [activePromptId, editorPrompt?.canUndo, editorPrompt?.revisionId, open]);
+  }, [activePromptId, editorPrompt, open]);
 
   useEffect(() => {
     if (!activePromptId) {
@@ -451,40 +457,26 @@ export function PromptContextPanel({
   }
 
   async function savePrompt() {
-    if (!activePrompt || !editorPrompt || !dirty || saving) return;
+    if (!activePrompt || !editorPrompt || !dirty || saving || staleWrite) return;
     setSaving(true);
     setEditError(undefined);
     try {
       const prompt = await updatePrompt(activePrompt.id, {
-        expectedRevisionId: editorPrompt.revisionId,
+        expectedActiveRevisionId: editorPrompt.activeRevisionId,
         markdown: draft,
       });
       applyPromptUpdate(prompt);
     } catch (error) {
-      const message = readError(error);
+      let message = readError(error);
+      if (error instanceof ApiRequestError && error.code === "stale-write") {
+        message =
+          "Someone saved a newer prompt revision. Your draft is still open; load the latest version before saving again.";
+        setStaleWrite(true);
+      }
       setEditError(message);
       toast.error(message);
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function navigateHistory(action: "redo" | "undo") {
-    if (!activePrompt || !editorPrompt || dirty || saving || historyAction) return;
-    setHistoryAction(action);
-    setEditError(undefined);
-    try {
-      const prompt = await updatePrompt(activePrompt.id, {
-        action,
-        expectedRevisionId: editorPrompt.revisionId,
-      });
-      applyPromptUpdate(prompt, mode === "changes" && !prompt.canUndo ? "edit" : mode);
-    } catch (error) {
-      const message = readError(error);
-      setEditError(message);
-      toast.error(message);
-    } finally {
-      setHistoryAction(undefined);
     }
   }
 
@@ -494,7 +486,7 @@ export function PromptContextPanel({
       !editorPrompt ||
       dirty ||
       saving ||
-      historyAction ||
+      staleWrite ||
       activating ||
       editorPrompt.revisionId === editorPrompt.activeRevisionId
     )
@@ -516,7 +508,12 @@ export function PromptContextPanel({
       applyPromptUpdate(prompt, mode);
       toast.success(`v${prompt.activeRevisionNumber} is active.`);
     } catch (error) {
-      const message = readError(error);
+      let message = readError(error);
+      if (error instanceof ApiRequestError && error.code === "stale-write") {
+        message =
+          "Someone saved a newer prompt revision. Load the latest version before trying again.";
+        setStaleWrite(true);
+      }
       setEditError(message);
       toast.error(message);
     } finally {
@@ -528,7 +525,32 @@ export function PromptContextPanel({
     setEditorPrompt(prompt);
     setDraft(prompt.markdown);
     setMode(nextMode);
+    setStaleWrite(false);
     onPromptUpdated(projectActivePromptSummary(prompt));
+  }
+
+  async function loadLatestAfterConflict() {
+    if (!activePrompt) return;
+    setLoadingLatest(true);
+    try {
+      const { prompt } = await requestJson<PromptDetail>(
+        `/api/prompts/${encodeURIComponent(activePrompt.id)}`,
+        { cache: "no-store" },
+        "Prompt request failed.",
+      );
+      setEditorPrompt(prompt);
+      if (!dirty) setDraft(prompt.markdown);
+      setEditError(undefined);
+      setStaleWrite(false);
+      onPromptUpdated(projectActivePromptSummary(prompt));
+      toast.success(
+        dirty ? "Latest revision loaded. Your draft is still open." : "Latest revision loaded.",
+      );
+    } catch (error) {
+      setEditError(readError(error));
+    } finally {
+      setLoadingLatest(false);
+    }
   }
 
   function savePromptWithKeyboard(event: ReactKeyboardEvent<HTMLElement>) {
@@ -721,44 +743,10 @@ export function PromptContextPanel({
               showChanges={changesAvailable}
             />
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
-              {!dirty ? (
-                <>
-                  <Button
-                    aria-label="Undo last saved change"
-                    className="size-8"
-                    disabled={saving || Boolean(historyAction) || !editorPrompt?.canUndo}
-                    onClick={() => void navigateHistory("undo")}
-                    size="icon"
-                    title="Undo saved revision"
-                    variant="ghost"
-                  >
-                    {historyAction === "undo" ? (
-                      <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-                    ) : (
-                      <Undo2 aria-hidden="true" className="size-4" />
-                    )}
-                  </Button>
-                  <Button
-                    aria-label="Redo saved change"
-                    className="size-8"
-                    disabled={saving || Boolean(historyAction) || !editorPrompt?.canRedo}
-                    onClick={() => void navigateHistory("redo")}
-                    size="icon"
-                    title="Redo saved revision"
-                    variant="ghost"
-                  >
-                    {historyAction === "redo" ? (
-                      <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-                    ) : (
-                      <Redo2 aria-hidden="true" className="size-4" />
-                    )}
-                  </Button>
-                </>
-              ) : null}
               {!dirty && editorPrompt?.activeRevisionId !== editorPrompt?.revisionId ? (
                 <Button
                   className="h-8 px-2.5 text-xs"
-                  disabled={activating || saving || Boolean(historyAction)}
+                  disabled={activating || saving || staleWrite}
                   onClick={() => void makeActive()}
                   size="sm"
                   variant="outline"
@@ -772,7 +760,7 @@ export function PromptContextPanel({
               {dirty ? (
                 <Button
                   className="h-8 px-2.5 text-xs"
-                  disabled={!dirty || saving}
+                  disabled={!dirty || saving || staleWrite}
                   onClick={() => void savePrompt()}
                   size="sm"
                 >
@@ -788,8 +776,22 @@ export function PromptContextPanel({
           </div>
 
           {editError ? (
-            <div className="shrink-0 border-b border-destructive/40 bg-destructive/5 px-4 py-2 text-xs text-destructive">
-              {editError}
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-destructive/40 bg-destructive/5 px-4 py-2 text-xs text-destructive">
+              <span>{editError}</span>
+              {staleWrite ? (
+                <Button
+                  className="h-7 shrink-0 px-2 text-[11px]"
+                  disabled={loadingLatest}
+                  onClick={() => void loadLatestAfterConflict()}
+                  size="sm"
+                  variant="outline"
+                >
+                  {loadingLatest ? (
+                    <LoaderCircle aria-hidden="true" className="size-3 animate-spin" />
+                  ) : null}
+                  Load latest
+                </Button>
+              ) : null}
             </div>
           ) : null}
 
@@ -838,9 +840,7 @@ export function PromptContextPanel({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="text-xs font-semibold">
-                            {reviewedRevision.revision.source === "ai"
-                              ? "Agent changes"
-                              : "Manual changes"}
+                            {promptRevisionAuthorLabel(reviewedRevision.revision)}
                           </p>
                           <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
                             v{editorPrompt?.revisionNumber} vs v
@@ -937,7 +937,7 @@ export function PromptContextPanel({
                   href={`/target-runs/${latestTargetRun.id}`}
                 >
                   <span className="capitalize text-foreground">{latestTargetRun.latestStatus}</span>
-                  {` · ${latestTargetRun.turnCount} ${latestTargetRun.turnCount === 1 ? "turn" : "turns"} · v${latestTargetRun.promptRevisionNumber}`}
+                  {` · ${latestTargetRun.turnCount} ${latestTargetRun.turnCount === 1 ? "turn" : "turns"} · v${latestTargetRun.promptRevisionNumber} · ${memberDisplayName(latestTargetRun.startedByName)}`}
                 </Link>
               ) : (
                 <span className="text-muted-foreground">No Target Runs yet</span>
@@ -962,6 +962,7 @@ export function PromptContextPanel({
                   {latestRun.promptRevisionId === displayedRevisionId
                     ? `v${displayedPrompt?.revisionNumber ?? "current"}`
                     : "previous revision"}
+                  {` · ${memberDisplayName(latestRun.startedByName)}`}
                 </Link>
               ) : (
                 <span className="text-muted-foreground">No evaluations yet</span>
@@ -1056,8 +1057,7 @@ async function updatePrompt(
         expectedActiveRevisionId: string;
         revisionId: string;
       }
-    | { action: "redo" | "undo"; expectedRevisionId: string }
-    | { expectedRevisionId: string; markdown: string },
+    | { expectedActiveRevisionId: string; markdown: string },
 ): Promise<PromptEditorSnapshot> {
   return requestJson<PromptEditorSnapshot>(
     `/api/prompts/${encodeURIComponent(promptId)}`,

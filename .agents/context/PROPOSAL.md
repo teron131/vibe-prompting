@@ -24,6 +24,22 @@ The product is an 80/20 prompt-engineering runtime for practical iteration, not 
 
 Prompt, Target Profile, and Evaluation records remain separate. Their relationships are expressed by stable identifiers and pinned revision identifiers rather than by embedding runtime or evaluation state inside a Prompt.
 
+## Workspace and Access Model
+
+The product currently has one implicit shared workspace rather than separate organizations or teams.
+
+- A User is a Google-backed application identity with an email, display name, membership status, and application-owned identifier.
+- A pending User has completed Google verification but cannot enter the workspace until the shared invitation code activates the membership.
+- An active User may create and use workspace resources until the membership or application session is revoked.
+- An Application Session is an opaque revocable browser credential whose hash and expiry are stored in PostgreSQL; it is distinct from Google identity tokens and OAuth state.
+- A Chat and its messages belong to one User and are never shared through workspace reads.
+- Prompts, Prompt Revisions, Target Profiles, Target Runs, Evaluation Criteria Profiles, Evaluation Runs, and Settings are shared workspace resources with user attribution on writes.
+
+Google OpenID Connect owns identity verification, while the application owns membership, invitations, sessions, authorization, and data access.
+Shared projections may expose a contributor's display name when useful, but must not expose member email addresses or Google subjects to other users.
+Browser routes derive the actor or viewer from the application session rather than accepting a user identifier from the browser.
+PostgreSQL transactions own private-chat scope, optimistic revision conflicts, durable workflow state, cancellation, queue ordering, and invitation throttling.
+
 ## Prompt System
 
 The Prompt System is the single owner of durable prompt behavior:
@@ -104,10 +120,10 @@ Hashline is only an addressing technique in this product. It does not justify a 
 ## Public Surfaces
 
 - The TypeScript API is the direct in-process contract for application composition and external library use.
-- Fastify exposes headless HTTP and OpenAPI operations for prompt editing, configured models, durable Target Runs, durable evaluation runs and batches, criteria profiles, paginated results, analytics, structured queries, and result exploration over the same systems.
-- MCP is an application adapter and may expose Prompt System, Target System, and Evaluation System operations without inventing separate semantics or hosting an independent editing implementation.
+- Fastify exposes trusted loopback HTTP and OpenAPI operations for prompt editing, configured models, durable Target Runs, durable evaluation runs and batches, criteria profiles, paginated results, analytics, structured queries, and result exploration over the same systems.
+- MCP is a trusted loopback application adapter and may expose Prompt System, Target System, and Evaluation System operations without inventing separate semantics or hosting an independent editing implementation.
 - The built-in agent composes the same operations into natural-language workflows.
-- The Next.js browser provides a simple non-technical interface over those operations without becoming their owner.
+- The Next.js browser authenticates through Google and application sessions, then provides a simple non-technical interface over those operations without becoming their owner.
 
 Adapters may translate schemas, authentication, streaming, and presentation. They must not implement separate prompt versioning, evaluation semantics, or persistence rules.
 
@@ -121,12 +137,14 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 - `evaluation/results/` owns result filters, per-domain search projection, paginated PostgreSQL queries, aggregate analytics, and the helper-model translation into allowlisted read operations.
 - `evaluation/criteria-profiles.ts` owns reusable ordered criteria profiles without becoming the source of truth for historical run criteria.
 - `agents/tools/` owns framework-neutral agent tool definitions over direct clients and public system operations, `agents/ai-sdk/` and `agents/openai-agents/` own agent runtime integration, and each runtime usage owns its tool adaptation.
-- `conversations/` owns durable general-chat history and detached assistant-run reconciliation rather than prompt or evaluation records.
+- `auth/` owns Google-backed identity upsert, pending and active membership, invitation throttling, and opaque application-session lifecycle.
+- `conversations/` owns private durable general-chat history, owner scoping, and detached assistant-run reconciliation rather than prompt or evaluation records.
+- `database/` owns the PostgreSQL client, ordered migrations, migration locking, and database setup rather than domain queries or authorization rules.
 - `search.ts` owns target-agnostic hybrid matching, semantic ranking, thresholds, and derived embedding-cache lifecycle; each domain owner projects its own searchable documents.
 - `clients/` owns direct model and service clients plus shared provider primitives that do not construct agent runtimes, including LangChain chat models, embeddings, Exa Search API access, Exa MCP connection data, Langfuse, model identity, pricing, and spend accounting.
-- `config/` owns validated runtime configuration and shared optional spend limits, while `settings/` owns user-editable persisted application settings.
+- `config/` owns validated runtime configuration and shared optional spend limits, while `settings/` owns shared user-editable persisted application settings with revision conflicts and contributor attribution.
 - `app/` owns Fastify, MCP, database setup, and application composition rather than domain rules.
-- `frontend/` owns browser interaction and presentation rather than backend behavior.
+- `frontend/auth/`, `frontend/server/`, and `frontend/proxy.ts` own browser-session resolution, route protection, request validation, and safe transport errors, while the rest of `frontend/` owns browser interaction and presentation rather than backend behavior.
 - The standalone Agent Test Bench owns BuildingAI matrices, repeated experiments, profile fixtures, and its own inspection workflow; it is not application storage or runtime ownership.
 
 ## What Not to Build
@@ -152,18 +170,26 @@ The implemented baseline has distinct Prompt, Target, and Evaluation systems. `P
 
 Evaluation exposes the transport-neutral `evaluate(target, request)` boundary plus durable prompt-linked asynchronous runs and batches. It can also score a completed Target Run turn through the same judge graph while skipping target invocation and retaining trace provenance. A batch pins every job and persists all run records atomically before detached execution begins, while completion can only commit outputs and scores for a run that remains active. The backend stores exact prompt, target profile, model, configuration, output, score, evidence, judge attribution, status, synthetic provenance, criteria snapshots, and optional Target Run references. Criteria profiles are reusable CRUD resources, while result browsing, typed aggregates, chronological trends, and allowlisted structured exploration all read the same persisted facts and filters.
 
+Google-backed Users, invitation-gated membership, and opaque revocable sessions now protect the browser workspace. Chats are owner-scoped in PostgreSQL, while prompts, revisions, profiles, settings, Target Runs, and Evaluation Runs remain shared and retain contributor attribution. Shared projections expose contributor names where useful without exposing member email addresses. The trusted Fastify adapter is forced to loopback and validates supplied actor or viewer identifiers as active members, while browser routes always derive identity from the session.
+
+Evaluation queue draining is single-flighted, provider capacity hands off slots without exceeding its configured limit, and PostgreSQL guards cancellation and terminal workflow transitions against late workers. Invitation failures are transactionally throttled, migration execution is serialized with an advisory lock, and the database pool supports concurrent request and workflow activity.
+
 The built-in agent uses separate structured prompt editing, Target Run, evaluation execution, evaluation search, and evaluation analytics tools, passes revision IDs explicitly, and can operate the same durable Target Runs and evaluation batches as a human client. Prompt editing operates on one isolated in-memory string with hash-addressed structured operations and persists only through Prompt System. The configured helper model only translates plain-language questions into validated read operations at low reasoning effort. The browser reuses the general conversation presentation in an explicit Test Target mode whose traces are not stored in general chat history, and it can launch judge-only evaluation from a selected completed turn. The other run setup, result exploration, aggregate analytics, criteria management, and LLM-assisted exploration surfaces remain clients of backend owners.
 
 The remaining gaps are narrower:
 
 - MCP currently exposes only stateless evaluation and should reach useful Prompt, Target, durable Evaluation, result, and criteria-profile operations through the same application services.
-- Asynchronous runs are owned by the current server process. Startup reconciliation marks abandoned running work as interrupted, but durable resumption or a separate worker queue is not yet implemented.
+- Asynchronous execution is still owned by the current server process. Durable queue and terminal state are stored in PostgreSQL and startup reconciliation marks abandoned running work as interrupted, but durable resumption or a separate worker process is not yet implemented.
 - Persisted application runs currently construct the built-in prompt-linked AI SDK Target; durable execution of a caller-supplied opaque Target needs an explicit remote or callback boundary before it is warranted.
 - Target Profile revision management remains backend-only even though the active profile and pinned revision are visible in the direct-test workflow.
+- Membership uses one shared invitation code, and administrative member listing, revocation, or code rotation has no browser workflow yet.
+- Migration 021 intentionally replaces disposable pre-multi-user artifacts before adding mandatory ownership, so a meaningful existing database would require a separate data migration instead of the current replacement rollout.
 - Langfuse export and broader editable presets remain optional follow-up work rather than prerequisites for the core loop.
 
 ## Current Direction
 
-Stabilize the result-driven loop as a portable backend contract: find and read an exact Prompt Revision, apply one atomic batch of hash-addressed structured edits, save one immutable revision, construct or receive a Target, preview and optionally start an evaluation batch, and inspect durable results and aggregates from any supported adapter.
+Treat authentication, membership, private chats, shared workspace attribution, and PostgreSQL workflow coordination as the stable application backbone rather than the next feature area.
 
-Prioritize durable worker ownership, MCP parity, and a small Target Profile management workflow. Add broader presets and Langfuse export only when observed usage earns them; do not duplicate the existing result browser, hybrid search, or aggregate analytics in another subsystem.
+Continue the result-driven product loop: find and read an exact Prompt Revision, apply one atomic batch of hash-addressed structured edits, save one immutable revision, construct or receive a Target, preview and optionally start an evaluation batch, and inspect durable results and aggregates from any supported adapter.
+
+Prioritize meaningful agent workflow, prompt iteration, and evaluation improvements. Revisit the multi-user backbone only when a concrete feature exposes a missing authorization or ownership rule, and add durable worker ownership, MCP parity, broader presets, or Langfuse export only when observed usage earns them.

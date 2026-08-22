@@ -3,9 +3,9 @@
 import { createHash } from "node:crypto";
 
 import { loadRuntimeConfig } from "../../config/index.ts";
-import type { Database } from "../../database.ts";
+import type { Database } from "../../database/index.ts";
 import { PromptConflictError, type PromptSystem } from "../../prompt-system/index.ts";
-import type { PinnedTarget, TargetSystem } from "../../target/index.ts";
+import type { TargetSystem } from "../../target/index.ts";
 import type { TargetRuns } from "../../target/runs/index.ts";
 import { evaluate, evaluateRecorded, type EvaluationCase, requestSchema } from "../api.ts";
 import {
@@ -26,16 +26,20 @@ import { EvaluationRunStore, type NewEvaluationRun } from "./store.ts";
 
 type PreparedRun = {
   record: NewEvaluationRun;
-  pinnedTarget: PinnedTarget;
-  request: { cases: EvaluationCase<unknown>[]; judges: string[] };
 };
+
+const MAX_ACTIVE_EVALUATION_JOBS = 2;
 
 /** Coordinates prompt and target dependencies while persistence remains behind the run store. */
 export class EvaluationRuns {
+  readonly #controllers = new Map<string, AbortController>();
   readonly #prompts: PromptSystem;
   readonly #store: EvaluationRunStore;
   readonly #targets: TargetSystem;
   readonly #targetRuns: TargetRuns;
+  #activeJobs = 0;
+  #draining = false;
+  #drainRequested = false;
 
   constructor(
     database: Database,
@@ -51,21 +55,30 @@ export class EvaluationRuns {
 
   /** Marks runs left in progress by a previous process as interrupted during startup recovery. */
   async reconcileInterrupted(): Promise<number> {
-    return this.#store.reconcileInterrupted();
+    const interrupted = await this.#store.reconcileInterrupted();
+    this.#scheduleDrain();
+    return interrupted;
   }
 
   /** Validates and persists a manually requested run before detached execution begins. */
-  async startHumanRun(rawInput: unknown): Promise<EvaluationRunSummary> {
-    return this.#startRun(rawInput, "human", null);
+  async startHumanRun(actorUserId: string, rawInput: unknown): Promise<EvaluationRunSummary> {
+    return this.#startRun(actorUserId, rawInput, "human", null);
   }
 
   /** Validates and persists an agent-requested run while attributing it to its chat. */
-  async startAgentRun(rawInput: unknown, chatId: string): Promise<EvaluationRunSummary> {
-    return this.#startRun(rawInput, "ai", chatId);
+  async startAgentRun(
+    actorUserId: string,
+    rawInput: unknown,
+    chatId: string,
+  ): Promise<EvaluationRunSummary> {
+    return this.#startRun(actorUserId, rawInput, "ai", chatId);
   }
 
   /** Persists an evaluation of one completed Target Run turn and starts only the judge stage. */
-  async startHumanRecordedRun(rawInput: unknown): Promise<EvaluationRunSummary> {
+  async startHumanRecordedRun(
+    actorUserId: string,
+    rawInput: unknown,
+  ): Promise<EvaluationRunSummary> {
     const parsed = recordedEvaluationRunInputSchema.safeParse(rawInput);
     if (!parsed.success) {
       throw new EvaluationRequestError(
@@ -74,7 +87,7 @@ export class EvaluationRuns {
     }
     const input = parsed.data;
     requireConfiguredModels(input.judges);
-    const targetRun = await this.#targetRuns.getRun(input.targetRunId);
+    const targetRun = await this.#targetRuns.getRun(actorUserId, input.targetRunId);
     const selectedTurn = targetRun.turns.find(({ id }) => id === input.targetRunTurnId);
     if (!selectedTurn)
       throw new EvaluationRequestError(`Target Run turn ${input.targetRunTurnId} was not found.`);
@@ -116,13 +129,12 @@ export class EvaluationRuns {
       targetProfileRevisionId: targetRun.targetProfileRevisionId,
       targetRunId: targetRun.id,
       targetRunTurnId: selectedTurn.id,
+      startedByUserId: actorUserId,
+      recordedOutputs: [selectedTurn.output],
     };
     const runId = await this.#store.create(record);
-    void this.#executeRecordedRun(runId, targetRun.targetModelId, {
-      cases: [{ ...cases[0], output: selectedTurn.output }],
-      judges: input.judges,
-    }).catch(() => undefined);
-    return this.getRunSummary(runId);
+    this.#scheduleDrain();
+    return this.getRunSummary(actorUserId, runId);
   }
 
   /** Validates a batch and reports its execution fan-out without creating run records. */
@@ -132,17 +144,22 @@ export class EvaluationRuns {
   }
 
   /** Pins every batch target, commits all run records together, and then starts detached execution. */
-  async startHumanBatch(rawInput: unknown): Promise<EvaluationBatchStart> {
-    return this.#startBatch(rawInput, "human", null);
+  async startHumanBatch(actorUserId: string, rawInput: unknown): Promise<EvaluationBatchStart> {
+    return this.#startBatch(actorUserId, rawInput, "human", null);
   }
 
   /** Pins every agent batch target, commits all run records together, and attributes them to its chat. */
-  async startAgentBatch(rawInput: unknown, chatId: string): Promise<EvaluationBatchStart> {
-    return this.#startBatch(rawInput, "ai", chatId);
+  async startAgentBatch(
+    actorUserId: string,
+    rawInput: unknown,
+    chatId: string,
+  ): Promise<EvaluationBatchStart> {
+    return this.#startBatch(actorUserId, rawInput, "ai", chatId);
   }
 
   /** Prepares every job, then atomically persists the batch before detached execution begins. */
   async #startBatch(
+    actorUserId: string,
     rawInput: unknown,
     source: EvaluationRunSource,
     chatId: string | null,
@@ -153,43 +170,35 @@ export class EvaluationRuns {
       input.configurations.map((configuration) => [configuration.id, configuration]),
     );
     const preparedRuns: PreparedRun[] = [];
-    let runIds: string[];
-    try {
-      for (const job of preview.jobs) {
-        const configuration = configurations.get(job.configurationId);
-        if (!configuration)
-          throw new EvaluationRequestError(
-            `Unknown evaluation configuration: ${job.configurationId}.`,
-          );
-        preparedRuns.push(
-          await this.#prepareRun(
-            {
-              promptId: input.promptId,
-              promptRevisionId: input.promptRevisionId,
-              targetModelId: job.targetModelId,
-              judges: input.judges,
-              cases: input.cases.map(({ input: caseInput }) => ({
-                input: caseInput,
-                criteria: configuration.criteria,
-              })),
-              isSyntheticExample: input.isSyntheticExample,
-            },
-            source,
-            chatId,
-          ),
+    for (const job of preview.jobs) {
+      const configuration = configurations.get(job.configurationId);
+      if (!configuration) {
+        throw new EvaluationRequestError(
+          `Unknown evaluation configuration: ${job.configurationId}.`,
         );
       }
-      runIds = await this.#store.createBatch(preparedRuns.map(({ record }) => record));
-    } catch (error) {
-      await closePreparedTargets(preparedRuns);
-      throw error;
+      preparedRuns.push(
+        await this.#prepareRun(
+          actorUserId,
+          {
+            promptId: input.promptId,
+            promptRevisionId: input.promptRevisionId,
+            targetModelId: job.targetModelId,
+            judges: input.judges,
+            cases: input.cases.map(({ input: caseInput }) => ({
+              input: caseInput,
+              criteria: configuration.criteria,
+            })),
+            isSyntheticExample: input.isSyntheticExample,
+          },
+          source,
+          chatId,
+        ),
+      );
     }
-    for (const [index, runId] of runIds.entries()) {
-      const prepared = preparedRuns[index];
-      if (!prepared) throw new Error(`Unknown prepared evaluation run index: ${index}.`);
-      void this.#executeRun(runId, prepared.pinnedTarget, prepared.request).catch(() => undefined);
-    }
-    const runs = await Promise.all(runIds.map((runId) => this.getRunSummary(runId)));
+    const runIds = await this.#store.createBatch(preparedRuns.map(({ record }) => record));
+    this.#scheduleDrain();
+    const runs = await Promise.all(runIds.map((runId) => this.getRunSummary(actorUserId, runId)));
     return { preview, runs };
   }
 
@@ -203,30 +212,28 @@ export class EvaluationRuns {
     const input = parsed.data;
     requireConfiguredModels([...input.targetModelIds, ...input.judges]);
     const prompt = await this.#prompts.getPrompt(input.promptId);
-    if (prompt.revisionId !== input.promptRevisionId) throw new PromptConflictError();
+    if (prompt.revisionId !== input.promptRevisionId) {
+      throw new PromptConflictError(prompt.activeRevisionId);
+    }
     return input;
   }
 
   /** Pins the target, persists a running record, and schedules execution outside the request. */
   async #startRun(
+    actorUserId: string,
     rawInput: unknown,
     source: EvaluationRunSource,
     chatId: string | null,
   ): Promise<EvaluationRunSummary> {
-    const prepared = await this.#prepareRun(rawInput, source, chatId);
-    let runId: string;
-    try {
-      runId = await this.#store.create(prepared.record);
-    } catch (error) {
-      await prepared.pinnedTarget.close();
-      throw error;
-    }
-    void this.#executeRun(runId, prepared.pinnedTarget, prepared.request).catch(() => undefined);
-    return this.getRunSummary(runId);
+    const prepared = await this.#prepareRun(actorUserId, rawInput, source, chatId);
+    const runId = await this.#store.create(prepared.record);
+    this.#scheduleDrain();
+    return this.getRunSummary(actorUserId, runId);
   }
 
   /** Pins every external dependency needed by one run before its durable record exists. */
   async #prepareRun(
+    actorUserId: string,
     rawInput: unknown,
     source: EvaluationRunSource,
     chatId: string | null,
@@ -241,63 +248,65 @@ export class EvaluationRuns {
     const judgeModelIds = Array.isArray(request.judges) ? request.judges : [request.judges];
     requireConfiguredModels([input.targetModelId, ...judgeModelIds]);
     const prompt = await this.#prompts.getPrompt(input.promptId);
-    if (prompt.revisionId !== input.promptRevisionId) throw new PromptConflictError();
-    const pinnedTarget = await this.#targets.createPinnedTarget({
-      promptId: prompt.id,
-      promptRevisionId: prompt.revisionId,
-      targetModelId: input.targetModelId,
-    });
-    try {
-      const targetConfiguration = pinnedTarget.profile.configuration;
-      const configurationFingerprint = createConfigurationFingerprint({
-        targetModelId: input.targetModelId,
-        targetProfileRevisionId: pinnedTarget.profile.revisionId,
-        targetConfiguration,
-        effectiveInstructionsHash: pinnedTarget.effectiveInstructionsHash,
-        judges: judgeModelIds,
-        cases: request.cases,
-      });
-      return {
-        record: {
-          promptId: prompt.id,
-          promptRevisionId: prompt.revisionId,
-          targetProfileId: pinnedTarget.profile.id,
-          targetProfileRevisionId: pinnedTarget.profile.revisionId,
-          targetModelId: input.targetModelId,
-          judgeModelIds,
-          cases: request.cases,
-          effectiveInstructionsHash: pinnedTarget.effectiveInstructionsHash,
-          configurationFingerprint,
-          source,
-          chatId,
-          isSyntheticExample: input.isSyntheticExample,
-          targetRunId: null,
-          targetRunTurnId: null,
-        },
-        pinnedTarget,
-        request: { cases: request.cases, judges: judgeModelIds },
-      };
-    } catch (error) {
-      await pinnedTarget.close();
-      throw error;
+    if (prompt.revisionId !== input.promptRevisionId) {
+      throw new PromptConflictError(prompt.activeRevisionId);
     }
+    const profile = await this.#targets.ensureProfileForPrompt(actorUserId, prompt.id);
+    const effectiveInstructionsHash = createHash("sha256")
+      .update([profile.instructions, prompt.markdown].filter(Boolean).join("\n\n"))
+      .digest("hex");
+    const configurationFingerprint = createConfigurationFingerprint({
+      targetModelId: input.targetModelId,
+      targetProfileRevisionId: profile.revisionId,
+      targetConfiguration: profile.configuration,
+      effectiveInstructionsHash,
+      judges: judgeModelIds,
+      cases: request.cases,
+    });
+    return {
+      record: {
+        promptId: prompt.id,
+        promptRevisionId: prompt.revisionId,
+        targetProfileId: profile.id,
+        targetProfileRevisionId: profile.revisionId,
+        targetModelId: input.targetModelId,
+        judgeModelIds,
+        cases: request.cases,
+        effectiveInstructionsHash,
+        configurationFingerprint,
+        source,
+        chatId,
+        isSyntheticExample: input.isSyntheticExample,
+        targetRunId: null,
+        targetRunTurnId: null,
+        startedByUserId: actorUserId,
+      },
+    };
   }
 
   /** Loads one complete immutable report with its cases and judge-attributed score facts. */
-  async getRun(runId: string): Promise<StoredEvaluationRun> {
-    return this.#store.get(runId);
+  async getRun(viewerUserId: string, runId: string): Promise<StoredEvaluationRun> {
+    return this.#store.get(runId, viewerUserId);
   }
 
   /** Loads lightweight status and provenance for progress polling. */
-  async getRunSummary(runId: string): Promise<EvaluationRunSummary> {
-    return this.#store.getSummary(runId);
+  async getRunSummary(viewerUserId: string, runId: string): Promise<EvaluationRunSummary> {
+    return this.#store.getSummary(runId, viewerUserId);
   }
 
   /** Lists recent run summaries with an optional prompt scope and a bounded page size. */
   async listRuns(
+    viewerUserId: string,
     input: { limit?: number; promptId?: string } = {},
   ): Promise<EvaluationRunSummary[]> {
-    return this.#store.list(input);
+    return this.#store.list(viewerUserId, input);
+  }
+
+  async cancel(actorUserId: string, runId: string): Promise<EvaluationRunSummary> {
+    await this.#store.cancel(runId, actorUserId);
+    this.#controllers.get(runId)?.abort(new Error("The evaluation was cancelled."));
+    this.#scheduleDrain();
+    return this.getRunSummary(actorUserId, runId);
   }
 
   /** Returns chronological compatible runs from SQL aggregates when the selected configuration is Boolean-only. */
@@ -305,37 +314,97 @@ export class EvaluationRuns {
     return this.#store.getBooleanTrend(runId);
   }
 
-  /** Executes a detached run and converts any execution failure into its terminal status. */
-  async #executeRun(
-    runId: string,
-    pinnedTarget: PinnedTarget,
-    request: { cases: EvaluationCase<unknown>[]; judges: string[] },
-  ): Promise<void> {
+  #scheduleDrain(): void {
+    this.#drainRequested = true;
+    if (this.#draining) return;
+    this.#draining = true;
+    queueMicrotask(() => {
+      void this.#drainUntilIdle();
+    });
+  }
+
+  async #drainUntilIdle(): Promise<void> {
     try {
-      const result = await evaluate(pinnedTarget.target, request);
-      await this.#store.complete(runId, request.cases, result);
-    } catch (error) {
-      await this.#store.fail(runId, safeExecutionError(error));
+      while (this.#drainRequested) {
+        this.#drainRequested = false;
+        await this.#drain();
+      }
     } finally {
-      await pinnedTarget.close();
+      this.#draining = false;
+      if (this.#drainRequested) this.#scheduleDrain();
     }
   }
 
-  async #executeRecordedRun(
-    runId: string,
-    targetModelId: string,
-    request: {
-      cases: Array<EvaluationCase<unknown> & { output: unknown }>;
-      judges: string[];
-    },
-  ): Promise<void> {
-    try {
-      const result = await evaluateRecorded(targetModelId, request);
-      await this.#store.complete(runId, request.cases, result);
-    } catch (error) {
-      await this.#store.fail(runId, safeExecutionError(error));
+  async #drain(): Promise<void> {
+    while (this.#activeJobs < MAX_ACTIVE_EVALUATION_JOBS) {
+      const runId = await this.#store.claimNextQueued();
+      if (!runId) return;
+      this.#activeJobs += 1;
+      void this.#executeClaimed(runId).finally(() => {
+        this.#activeJobs -= 1;
+        this.#scheduleDrain();
+      });
     }
   }
+
+  /** Executes one claimed queue record and lets guarded store transitions preserve cancellation. */
+  async #executeClaimed(runId: string): Promise<void> {
+    const controller = new AbortController();
+    this.#controllers.set(runId, controller);
+    let close = () => Promise.resolve();
+    try {
+      const run = await this.#store.getExecution(runId);
+      const cases = run.cases.map(({ criteria, input }) => ({ criteria, input }));
+      let result;
+      if (run.targetRunTurnId) {
+        const recordedCases = run.cases.map(({ criteria, input, output }) => {
+          if (output === null) throw new Error("Recorded evaluation output is missing.");
+          return { criteria, input, output };
+        });
+        result = await evaluateRecorded(run.targetModelId, {
+          cases: recordedCases,
+          judges: run.judgeModelIds,
+        });
+      } else {
+        const pinnedTarget = await this.#targets.createPinnedTarget({
+          actorUserId: run.startedByUserId,
+          promptId: run.promptId,
+          promptRevisionId: run.promptRevisionId,
+          targetProfileId: run.targetProfileId ?? undefined,
+          targetProfileRevisionId: run.targetProfileRevisionId ?? undefined,
+          targetModelId: run.targetModelId,
+        });
+        close = pinnedTarget.close;
+        result = await evaluate(
+          {
+            model: pinnedTarget.target.model,
+            invoke: (input) => {
+              if (typeof input !== "string")
+                throw new Error("Evaluation target input must be text.");
+              return invokeUntilAborted(pinnedTarget.target.invoke(input), controller.signal);
+            },
+          },
+          { cases, judges: run.judgeModelIds },
+        );
+      }
+      await this.#store.complete(runId, cases, result);
+    } catch (error) {
+      await this.#store.fail(runId, safeExecutionError(error));
+    } finally {
+      this.#controllers.delete(runId);
+      await close();
+    }
+  }
+}
+
+async function invokeUntilAborted<T>(result: PromiseLike<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw signal.reason;
+  return Promise.race([
+    Promise.resolve(result),
+    new Promise<never>((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }),
+  ]);
 }
 
 /** Validates all target and judge IDs against the current runtime model configuration. */
@@ -359,7 +428,6 @@ function expandBatch(input: EvaluationBatchInput): EvaluationBatchPreview {
           targetModelId,
           repetition,
           caseCount: input.cases.length,
-          criterionCount: configuration.criteria.length,
           judgeScoreDecisions:
             input.cases.length * configuration.criteria.length * input.judges.length,
         });
@@ -397,13 +465,4 @@ function safeExecutionError(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   if (/LANGFUSE_(PUBLIC|SECRET)_KEY|Langfuse/i.test(message)) return message.slice(0, 500);
   return "Evaluation execution failed before a complete result was available. Check the configured model and telemetry services, then retry.";
-}
-
-/** Closes prepared target resources without masking the batch preparation or transaction error. */
-async function closePreparedTargets(preparedRuns: readonly PreparedRun[]): Promise<void> {
-  await Promise.all(
-    preparedRuns.map(async ({ pinnedTarget }) => {
-      await pinnedTarget.close().catch(() => undefined);
-    }),
-  );
 }

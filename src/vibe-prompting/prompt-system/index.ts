@@ -2,7 +2,6 @@
 
 export {
   PromptConflictError,
-  PromptHistoryError,
   PromptNotFoundError,
   PromptRevisionNotFoundError,
   PromptSystem,

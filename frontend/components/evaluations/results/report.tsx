@@ -28,6 +28,7 @@ import type {
 import type { PromptDetail } from "@/contracts/prompts";
 import { createApiRequester, createErrorReader } from "@/shared/api";
 import { formatDateTime } from "@/shared/date";
+import { memberDisplayName } from "@/shared/member";
 
 import { RevisionTrend } from "../shared/revision-trend";
 import { EvaluationMarkdownValue } from "./markdown-value";
@@ -46,6 +47,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
   const [view, setView] = useState<"prompt" | "results">("results");
   const [source, setSource] = useState(false);
   const [error, setError] = useState<string>();
+  const [cancelling, setCancelling] = useState(false);
 
   const load = useCallback(async () => {
     const data = await evaluationReportApi.json<EvaluationRunResponse>(`/api/evaluations/${runId}`);
@@ -59,11 +61,11 @@ export function EvaluationReport({ runId }: { runId: string }) {
     void load().catch((cause) => setError(readError(cause)));
   }, [load]);
   useEffect(() => {
-    if (run?.status !== "running") return;
+    if (run?.status !== "queued" && run?.status !== "running") return;
     const timer = window.setInterval(() => {
       void load()
         .then((status) => {
-          if (status !== "running") window.clearInterval(timer);
+          if (status !== "queued" && status !== "running") window.clearInterval(timer);
         })
         .catch((cause) => setError(readError(cause)));
     }, 1500);
@@ -95,6 +97,19 @@ export function EvaluationReport({ runId }: { runId: string }) {
       window.location.assign(`/evaluations/${next.id}`);
     } catch (cause) {
       toast.error(readError(cause));
+    }
+  }
+
+  async function cancel() {
+    if (!run || (run.status !== "queued" && run.status !== "running")) return;
+    setCancelling(true);
+    try {
+      await evaluationReportApi.json(`/api/evaluations/${run.id}`, { method: "DELETE" });
+      await load();
+    } catch (cause) {
+      setError(readError(cause));
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -154,6 +169,14 @@ export function EvaluationReport({ runId }: { runId: string }) {
                 <MessageSquareText aria-hidden="true" className="size-4" />
                 Producing chat
               </Link>
+            ) : null}
+            {run.status === "queued" || run.status === "running" ? (
+              <Button disabled={cancelling} onClick={cancel} variant="outline">
+                {cancelling ? (
+                  <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+                ) : null}
+                Cancel
+              </Button>
             ) : null}
             {run.status === "failed" || run.status === "interrupted" ? (
               <Button onClick={retry} variant="outline">
@@ -230,6 +253,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
               label="Source"
               value={run.source === "ai" ? "AI-authored" : "Human-authored"}
             />
+            <ExactDatum label="Started by" value={memberDisplayName(run.startedByName)} />
             <ExactDatum label="Prompt ID" value={run.promptId} />
             <ExactDatum label="Configuration fingerprint" value={run.configurationFingerprint} />
             <ExactDatum
@@ -320,7 +344,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
 }
 
 function Results({ run, trend }: { run: EvaluationRun; trend: BooleanTrendPoint[] }) {
-  if (run.status === "running")
+  if (run.status === "queued" || run.status === "running")
     return (
       <section className="border-y py-10">
         <div className="flex max-w-2xl items-start gap-3">
@@ -329,7 +353,7 @@ function Results({ run, trend }: { run: EvaluationRun; trend: BooleanTrendPoint[
             className="mt-0.5 size-5 shrink-0 animate-spin text-muted-foreground"
           />
           <div>
-            <h2 className="font-medium">Evaluation is running</h2>
+            <h2 className="font-medium">Evaluation is {run.status}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               The durable attempt is safe to leave; this report will continue polling.
             </p>
@@ -337,7 +361,7 @@ function Results({ run, trend }: { run: EvaluationRun; trend: BooleanTrendPoint[
         </div>
       </section>
     );
-  if (run.status === "failed" || run.status === "interrupted")
+  if (run.status === "failed" || run.status === "cancelled" || run.status === "interrupted")
     return (
       <section className="border-y border-destructive/40 py-6">
         <div>
@@ -437,8 +461,9 @@ function Status({ status }: { status: EvaluationRun["status"] }) {
       className={cn(
         "rounded-full px-2 py-0.5 text-[11px] font-medium capitalize",
         status === "completed" && "bg-chart-2/15 text-chart-2",
-        status === "running" && "bg-chart-4/20 text-foreground",
-        (status === "failed" || status === "interrupted") && "bg-destructive/10 text-destructive",
+        (status === "queued" || status === "running") && "bg-chart-4/20 text-foreground",
+        (status === "failed" || status === "cancelled" || status === "interrupted") &&
+          "bg-destructive/10 text-destructive",
       )}
     >
       {status}

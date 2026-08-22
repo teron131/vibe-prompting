@@ -129,9 +129,12 @@ export function ChatHistory() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between px-1.5 py-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Recent chats
-        </span>
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <span className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Your chats
+          </span>
+          <span className="shrink-0 text-[10px] text-muted-foreground/75">Private</span>
+        </div>
         <button
           aria-label={searching ? "Close chat search" : "Search chats"}
           className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent"

@@ -22,6 +22,7 @@ const readSchema = z.object({ runId: z.uuid() });
 
 export function createTargetRunTools(
   targetRuns: TargetRuns,
+  actorUserId: string,
   chatId: string,
   loadModels: () => Promise<readonly ConfiguredModelReference[]>,
 ): AgentTool[] {
@@ -33,6 +34,7 @@ export function createTargetRunTools(
       parameters: startSchema,
       async execute(input) {
         const run = await targetRuns.startAgentRun(
+          actorUserId,
           {
             ...input,
             targetModelId: resolveConfiguredModelId(input.targetModelId, await loadModels()),
@@ -52,7 +54,7 @@ export function createTargetRunTools(
         "Add one user turn to an existing durable Target Run while preserving its pinned prompt revision and AI SDK runtime configuration.",
       parameters: continueSchema,
       async execute({ instruction, runId }) {
-        const run = await targetRuns.continueRun(runId, { instruction });
+        const run = await targetRuns.continueRun(actorUserId, runId, { instruction });
         return {
           artifact: { href: `/target-runs/${run.id}`, id: run.id, kind: "target-run" },
           run,
@@ -66,7 +68,7 @@ export function createTargetRunTools(
         "Read one durable Target Run, including its exact prompt revision, runtime provenance, reasoning and tool activity, turn statuses, inputs, and completed outputs.",
       parameters: readSchema,
       async execute({ runId }) {
-        const run = await targetRuns.getRun(runId);
+        const run = await targetRuns.getRun(actorUserId, runId);
         return {
           artifact: { href: `/target-runs/${run.id}`, id: run.id, kind: "target-run" },
           run,

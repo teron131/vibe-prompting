@@ -8,30 +8,31 @@ export type SettingsModel = {
 };
 
 export type ProviderSettings = {
+  id: SettingsPlatformId;
+  label: string;
   baseURL: string;
   configured: boolean;
   credentialSource: "byok" | "deployment" | "missing";
-  id: SettingsPlatformId;
-  label: string;
 };
 
 export type SettingsResponse = {
-  canSaveCredentials: boolean;
-  helperModel: SettingsModel;
+  revision: number;
   models: SettingsModel[];
-  modelStorage: "database" | "yaml";
+  helperModel: SettingsModel;
   providers: ProviderSettings[];
+  canSaveCredentials: boolean;
 };
 
 export type ProviderSettingsPatch = {
-  apiKey?: string;
-  baseURL?: string;
-  clearApiKey?: boolean;
   id: SettingsPlatformId;
+  baseURL?: string;
+  apiKey?: string;
+  clearApiKey?: boolean;
 };
 
 export type UpdateSettingsRequest = {
-  helperModel: SettingsModel;
+  expectedRevision: number;
   models: SettingsModel[];
+  helperModel: SettingsModel;
   providers: ProviderSettingsPatch[];
 };

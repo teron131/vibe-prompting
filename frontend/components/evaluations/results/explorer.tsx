@@ -295,7 +295,9 @@ export function EvaluationResultsExplorer() {
               </>
             ) : (
               <div className="p-6 text-sm text-muted-foreground">
-                No cases match this query. Clear a filter or search a broader phrase.
+                {resultFilterCount(filters)
+                  ? "No cases match this query. Clear a filter or search a broader phrase."
+                  : "No evaluation results yet. Run an evaluation to create persisted case evidence."}
               </div>
             )}
           </div>
@@ -1076,8 +1078,10 @@ function Status({ status }: { status: EvaluationRunStatus }) {
       className={cn(
         "rounded-sm px-1.5 py-0.5 text-[11px] font-medium capitalize",
         status === "completed" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-        status === "running" && "bg-blue-500/10 text-blue-700 dark:text-blue-400",
-        (status === "failed" || status === "interrupted") && "bg-destructive/10 text-destructive",
+        (status === "queued" || status === "running") &&
+          "bg-blue-500/10 text-blue-700 dark:text-blue-400",
+        (status === "failed" || status === "cancelled" || status === "interrupted") &&
+          "bg-destructive/10 text-destructive",
       )}
     >
       {status}

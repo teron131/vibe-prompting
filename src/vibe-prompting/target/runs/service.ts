@@ -3,7 +3,7 @@
 import type { ModelMessage } from "ai";
 
 import { loadRuntimeConfig } from "../../config/index.ts";
-import type { Database } from "../../database.ts";
+import type { Database } from "../../database/index.ts";
 import type { PromptSystem } from "../../prompt-system/index.ts";
 import { sanitizeAiSdkHistory } from "../adapters/ai-sdk.ts";
 import type { PinnedTarget, TargetSystem } from "../system.ts";
@@ -35,47 +35,62 @@ export class TargetRuns {
     return this.#store.reconcileInterrupted();
   }
 
-  async startHumanRun(rawInput: unknown): Promise<StoredTargetRun> {
-    return this.#startRun(rawInput, "human", null);
+  async startHumanRun(actorUserId: string, rawInput: unknown): Promise<StoredTargetRun> {
+    return this.#startRun(actorUserId, rawInput, "human", null);
   }
 
-  async startAgentRun(rawInput: unknown, chatId: string): Promise<StoredTargetRun> {
-    return this.#startRun(rawInput, "ai", chatId);
+  async startAgentRun(
+    actorUserId: string,
+    rawInput: unknown,
+    chatId: string,
+  ): Promise<StoredTargetRun> {
+    return this.#startRun(actorUserId, rawInput, "ai", chatId);
   }
 
-  async continueRun(runId: string, rawInput: unknown): Promise<StoredTargetRun> {
+  async continueRun(
+    actorUserId: string,
+    runId: string,
+    rawInput: unknown,
+  ): Promise<StoredTargetRun> {
     const parsed = targetRunTurnInputSchema.safeParse(rawInput);
     if (!parsed.success)
       throw new TargetRunRequestError(
         parsed.error.issues[0]?.message ?? "Invalid Target Run turn.",
       );
-    await this.#store.appendTurn(runId, parsed.data.instruction);
-    await this.#launch(runId);
-    return this.#store.get(runId);
+    await this.#store.appendTurn(actorUserId, runId, parsed.data.instruction);
+    await this.#launch(runId, actorUserId);
+    return this.#store.get(runId, actorUserId);
   }
 
-  async getRun(runId: string): Promise<StoredTargetRun> {
-    return this.#store.get(runId);
+  async getRun(viewerUserId: string, runId: string): Promise<StoredTargetRun> {
+    return this.#store.get(runId, viewerUserId);
   }
 
-  async getRunResponse(runId: string): Promise<TargetRunResponse> {
-    const run = await this.#store.get(runId);
+  async getRunResponse(viewerUserId: string, runId: string): Promise<TargetRunResponse> {
+    const run = await this.#store.get(runId, viewerUserId);
     return {
+      run,
       active: run.turns.some(({ status }) => status === "running"),
       events: this.#registry.snapshot(runId).events,
-      run,
     };
   }
 
-  async listRuns(promptId: string, limit?: number): Promise<TargetRunSummary[]> {
-    return this.#store.list(promptId, limit);
+  async listRuns(
+    viewerUserId: string,
+    promptId: string,
+    limit?: number,
+  ): Promise<TargetRunSummary[]> {
+    return this.#store.list(viewerUserId, promptId, limit);
   }
 
-  stop(runId: string): boolean {
-    return this.#registry.stop(runId);
+  async stop(actorUserId: string, runId: string): Promise<boolean> {
+    const cancelled = await this.#store.cancelActiveTurn(runId, actorUserId);
+    if (cancelled) this.#registry.stop(runId);
+    return cancelled;
   }
 
   async #startRun(
+    actorUserId: string,
     rawInput: unknown,
     source: TargetRunSource,
     chatId: string | null,
@@ -89,6 +104,7 @@ export class TargetRuns {
     requireConfiguredModel(input.targetModelId);
     await this.#prompts.getRevision(input.promptId, input.promptRevisionId);
     const pinnedTarget = await this.#targets.createPinnedTarget({
+      actorUserId,
       promptId: input.promptId,
       promptRevisionId: input.promptRevisionId,
       reasoningEffort: input.reasoningEffort,
@@ -104,6 +120,7 @@ export class TargetRuns {
         promptRevisionId: input.promptRevisionId,
         reasoningEffort: input.reasoningEffort,
         source,
+        startedByUserId: actorUserId,
         targetModelId: input.targetModelId,
         targetProfileId: pinnedTarget.profile.id,
         targetProfileRevisionId: pinnedTarget.profile.revisionId,
@@ -112,15 +129,16 @@ export class TargetRuns {
       await pinnedTarget.close();
       throw error;
     }
-    await this.#launch(runId, pinnedTarget);
-    return this.#store.get(runId);
+    await this.#launch(runId, actorUserId, pinnedTarget);
+    return this.#store.get(runId, actorUserId);
   }
 
-  async #launch(runId: string, preparedTarget?: PinnedTarget): Promise<void> {
+  async #launch(runId: string, actorUserId: string, preparedTarget?: PinnedTarget): Promise<void> {
     const context = await this.#store.getExecutionContext(runId);
     let pinnedTarget = preparedTarget;
     try {
       pinnedTarget ??= await this.#targets.createPinnedTarget({
+        actorUserId,
         promptId: context.promptId,
         promptRevisionId: context.promptRevisionId,
         reasoningEffort: context.reasoningEffort,

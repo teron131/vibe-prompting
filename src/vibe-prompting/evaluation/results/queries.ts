@@ -1,6 +1,6 @@
 /** Owns PostgreSQL reads and projections for evaluation results, facets, aggregates, and structured query rows. */
 
-import type { DatabaseClient } from "../../database.ts";
+import type { DatabaseClient } from "../../database/index.ts";
 import type { SearchDocument } from "../../search.ts";
 import type { Criterion } from "../api.ts";
 import type { EvaluationRunStatus } from "../runs/index.ts";
@@ -415,7 +415,6 @@ export function selectBooleanAggregates(sql: DatabaseClient, filters: Normalized
     Array<{
       criterion: string;
       criterionPosition: number;
-      failed: number;
       passed: number;
       total: number;
     }>
@@ -424,7 +423,6 @@ export function selectBooleanAggregates(sql: DatabaseClient, filters: Normalized
       evaluation_scores.criterion_position,
       evaluation_scores.criterion_json->>'instruction' AS criterion,
       count(*) FILTER (WHERE (evaluation_scores.value_json #>> '{}')::boolean)::integer AS passed,
-      count(*) FILTER (WHERE NOT (evaluation_scores.value_json #>> '{}')::boolean)::integer AS failed,
       count(*)::integer AS total
     FROM evaluation_scores
     JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
@@ -496,7 +494,6 @@ export function selectExecutionSummary(sql: DatabaseClient, filters: NormalizedF
       failedRuns: number;
       interruptedRuns: number;
       medianDurationMs: number | null;
-      p95DurationMs: number | null;
       runningRuns: number;
       totalRuns: number;
     }>
@@ -523,8 +520,7 @@ export function selectExecutionSummary(sql: DatabaseClient, filters: NormalizedF
       count(*) FILTER (WHERE status = 'running')::integer AS running_runs,
       count(*)::integer AS total_runs,
       (SELECT count(*)::integer FROM run_durations) AS duration_measured_runs,
-      (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms)::double precision FROM run_durations) AS median_duration_ms,
-      (SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)::double precision FROM run_durations) AS p95_duration_ms
+      (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms)::double precision FROM run_durations) AS median_duration_ms
     FROM filtered_runs
   `;
 }

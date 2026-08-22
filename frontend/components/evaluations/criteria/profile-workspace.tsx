@@ -33,7 +33,7 @@ import type {
   CriteriaProfilesResponse,
   Criterion,
 } from "@/contracts/evaluations";
-import { createApiRequester, createErrorReader } from "@/shared/api";
+import { ApiRequestError, createApiRequester, createErrorReader } from "@/shared/api";
 
 const criteriaApi = createApiRequester({}, (status) => `Request failed with ${status}.`);
 const readError = createErrorReader("The criteria profile request failed.");
@@ -42,7 +42,7 @@ const PROFILE_LIST_MAX_WIDTH = 480;
 const PROFILE_EDITOR_MIN_WIDTH = 400;
 const PROFILE_LIST_OPEN_STORAGE_KEY = "evaluation-criteria-profile-list-open";
 
-type Draft = CriteriaProfileInput & { id?: string };
+type Draft = CriteriaProfileInput & { id?: string; version?: number };
 type CriterionType = Criterion["type"];
 
 const criterionTypeOptions = [
@@ -96,6 +96,7 @@ export function CriteriaProfileWorkspace() {
     try {
       const body = JSON.stringify({
         criteria,
+        ...(draft.version && { expectedVersion: draft.version }),
         name: draft.name,
       });
       const result = await criteriaApi.json<CriteriaProfileResponse>(
@@ -115,7 +116,18 @@ export function CriteriaProfileWorkspace() {
       setDraft(toDraft(result.profile));
       toast.success(draft.id ? "Criteria set updated." : "Criteria set created.");
     } catch (error) {
-      toast.error(readError(error));
+      if (error instanceof ApiRequestError && error.code === "stale-write") {
+        try {
+          await reloadProfilesAfterConflict(true);
+          toast.error(
+            "Someone saved a newer version of this criteria set. The latest version is loaded and your draft is still open; review it before saving again.",
+          );
+        } catch (refreshError) {
+          toast.error(readError(refreshError));
+        }
+      } else {
+        toast.error(readError(error));
+      }
     } finally {
       setSaving(false);
     }
@@ -130,6 +142,8 @@ export function CriteriaProfileWorkspace() {
       await criteriaApi.empty(
         `/api/evaluations/criteria-profiles/${encodeURIComponent(deletingId)}`,
         {
+          body: JSON.stringify({ expectedVersion: draft.version }),
+          headers: { "content-type": "application/json" },
           method: "DELETE",
         },
       );
@@ -140,7 +154,18 @@ export function CriteriaProfileWorkspace() {
       );
       toast.success(`Deleted “${deletingName}”.`);
     } catch (error) {
-      toast.error(readError(error));
+      if (error instanceof ApiRequestError && error.code === "stale-write") {
+        try {
+          await reloadProfilesAfterConflict(false);
+          toast.error(
+            "Someone changed this criteria set, so it was not deleted. The latest version is now loaded.",
+          );
+        } catch (refreshError) {
+          toast.error(readError(refreshError));
+        }
+      } else {
+        toast.error(readError(error));
+      }
     } finally {
       setDeleting(false);
       setConfirmingDelete(false);
@@ -161,6 +186,19 @@ export function CriteriaProfileWorkspace() {
       const next = !open;
       window.localStorage.setItem(PROFILE_LIST_OPEN_STORAGE_KEY, String(next));
       return next;
+    });
+  }
+
+  async function reloadProfilesAfterConflict(preserveDraft: boolean) {
+    const { profiles: loaded } = await criteriaApi.json<CriteriaProfilesResponse>(
+      "/api/evaluations/criteria-profiles",
+    );
+    setProfiles(loaded);
+    setDraft((current) => {
+      if (!current?.id) return loaded[0] ? toDraft(loaded[0]) : newDraft();
+      const latest = loaded.find(({ id }) => id === current.id);
+      if (!latest) return loaded[0] ? toDraft(loaded[0]) : newDraft();
+      return preserveDraft ? { ...current, version: latest.version } : toDraft(latest);
     });
   }
 
@@ -668,6 +706,7 @@ function toDraft(profile: CriteriaProfile): Draft {
     criteria: structuredClone(profile.criteria),
     id: profile.id,
     name: profile.name,
+    version: profile.version,
   };
 }
 

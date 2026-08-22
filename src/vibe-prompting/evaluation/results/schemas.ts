@@ -85,7 +85,6 @@ export type EvaluationAnalyticsResponse = {
     criterion: string;
     total: number;
     passed: number;
-    failed: number;
     passRate: number;
   }>;
   categorical: Array<{
@@ -114,7 +113,6 @@ export type EvaluationAnalyticsResponse = {
     totalRuns: number;
     durationMeasuredRuns: number;
     medianDurationMs: number | null;
-    p95DurationMs: number | null;
   };
   reliability: {
     agreedJudgeGroups: number;
@@ -179,7 +177,14 @@ export type NormalizedFilters = {
 export type ResultCursor = { runId: string; position: number; createdAt: string };
 
 const dataTypeSchema = z.enum(["BOOLEAN", "CATEGORICAL", "CORRECTION", "NUMERIC", "TEXT"]);
-const statusSchema = z.enum(["completed", "failed", "interrupted", "running"]);
+const statusSchema = z.enum([
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+]);
 const modelIdsSchema = z.array(z.string().trim().min(1).max(200)).max(20).optional();
 const optionalDateSchema = z
   .string()

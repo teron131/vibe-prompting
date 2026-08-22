@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import type { Database } from "../../database.ts";
+import type { Database } from "../../database/index.ts";
 import type { HybridSearch } from "../../search.ts";
 import {
   countFilteredCases,
@@ -133,7 +133,6 @@ export class EvaluationResults {
           totalRuns: 0,
           durationMeasuredRuns: 0,
           medianDurationMs: null,
-          p95DurationMs: null,
         },
         reliability: reliability[0] ?? {
           agreedJudgeGroups: 0,

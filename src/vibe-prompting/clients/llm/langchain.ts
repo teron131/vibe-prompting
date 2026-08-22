@@ -81,16 +81,20 @@ class SpendLimitedChatOpenAI extends NativeChatOpenAI {
 
   override async _generate(...args: Parameters<NativeChatOpenAI["_generate"]>) {
     const call = await startSpendCall(this.#modelConfig);
-    const result = await super._generate(...args);
-    let inputTokens = 0;
-    let outputTokens = 0;
-    for (const generation of result.generations) {
-      if (!AIMessage.isInstance(generation.message)) continue;
-      inputTokens += generation.message.usage_metadata?.input_tokens ?? 0;
-      outputTokens += generation.message.usage_metadata?.output_tokens ?? 0;
+    try {
+      const result = await super._generate(...args);
+      let inputTokens = 0;
+      let outputTokens = 0;
+      for (const generation of result.generations) {
+        if (!AIMessage.isInstance(generation.message)) continue;
+        inputTokens += generation.message.usage_metadata?.input_tokens ?? 0;
+        outputTokens += generation.message.usage_metadata?.output_tokens ?? 0;
+      }
+      await call.record({ inputTokens, outputTokens });
+      return result;
+    } finally {
+      call.release();
     }
-    await call.record({ inputTokens, outputTokens });
-    return result;
   }
 
   override async *_streamChatModelEvents(
@@ -98,15 +102,19 @@ class SpendLimitedChatOpenAI extends NativeChatOpenAI {
   ) {
     const call = await startSpendCall(this.#modelConfig);
     let usage: LangChainUsage | undefined;
-    for await (const event of super._streamChatModelEvents(...args)) {
-      if (event.event === "usage") usage = event.usage;
-      if (event.event === "message-finish") {
-        usage = event.usage ?? usage;
-        await recordLangChainUsage(call, usage);
+    try {
+      for await (const event of super._streamChatModelEvents(...args)) {
+        if (event.event === "usage") usage = event.usage;
+        if (event.event === "message-finish") {
+          usage = event.usage ?? usage;
+          await recordLangChainUsage(call, usage);
+        }
+        yield event;
       }
-      yield event;
+      await recordLangChainUsage(call, usage);
+    } finally {
+      call.release();
     }
-    await recordLangChainUsage(call, usage);
   }
 
   override async *_streamResponseChunks(
@@ -114,14 +122,18 @@ class SpendLimitedChatOpenAI extends NativeChatOpenAI {
   ) {
     const call = await startSpendCall(this.#modelConfig);
     let usage: LangChainUsage | undefined;
-    for await (const chunk of super._streamResponseChunks(...args)) {
-      if (AIMessageChunk.isInstance(chunk.message) && chunk.message.usage_metadata) {
-        usage = chunk.message.usage_metadata;
-        await recordLangChainUsage(call, usage);
+    try {
+      for await (const chunk of super._streamResponseChunks(...args)) {
+        if (AIMessageChunk.isInstance(chunk.message) && chunk.message.usage_metadata) {
+          usage = chunk.message.usage_metadata;
+          await recordLangChainUsage(call, usage);
+        }
+        yield chunk;
       }
-      yield chunk;
+      await recordLangChainUsage(call, usage);
+    } finally {
+      call.release();
     }
-    await recordLangChainUsage(call, usage);
   }
 }
 

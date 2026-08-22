@@ -38,6 +38,7 @@ const evaluationSchema = z.object({
 /** Adapts the agent's compact evaluation input into persisted single runs or batches. */
 export function createEvaluationTool(
   evaluations: EvaluationRuns,
+  actorUserId: string,
   chatId: string,
   loadModels: () => Promise<readonly ConfiguredModelReference[]>,
 ): AgentTool {
@@ -87,7 +88,7 @@ export function createEvaluationTool(
           repetitions: repetitions ?? 1,
         };
         const preview = await evaluations.previewBatch(batchInput);
-        const batch = await evaluations.startAgentBatch(batchInput, chatId);
+        const batch = await evaluations.startAgentBatch(actorUserId, batchInput, chatId);
         return {
           artifacts: batch.runs.map((run) => ({
             href: `/evaluations/${run.id}`,
@@ -100,6 +101,7 @@ export function createEvaluationTool(
         };
       }
       const run = await evaluations.startAgentRun(
+        actorUserId,
         {
           promptId,
           promptRevisionId,

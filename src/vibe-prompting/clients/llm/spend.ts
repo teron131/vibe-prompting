@@ -1,11 +1,12 @@
 /** Enforces the optional rolling model-spend policy and exposes one per-call accounting lifecycle to every LLM client. */
 
 import { type ModelConfig, type ModelSpendLimits } from "../../config/index.ts";
-import type { Database } from "../../database.ts";
+import type { Database } from "../../database/index.ts";
 import { resolveModelPrice } from "./pricing.ts";
 
 const SPEND_LOCK = 1_450_701_649;
 const TOKENS_PER_MILLION = 1_000_000;
+const MAX_CONCURRENT_PROVIDER_CALLS = 10;
 
 type TokenUsage = {
   inputTokens: number;
@@ -19,6 +20,7 @@ type SpendWindowRow = {
 
 export type SpendCall = {
   record(usage: TokenUsage): Promise<void>;
+  release(): void;
 };
 
 let spendLimit: SpendLimit | undefined;
@@ -31,8 +33,14 @@ export function configureSpendLimit(
 }
 
 export async function startSpendCall(model: ModelConfig): Promise<SpendCall> {
+  const release = await providerCapacity.acquire();
   const limit = spendLimit;
-  await limit?.assertCanSpend(model);
+  try {
+    await limit?.assertCanSpend(model);
+  } catch (error) {
+    release();
+    throw error;
+  }
   let recorded = false;
   return {
     async record(usage) {
@@ -40,8 +48,40 @@ export async function startSpendCall(model: ModelConfig): Promise<SpendCall> {
       recorded = true;
       await limit?.record(model, usage);
     },
+    release,
   };
 }
+
+class ProviderCapacity {
+  readonly #limit: number;
+  #active = 0;
+  readonly #waiting: Array<() => void> = [];
+
+  constructor(limit: number) {
+    this.#limit = limit;
+  }
+
+  async acquire(): Promise<() => void> {
+    if (this.#active < this.#limit) {
+      this.#active += 1;
+    } else {
+      await new Promise<void>((resolve) => this.#waiting.push(resolve));
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = this.#waiting.shift();
+      if (next) {
+        next();
+      } else {
+        this.#active -= 1;
+      }
+    };
+  }
+}
+
+const providerCapacity = new ProviderCapacity(MAX_CONCURRENT_PROVIDER_CALLS);
 
 class SpendLimitError extends Error {
   readonly retryAfterSeconds: number;

@@ -13,6 +13,7 @@ import {
   streamChatRun,
 } from "vibe-prompting/server";
 
+import { requireActiveSessionUser } from "@/auth/session";
 import type {
   Attachment,
   ChatQuote,
@@ -27,11 +28,12 @@ import type {
   StopChatResponse,
   TargetRunQuote,
 } from "@/contracts/chat";
+import { NO_STORE_HEADERS, projectServerError } from "@/server/errors";
+import { requireRecord, requireText, requireUuid } from "@/server/request";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const NO_STORE_HEADERS = { "cache-control": "no-store" };
 const METADATA_EVERY_MESSAGES = 3;
 type ApplicationServices = Awaited<ReturnType<typeof getApplicationServices>>;
 type StoredQuote = Extract<StoredMessagePart, { type: "prompt-quote" | "target-run-quote" }>;
@@ -40,11 +42,13 @@ type ResolvedQuote = { context: string; part: StoredQuote };
 export async function GET(request: Request) {
   try {
     const chatId = requireUuid(new URL(request.url).searchParams.get("id"), "Chat ID");
+    const user = await requireActiveSessionUser();
     const services = await getApplicationServices();
+    await services.conversations.requireChat(user.id, chatId);
     const run = services.runs.snapshot(chatId);
     const payload = {
       active: run.active,
-      conversation: await services.conversations.getConversation(chatId),
+      conversation: await services.conversations.getConversation(user.id, chatId),
       events: run.events,
     } satisfies ChatResponse;
     return Response.json(payload, { headers: NO_STORE_HEADERS });
@@ -57,6 +61,7 @@ export async function POST(request: Request) {
   let claim: ClaimedConversationRun | undefined;
   try {
     const input = parseChatRequest(await request.json());
+    const user = await requireActiveSessionUser();
     if (!(await isConfiguredModelId(input.modelId))) {
       throw new RequestError(`Unknown configured model: ${input.modelId}.`, 400);
     }
@@ -65,26 +70,21 @@ export async function POST(request: Request) {
       input.workspace.activePromptId
         ? services.prompts.getPrompt(input.workspace.activePromptId)
         : undefined,
-      resolveChatQuotes(services, input.quotes),
+      resolveChatQuotes(services, user.id, input.quotes),
     ]);
 
+    let conversation = await services.conversations.findConversation(user.id, input.chatId);
+    const existing = Boolean(conversation);
+    if (!existing && input.replaceFromMessageId)
+      throw new RequestError(`Chat ${input.chatId} was not found.`, 404);
     claim = services.runs.claim(input.chatId);
-    let conversation;
-    let existing = true;
-    try {
-      conversation = await services.conversations.getConversation(input.chatId);
-    } catch (error) {
-      if (!isChatNotFoundError(error)) throw error;
-      if (input.replaceFromMessageId) throw error;
-      existing = false;
-    }
     const attachments = input.attachments.map((attachment) => ({
       ...attachment,
       type: "file" as const,
     }));
     const storedQuotes = quotes.map(({ part }) => part);
     if (input.replaceFromMessageId) {
-      conversation = await services.conversations.replaceUserMessage({
+      conversation = await services.conversations.replaceUserMessage(user.id, {
         attachments,
         chatId: input.chatId,
         context: input.workspace,
@@ -95,7 +95,7 @@ export async function POST(request: Request) {
         replaceFromMessageId: input.replaceFromMessageId,
       });
     } else if (existing) {
-      conversation = await services.conversations.appendUserMessage({
+      conversation = await services.conversations.appendUserMessage(user.id, {
         attachments,
         chatId: input.chatId,
         context: input.workspace,
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
         quotes: storedQuotes,
       });
     } else {
-      conversation = await services.conversations.createWithUserMessage({
+      conversation = await services.conversations.createWithUserMessage(user.id, {
         attachments,
         chatId: input.chatId,
         context: input.workspace,
@@ -129,7 +129,10 @@ export async function POST(request: Request) {
         })
           .then(async (metadata) => {
             if (!metadata) return null;
-            await services.conversations.updateMetadata({ chatId: input.chatId, ...metadata });
+            await services.conversations.updateMetadata(user.id, {
+              chatId: input.chatId,
+              ...metadata,
+            });
             return metadata;
           })
           .catch((error) => {
@@ -143,6 +146,7 @@ export async function POST(request: Request) {
       const collected = new CollectedAssistantParts();
       const result = await streamChatRun(
         {
+          actorUserId: user.id,
           attachments: input.attachments,
           chatId: input.chatId,
           enabledTools: input.workspace.enabledTools,
@@ -167,7 +171,7 @@ export async function POST(request: Request) {
         },
       );
       if (claim?.signal.aborted) throw claim.signal.reason;
-      await services.conversations.appendAssistantMessage({
+      await services.conversations.appendAssistantMessage(user.id, {
         chatId: input.chatId,
         metadata: {
           completedAt: new Date().toISOString(),
@@ -201,8 +205,10 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const chatId = requireUuid(readRecord(await request.json()).chatId, "Chat ID");
+    const chatId = requireUuid(requireRecord(await request.json()).chatId, "Chat ID");
+    const user = await requireActiveSessionUser();
     const services = await getApplicationServices();
+    await services.conversations.requireChat(user.id, chatId);
     const payload = { stopped: services.runs.stop(chatId) } satisfies StopChatResponse;
     return Response.json(payload, { headers: NO_STORE_HEADERS });
   } catch (error) {
@@ -213,14 +219,16 @@ export async function PATCH(request: Request) {
 export async function PUT(request: Request) {
   try {
     const input = parseSteeringRequest(await request.json());
+    const user = await requireActiveSessionUser();
     if (!(await isConfiguredModelId(input.modelId))) {
       throw new RequestError(`Unknown configured model: ${input.modelId}.`, 400);
     }
     const services = await getApplicationServices();
+    await services.conversations.requireChat(user.id, input.chatId);
     if (!services.runs.steer(input.chatId, input.instruction)) {
       throw new RequestError("The agent run is no longer available to steer.", 409);
     }
-    await services.conversations.appendUserMessage({
+    await services.conversations.appendUserMessage(user.id, {
       attachments: [],
       chatId: input.chatId,
       context: input.workspace,
@@ -239,9 +247,11 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const chatId = requireUuid(new URL(request.url).searchParams.get("id"), "Chat ID");
+    const user = await requireActiveSessionUser();
     const services = await getApplicationServices();
+    await services.conversations.requireChat(user.id, chatId);
     await services.runs.stopAndWait(chatId);
-    await services.conversations.deleteChat(chatId);
+    await services.conversations.deleteChat(user.id, chatId);
     const payload = { deleted: true } satisfies DeleteChatResponse;
     return Response.json(payload, { headers: NO_STORE_HEADERS });
   } catch (error) {
@@ -302,7 +312,7 @@ function createNdjsonStream(claim: ClaimedConversationRun) {
 }
 
 function parseChatRequest(value: unknown): ChatRequest {
-  const record = readRecord(value);
+  const record = requireRecord(value);
   const input: ChatRequest = {
     attachments: requireAttachments(record.attachments),
     chatId: requireUuid(record.chatId, "Chat ID"),
@@ -323,7 +333,7 @@ function parseChatRequest(value: unknown): ChatRequest {
 }
 
 function parseSteeringRequest(value: unknown) {
-  const record = readRecord(value);
+  const record = requireRecord(value);
   return {
     chatId: requireUuid(record.chatId, "Chat ID"),
     instruction: requireText(record.instruction, "Steering message"),
@@ -357,7 +367,7 @@ function projectRunHistory(
 }
 
 function requireWorkspaceContext(value: unknown): ChatWorkspaceContext {
-  const record = readRecord(value);
+  const record = requireRecord(value);
   return {
     activePromptId:
       record.activePromptId === null
@@ -373,7 +383,7 @@ function requireChatQuotes(value: unknown): ChatQuote[] {
   if (!Array.isArray(value) || value.length > 6)
     throw new RequestError("Quotes must contain at most six references.", 400);
   return value.map((item) => {
-    const record = readRecord(item);
+    const record = requireRecord(item);
     if (record.runId !== undefined) {
       return {
         runId: requireUuid(record.runId, "Quoted Target Run ID"),
@@ -394,12 +404,13 @@ function requireChatQuotes(value: unknown): ChatQuote[] {
 
 async function resolveChatQuotes(
   services: ApplicationServices,
+  viewerUserId: string,
   quotes: ChatQuote[],
 ): Promise<ResolvedQuote[]> {
   return Promise.all(
     quotes.map(async (quote) => {
       if (isTargetRunQuote(quote)) {
-        const run = await services.targetRuns.getRun(quote.runId);
+        const run = await services.targetRuns.getRun(viewerUserId, quote.runId);
         return {
           context: formatTargetRunContext(run),
           part: { runId: run.id, title: run.promptTitle, type: "target-run-quote" },
@@ -485,7 +496,7 @@ function requireAttachments(value: unknown): Attachment[] {
   if (!Array.isArray(value) || value.length > 4)
     throw new RequestError("Attachments must contain at most four files.", 400);
   return value.map((item) => {
-    const record = readRecord(item);
+    const record = requireRecord(item);
     const dataUrl = requireText(record.dataUrl, "Attachment data");
     const mediaType = requireText(record.mediaType, "Attachment media type");
     const name = requireText(record.name, "Attachment name");
@@ -512,41 +523,6 @@ function requireToolIds(value: unknown): ChatToolId[] {
   return [...new Set(tools)] as ChatToolId[];
 }
 
-function readRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new RequestError("Request body must contain a JSON object.", 400);
-  }
-  return value as Record<string, unknown>;
-}
-
-function isChatNotFoundError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    error.name === "ChatNotFoundError" &&
-    "statusCode" in error &&
-    error.statusCode === 404
-  );
-}
-
-function requireString(value: unknown, label: string): string {
-  if (typeof value !== "string") throw new RequestError(`${label} must be text.`, 400);
-  return value;
-}
-
-function requireText(value: unknown, label: string): string {
-  const text = requireString(value, label).trim();
-  if (!text) throw new RequestError(`${label} is required.`, 400);
-  return text;
-}
-
-function requireUuid(value: unknown, label: string): string {
-  const text = requireText(value, label);
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)) {
-    throw new RequestError(`${label} must be a UUID.`, 400);
-  }
-  return text;
-}
-
 class RequestError extends Error {
   readonly statusCode: number;
 
@@ -558,29 +534,16 @@ class RequestError extends Error {
 }
 
 function errorResponse(error: unknown): Response {
-  if (error instanceof SyntaxError) {
-    return Response.json({ error: "Request body must contain valid JSON." }, { status: 400 });
-  }
-  const status =
-    error &&
-    typeof error === "object" &&
-    "statusCode" in error &&
-    typeof error.statusCode === "number"
-      ? error.statusCode
-      : 500;
-  const message =
-    status < 500 && error instanceof Error
-      ? error.message
-      : "The server could not complete the request.";
+  const projected = projectServerError(error, "The server could not complete the request.");
   const retryAfter = readRetryAfter(error);
   return Response.json(
-    { error: message },
+    { error: projected.message },
     {
       headers: {
         ...NO_STORE_HEADERS,
         ...(retryAfter === null ? {} : { "retry-after": String(retryAfter) }),
       },
-      status,
+      status: projected.status,
     },
   );
 }

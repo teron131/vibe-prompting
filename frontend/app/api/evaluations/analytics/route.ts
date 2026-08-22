@@ -2,15 +2,16 @@
 
 import { getApplicationServices } from "vibe-prompting/server";
 
+import { requireActiveSessionUser } from "@/auth/session";
 import type { EvaluationAnalyticsResponse } from "@/contracts/evaluation-workspace";
-
-import { evaluationErrorResponse } from "../request";
+import { serverErrorResponse } from "@/server/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
+    await requireActiveSessionUser();
     const params = new URL(request.url).searchParams;
     const services = await getApplicationServices();
     const response = await services.evaluationResults.getAnalytics({
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
       headers: { "cache-control": "no-store" },
     });
   } catch (error) {
-    return evaluationErrorResponse(error);
+    return serverErrorResponse(error, "Evaluation storage failed.");
   }
 }
 

@@ -9,14 +9,13 @@ import {
   loadBaseRuntimeConfig,
   loadRuntimeConfig,
   type ModelConfig,
-  type ModelStorage,
   parseModelCatalog,
   parseModelConfig,
   type PlatformId,
   saveLocalModelSettings,
   setRuntimeConfigOverrides,
 } from "../config/index.ts";
-import type { Database, DatabaseClient } from "../database.ts";
+import type { Database, DatabaseClient } from "../database/index.ts";
 import {
   decryptSecret,
   type EncryptedSecret,
@@ -28,9 +27,9 @@ const providerIds = ["cliproxy", "gemini", "llm"] as const satisfies readonly Pl
 const providerPatchSchema = z
   .object({
     id: z.enum(providerIds),
+    baseURL: z.string().trim().optional(),
     apiKey: z.string().trim().min(1).optional(),
     clearApiKey: z.boolean().optional(),
-    baseURL: z.string().trim().optional(),
   })
   .strict()
   .superRefine((patch, context) => {
@@ -41,13 +40,14 @@ const providerPatchSchema = z
       });
   });
 const updateSettingsSchema = z.object({
-  helperModel: z.unknown(),
+  expectedRevision: z.number().int().positive(),
   models: z.unknown(),
+  helperModel: z.unknown(),
   providers: z.array(providerPatchSchema).optional().default([]),
 });
 const providerOverrideSchema = z.object({
-  apiKey: z.unknown().optional(),
   baseURL: z.string().optional(),
+  apiKey: z.unknown().optional(),
 });
 const providerOverridesSchema = z
   .partialRecord(z.enum(providerIds), providerOverrideSchema)
@@ -59,6 +59,7 @@ type SettingsRow = {
   helperModel: unknown;
   modelCatalog: unknown;
   providerOverrides: unknown;
+  revision: number;
 };
 
 export type ProviderSettings = {
@@ -70,9 +71,9 @@ export type ProviderSettings = {
 };
 
 export type ApplicationSettings = {
-  helperModel: ModelConfig;
-  modelStorage: ModelStorage;
+  revision: number;
   models: ModelConfig[];
+  helperModel: ModelConfig;
   providers: ProviderSettings[];
   canSaveCredentials: boolean;
 };
@@ -85,6 +86,7 @@ export class ApplicationSettingsStore {
   #helperModel: ModelConfig = { id: "", platform: "llm" };
   #models: ModelConfig[] = [];
   #providerOverrides: ProviderOverrides = {};
+  #revision = 0;
 
   constructor(database: Database, environment: NodeJS.ProcessEnv = process.env) {
     this.#database = database;
@@ -110,6 +112,7 @@ export class ApplicationSettingsStore {
     this.#helperModel =
       modelStorage === "database" ? parseModelConfig(row.helperModel) : baseConfig.helperModel;
     this.#providerOverrides = parseProviderOverrides(row.providerOverrides);
+    this.#revision = row.revision;
     this.#applyRuntimeOverlay();
   }
 
@@ -117,9 +120,9 @@ export class ApplicationSettingsStore {
     const effective = loadRuntimeConfig(this.#environment);
     const base = loadBaseRuntimeConfig(this.#environment);
     return {
-      helperModel: this.#helperModel,
-      modelStorage: getModelStorage(this.#environment),
+      revision: this.#revision,
       models: this.#models,
+      helperModel: this.#helperModel,
       providers: providerIds.map((id) => {
         const platform = effective.platforms[id];
         const override = this.#providerOverrides[id];
@@ -139,17 +142,14 @@ export class ApplicationSettingsStore {
     };
   }
 
-  async update(value: unknown): Promise<ApplicationSettings> {
+  async update(actorUserId: string, value: unknown): Promise<ApplicationSettings> {
     const input = updateSettingsSchema.parse(value);
     const helperModel = parseModelConfig(input.helperModel);
     const models = parseModelCatalog(input.models);
     const encryptionSecret = readEncryptionSecret(this.#environment);
     const providerPatches = input.providers.map((patch) => {
       if (patch.apiKey && !encryptionSecret)
-        throw new SettingsError(
-          "Credential saving requires BYOK_ENCRYPTION_KEY or APP_PASSWORD.",
-          400,
-        );
+        throw new SettingsError("Credential saving requires BYOK_ENCRYPTION_KEY.", 400);
       return {
         ...patch,
         ...(patch.apiKey &&
@@ -161,12 +161,13 @@ export class ApplicationSettingsStore {
         }),
       };
     });
-    if (getModelStorage(this.#environment) === "yaml")
-      await saveLocalModelSettings(models, helperModel);
-
     const row = await this.#database.transaction(async (sql) => {
       const current = await readSettings(sql, true);
-      const overrides = current ? parseProviderOverrides(current.providerOverrides) : {};
+      if (!current) throw new Error("Application settings have not been initialized.");
+      if (current.revision !== input.expectedRevision) {
+        throw new SettingsError("Someone saved newer workspace settings.", 409, "stale-write");
+      }
+      const overrides = parseProviderOverrides(current.providerOverrides);
       for (const patch of providerPatches) {
         const override = { ...overrides[patch.id] };
         if (patch.clearApiKey) delete override.apiKey;
@@ -179,22 +180,30 @@ export class ApplicationSettingsStore {
         else delete overrides[patch.id];
       }
       const [saved] = await sql<SettingsRow[]>`
-        INSERT INTO application_settings (singleton, model_catalog, helper_model, provider_overrides)
-        VALUES (true, ${sql.json(models)}, ${sql.json(helperModel)}, ${sql.json(overrides)})
-        ON CONFLICT (singleton) DO UPDATE
-        SET model_catalog = EXCLUDED.model_catalog,
-            helper_model = EXCLUDED.helper_model,
-            provider_overrides = EXCLUDED.provider_overrides
-        RETURNING model_catalog, helper_model, provider_overrides
+        UPDATE application_settings
+        SET model_catalog = ${sql.json(models)},
+            helper_model = ${sql.json(helperModel)},
+            provider_overrides = ${sql.json(overrides)},
+            revision = revision + 1,
+            updated_by_user_id = ${actorUserId}
+        WHERE singleton = true AND revision = ${input.expectedRevision}
+        RETURNING model_catalog, helper_model, provider_overrides, revision
       `;
-      if (!saved) throw new Error("Application settings could not be saved.");
+      if (!saved)
+        throw new SettingsError("Someone saved newer workspace settings.", 409, "stale-write");
       return saved;
     });
 
-    this.#models = models;
-    this.#helperModel = parseModelConfig(row.helperModel);
-    this.#providerOverrides = parseProviderOverrides(row.providerOverrides);
-    this.#applyRuntimeOverlay();
+    if (getModelStorage(this.#environment) === "yaml") {
+      await saveLocalModelSettings(models, helperModel);
+    }
+    if (row.revision >= this.#revision) {
+      this.#models = models;
+      this.#helperModel = parseModelConfig(row.helperModel);
+      this.#providerOverrides = parseProviderOverrides(row.providerOverrides);
+      this.#revision = row.revision;
+      this.#applyRuntimeOverlay();
+    }
     return this.get();
   }
 
@@ -221,10 +230,12 @@ export class ApplicationSettingsStore {
 }
 
 export class SettingsError extends Error {
+  readonly code: string | undefined;
   readonly statusCode: number;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, code?: string) {
     super(message);
+    this.code = code;
     this.name = "SettingsError";
     this.statusCode = statusCode;
   }
@@ -248,16 +259,15 @@ async function readSettings(sql: DatabaseClient, lock = false): Promise<Settings
   const rows = lock
     ? await sql<
         SettingsRow[]
-      >`SELECT model_catalog, helper_model, provider_overrides FROM application_settings WHERE singleton = true FOR UPDATE`
+      >`SELECT model_catalog, helper_model, provider_overrides, revision FROM application_settings WHERE singleton = true FOR UPDATE`
     : await sql<
         SettingsRow[]
-      >`SELECT model_catalog, helper_model, provider_overrides FROM application_settings WHERE singleton = true`;
+      >`SELECT model_catalog, helper_model, provider_overrides, revision FROM application_settings WHERE singleton = true`;
   return rows[0];
 }
 
 function readEncryptionSecret(environment: NodeJS.ProcessEnv): string | undefined {
-  const configured =
-    environment.BYOK_ENCRYPTION_KEY?.trim() || environment.APP_PASSWORD?.trim() || undefined;
+  const configured = environment.BYOK_ENCRYPTION_KEY?.trim() || undefined;
   if (configured) return configured;
   return environment.NODE_ENV === "development"
     ? `vibe-prompting-local:${hostname()}:${homedir()}`

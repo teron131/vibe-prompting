@@ -5,76 +5,76 @@ import type { Criterion, EvaluationRunStatus } from "./evaluations";
 export type EvaluationDataType = "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
 
 export type EvaluationWorkspaceFilters = {
+  search?: string;
+  searchField?: "all" | "comment" | "evidence" | "input" | "output";
+  criterion?: string;
   runId?: string;
   promptId?: string;
   promptRevisionId?: string;
   targetModelIds?: string[];
   judgeModelIds?: string[];
-  criterion?: string;
-  dataType?: EvaluationDataType;
   status?: EvaluationRunStatus;
+  dataType?: EvaluationDataType;
   from?: string;
   to?: string;
-  search?: string;
-  searchField?: "all" | "comment" | "evidence" | "input" | "output";
 };
 
 export type ResultFilters = EvaluationWorkspaceFilters;
 
 export type EvaluationWorkspaceProvenance = {
-  generatedAt: string;
   source: "evaluation_storage";
+  generatedAt: string;
   syntheticExamplesIncluded: boolean;
 };
 
 export type EvaluationResultScore = {
-  comment: string;
-  criterion: Criterion;
-  criterionPosition: number;
-  dataType: EvaluationDataType;
-  evidence: string[];
   id: string;
+  criterionPosition: number;
+  criterion: Criterion;
+  dataType: EvaluationDataType;
   judgeModelId: string;
   value: boolean | number | string;
+  comment: string;
+  evidence: string[];
 };
 
 export type EvaluationResultItem = {
   caseId: string;
-  completedAt: string | null;
-  createdAt: string;
-  errorMessage: string | null;
-  input: unknown;
-  isSyntheticExample: boolean;
-  judgeModelIds: string[];
-  output: unknown | null;
+  runId: string;
   position: number;
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
-  runId: string;
-  scores: EvaluationResultScore[];
-  status: EvaluationRunStatus;
   targetModelId: string;
   targetRunId: string | null;
   targetRunTurnId: string | null;
+  judgeModelIds: string[];
+  status: EvaluationRunStatus;
+  input: unknown;
+  output: unknown | null;
+  scores: EvaluationResultScore[];
+  isSyntheticExample: boolean;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
 };
 
 export type EvaluationWorkspaceFacets = {
-  dataTypes: Array<{ count: number; value: EvaluationDataType }>;
-  judges: Array<{ count: number; value: string }>;
   prompts: Array<{ count: number; id: string; label: string }>;
   revisions: Array<{ count: number; value: string }>;
-  statuses: Array<{ count: number; value: EvaluationRunStatus }>;
   targetModels: Array<{ count: number; value: string }>;
+  judges: Array<{ count: number; value: string }>;
+  statuses: Array<{ count: number; value: EvaluationRunStatus }>;
+  dataTypes: Array<{ count: number; value: EvaluationDataType }>;
 };
 
 export type EvaluationResultsResponse = {
-  appliedFilters: EvaluationWorkspaceFilters;
-  facets: EvaluationWorkspaceFacets;
   items: EvaluationResultItem[];
-  nextCursor: string | null;
-  provenance: EvaluationWorkspaceProvenance;
   total: number;
+  nextCursor: string | null;
+  facets: EvaluationWorkspaceFacets;
+  appliedFilters: EvaluationWorkspaceFilters;
+  provenance: EvaluationWorkspaceProvenance;
 };
 
 export type EvaluationResultResponse = {
@@ -83,24 +83,23 @@ export type EvaluationResultResponse = {
 };
 
 export type EvaluationAnalyticsResponse = {
-  totals: { cases: number; runs: number; scores: number };
+  totals: { runs: number; cases: number; scores: number };
   boolean: Array<{
-    criterion: string;
     criterionPosition: number;
-    failed: number;
-    passRate: number;
-    passed: number;
+    criterion: string;
     total: number;
+    passed: number;
+    passRate: number;
   }>;
   categorical: Array<{
+    criterionPosition: number;
+    criterion: string;
     category: string;
     count: number;
-    criterion: string;
-    criterionPosition: number;
   }>;
   numeric: Array<{
-    criterion: string;
     criterionPosition: number;
+    criterion: string;
     count: number;
     minimum: number;
     maximum: number;
@@ -112,20 +111,19 @@ export type EvaluationAnalyticsResponse = {
   }>;
   execution: {
     completedRuns: number;
-    durationMeasuredRuns: number;
     failedRuns: number;
     interruptedRuns: number;
-    medianDurationMs: number | null;
-    p95DurationMs: number | null;
     runningRuns: number;
     totalRuns: number;
+    durationMeasuredRuns: number;
+    medianDurationMs: number | null;
   };
   reliability: {
     agreedJudgeGroups: number;
     comparableJudgeGroups: number;
     judgeAgreementRate: number | null;
   };
-  timeline: Array<{ cases: number; date: string; runs: number; scores: number }>;
+  timeline: Array<{ date: string; runs: number; cases: number; scores: number }>;
   facets: EvaluationWorkspaceFacets;
   appliedFilters: EvaluationWorkspaceFilters;
   provenance: EvaluationWorkspaceProvenance;
@@ -133,37 +131,37 @@ export type EvaluationAnalyticsResponse = {
 
 export type EvaluationStructuredQuery =
   | {
+      operation: "count";
       entity: "cases" | "runs" | "scores";
       filters?: EvaluationWorkspaceFilters;
-      operation: "count";
     }
   | {
+      operation: "keyword_count";
+      keyword: string;
       field?: "all" | "comment" | "evidence" | "input" | "output";
       filters?: EvaluationWorkspaceFilters;
-      keyword: string;
-      operation: "keyword_count";
     }
   | {
-      filters?: EvaluationWorkspaceFilters;
+      operation: "group_count";
       groupBy: "dataType" | "judge" | "prompt" | "revision" | "status" | "targetModel";
       limit?: number;
-      operation: "group_count";
+      filters?: EvaluationWorkspaceFilters;
     }
   | {
-      filters?: EvaluationWorkspaceFilters;
+      operation: "average";
       groupBy?: "criterion" | "judge" | "prompt" | "revision" | "targetModel";
       limit?: number;
-      operation: "average";
+      filters?: EvaluationWorkspaceFilters;
     };
 
 export type EvaluationQueryResponse = {
-  answer: string;
-  appliedFilters: EvaluationWorkspaceFilters;
-  href: string;
-  matchedCount: number;
   operation: EvaluationStructuredQuery["operation"];
-  provenance: EvaluationWorkspaceProvenance;
   query: EvaluationStructuredQuery;
-  rows: Array<{ count?: number; label: string; value: number }>;
+  answer: string;
   value: number | null;
+  matchedCount: number;
+  rows: Array<{ label: string; value: number; count?: number }>;
+  href: string;
+  appliedFilters: EvaluationWorkspaceFilters;
+  provenance: EvaluationWorkspaceProvenance;
 };

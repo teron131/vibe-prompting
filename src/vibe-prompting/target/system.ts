@@ -8,7 +8,7 @@ import type postgres from "postgres";
 
 import { createModel, createReasoningProviderOptions } from "../agents/ai-sdk/model.ts";
 import { EXA_WEB_SEARCH_TOOL, getExaMcpConnection } from "../clients/exa.ts";
-import type { Database, DatabaseClient } from "../database.ts";
+import type { Database, DatabaseClient } from "../database/index.ts";
 import type { PromptSystem } from "../prompt-system/index.ts";
 import { type AiSdkTargetRuntime, createAiSdkTargetRuntime } from "./adapters/ai-sdk.ts";
 import type { Target } from "./api.ts";
@@ -32,10 +32,12 @@ export type PinnedTarget = {
 
 /** Reports target-profile validation and lifecycle failures with an HTTP-safe status code. */
 export class TargetProfileError extends Error {
+  readonly code: string | undefined;
   readonly statusCode: number;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, code?: string) {
     super(message);
+    this.code = code;
     this.name = "TargetProfileError";
     this.statusCode = statusCode;
   }
@@ -52,8 +54,9 @@ type ProfileRow = {
 type ProfileHeadRow = {
   currentRevisionId: string;
   promptId: string;
-  revisionNumber: number;
 };
+
+type ProfileRevisionNumberRow = { revisionNumber: number };
 
 export class TargetProfileNotFoundError extends Error {
   readonly statusCode = 404;
@@ -73,12 +76,15 @@ export class TargetSystem {
     this.#prompts = prompts;
   }
 
-  async createProfile(input: {
-    configuration: TargetConfiguration;
-    instructions: string;
-    name: string;
-    promptId: string;
-  }): Promise<TargetProfile> {
+  async createProfile(
+    actorUserId: string,
+    input: {
+      configuration: TargetConfiguration;
+      instructions: string;
+      name: string;
+      promptId: string;
+    },
+  ): Promise<TargetProfile> {
     const name = input.name.trim();
     const instructions = input.instructions.trim();
     if (!name) throw new TargetProfileError("Target profile name is required.", 400);
@@ -102,11 +108,11 @@ export class TargetSystem {
       `;
       await sql`
         INSERT INTO target_profile_revisions (
-          id, target_profile_id, revision_number, instructions, configuration
+          id, target_profile_id, revision_number, instructions, configuration, created_by_user_id
         )
         VALUES (
           ${revisionId}, ${id}, 1, ${instructions},
-          ${sql.json(configuration as postgres.JSONValue)}
+          ${sql.json(configuration as postgres.JSONValue)}, ${actorUserId}
         )
       `;
       return requireProfileForPrompt(sql, input.promptId);
@@ -118,7 +124,7 @@ export class TargetSystem {
   }
 
   /** Persists the vanilla AI SDK agent only when a prompt has no explicit target override. */
-  async ensureProfileForPrompt(promptId: string): Promise<TargetProfile> {
+  async ensureProfileForPrompt(actorUserId: string, promptId: string): Promise<TargetProfile> {
     await this.#prompts.getPrompt(promptId);
     const id = randomUUID();
     const revisionId = randomUUID();
@@ -132,51 +138,55 @@ export class TargetSystem {
       if (created) {
         await sql`
           INSERT INTO target_profile_revisions (
-            id, target_profile_id, revision_number, instructions, configuration
+            id, target_profile_id, revision_number, instructions, configuration, created_by_user_id
           )
-          VALUES (${revisionId}, ${id}, 1, '', ${sql.json({})})
+          VALUES (${revisionId}, ${id}, 1, '', ${sql.json({})}, ${actorUserId})
         `;
       }
       return requireProfileForPrompt(sql, promptId);
     });
   }
 
-  async appendProfileRevision(input: {
-    configuration: TargetConfiguration;
-    expectedRevisionId: string;
-    instructions: string;
-    profileId: string;
-  }): Promise<TargetProfile> {
+  async appendProfileRevision(
+    actorUserId: string,
+    input: {
+      configuration: TargetConfiguration;
+      expectedRevisionId: string;
+      instructions: string;
+      profileId: string;
+    },
+  ): Promise<TargetProfile> {
     const instructions = input.instructions.trim();
     if (!instructions) throw new Error("Target profile instructions are required.");
     const configuration = targetConfigurationSchema.parse(input.configuration);
     return this.#database.transaction(async (sql) => {
       const [current] = await sql<ProfileHeadRow[]>`
-        SELECT
-          target_profiles.prompt_id,
-          target_profiles.current_revision_id,
-          target_profile_revisions.revision_number
+        SELECT prompt_id, current_revision_id
         FROM target_profiles
-        JOIN target_profile_revisions
-          ON target_profile_revisions.id = target_profiles.current_revision_id
-        WHERE target_profiles.id = ${input.profileId}
-        FOR UPDATE OF target_profiles
+        WHERE id = ${input.profileId}
+        FOR UPDATE
       `;
       if (!current) throw new Error(`Target profile ${input.profileId} was not found.`);
       if (current.currentRevisionId !== input.expectedRevisionId) {
-        throw new Error(
-          "This target profile changed after it was loaded. Reload it before editing again.",
-        );
+        throw new TargetProfileError("Someone saved a newer target profile.", 409, "stale-write");
       }
+      const [revision] = await sql<ProfileRevisionNumberRow[]>`
+        SELECT revision_number
+        FROM target_profile_revisions
+        WHERE id = ${current.currentRevisionId}
+      `;
+      if (!revision)
+        throw new Error(`Target profile revision ${current.currentRevisionId} was not found.`);
       const revisionId = randomUUID();
       await sql`
         INSERT INTO target_profile_revisions (
-          id, target_profile_id, parent_revision_id, revision_number, instructions, configuration
+          id, target_profile_id, parent_revision_id, revision_number, instructions, configuration,
+          created_by_user_id
         )
         VALUES (
           ${revisionId}, ${input.profileId}, ${input.expectedRevisionId},
-          ${current.revisionNumber + 1}, ${instructions},
-          ${sql.json(configuration as postgres.JSONValue)}
+          ${revision.revisionNumber + 1}, ${instructions},
+          ${sql.json(configuration as postgres.JSONValue)}, ${actorUserId}
         )
       `;
       await sql`
@@ -189,6 +199,7 @@ export class TargetSystem {
   }
 
   async createPinnedTarget(input: {
+    actorUserId: string;
     promptId: string;
     promptRevisionId: string;
     targetProfileId?: string;
@@ -206,7 +217,7 @@ export class TargetSystem {
               input.targetProfileRevisionId as string,
             ),
           )
-        : this.ensureProfileForPrompt(input.promptId),
+        : this.ensureProfileForPrompt(input.actorUserId, input.promptId),
       this.#prompts.getRevision(input.promptId, input.promptRevisionId),
     ]);
     const effectiveInstructions = [profile.instructions, prompt.markdown]

@@ -30,7 +30,7 @@ import type {
   SettingsResponse,
   UpdateSettingsRequest,
 } from "@/contracts/settings";
-import { createApiRequester, createErrorReader } from "@/shared/api";
+import { ApiRequestError, createApiRequester, createErrorReader } from "@/shared/api";
 
 const settingsApi = createApiRequester({}, "Request failed.");
 const readError = createErrorReader("Unable to load settings.");
@@ -106,7 +106,12 @@ export function SettingsEditor() {
         return patch ? [patch] : [];
       });
       const updated = await settingsApi.json<SettingsResponse>("/api/settings", {
-        body: JSON.stringify({ helperModel, models, providers } satisfies UpdateSettingsRequest),
+        body: JSON.stringify({
+          expectedRevision: settings.revision,
+          models,
+          helperModel,
+          providers,
+        } satisfies UpdateSettingsRequest),
         headers: { "content-type": "application/json" },
         method: "PUT",
       });
@@ -114,9 +119,21 @@ export function SettingsEditor() {
       setHelperModel(updated.helperModel);
       setModels(updated.models);
       setProviderDrafts(createProviderDrafts(updated.providers));
-      toast.success("Settings saved");
+      toast.success("Workspace settings saved.");
     } catch (cause) {
-      setError(readError(cause));
+      if (cause instanceof ApiRequestError && cause.code === "stale-write") {
+        try {
+          const latest = await fetchSettings();
+          setSettings(latest);
+          setError(
+            "Someone saved newer workspace settings. Your unsaved changes are still here; review them before saving again.",
+          );
+        } catch (refreshError) {
+          setError(readError(refreshError));
+        }
+      } else {
+        setError(readError(cause));
+      }
     } finally {
       setSaving(false);
     }
@@ -136,10 +153,11 @@ export function SettingsEditor() {
   return (
     <div className="page-gutter mx-auto w-full max-w-5xl py-7 sm:py-9">
       <div className="max-w-2xl">
-        <h1 className="text-xl font-semibold tracking-tight">Models and provider access</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Workspace settings</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Choose which models appear across chat and evaluations. Saved API keys stay on the server
-          and are never shown again.
+          {
+            "Choose which models appear across chat and evaluations for everyone. Saved workspace API keys stay on the server and are never shown again."
+          }
         </p>
       </div>
 
@@ -206,7 +224,7 @@ export function SettingsEditor() {
                 Provider access
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                BYOK credentials override deployment credentials until removed.
+                Workspace credentials override deployment credentials until removed.
               </p>
             </div>
             <div className="divide-y">
@@ -475,7 +493,7 @@ function ProviderRow({
             variant="ghost"
           >
             <RotateCcw aria-hidden="true" className="size-3.5" />
-            {draft.clearApiKey ? "Keep BYOK key" : "Use deployment key"}
+            {draft.clearApiKey ? "Keep workspace key" : "Use deployment key"}
           </Button>
         ) : null}
       </div>
@@ -527,7 +545,12 @@ function removeModel(
   setModels: Dispatch<SetStateAction<SettingsModel[]>>,
 ) {
   const label = model.id.trim() || `model ${index + 1}`;
-  if (!window.confirm(`Remove ${label}? This takes effect when you save settings.`)) return;
+  if (
+    !window.confirm(
+      `Remove ${label} from the workspace? This takes effect for everyone when you save.`,
+    )
+  )
+    return;
   setModels((current) => current.filter((_, item) => item !== index));
 }
 
@@ -540,7 +563,7 @@ function validateModels(models: SettingsModel[], helperModel: SettingsModel): st
 }
 
 function credentialDescription(provider: ProviderSettings): string {
-  if (provider.credentialSource === "byok") return "Using your encrypted BYOK credential";
+  if (provider.credentialSource === "byok") return "Using the encrypted workspace credential";
   if (provider.credentialSource === "deployment") return "Using the deployment credential";
   return "No credential available";
 }

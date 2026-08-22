@@ -65,7 +65,12 @@ type TrackedBatch = {
 const STORAGE_KEY = "vibe-prompting.evaluation-configurations.v1";
 const LAST_RUN_STORAGE_KEY = "vibe-prompting.evaluation-run.v1";
 const TRACKED_BATCH_STORAGE_KEY = "vibe-prompting.evaluation-batch.v1";
-const TERMINAL_STATUSES = new Set<EvaluationRunStatus>(["completed", "failed", "interrupted"]);
+const TERMINAL_STATUSES = new Set<EvaluationRunStatus>([
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+]);
 const evaluationApi = createApiRequester({}, (status) => `Request failed with ${status}.`);
 const readError = createErrorReader("The evaluation request failed.");
 const MANIFEST_MIN_WIDTH = 256;
@@ -326,6 +331,8 @@ function EvaluationBatchRunBuilder() {
   const failedRuns = startedRuns.filter(
     ({ status }) => status === "failed" || status === "interrupted",
   ).length;
+  const cancelledRuns = startedRuns.filter(({ status }) => status === "cancelled").length;
+  const queuedRuns = startedRuns.filter(({ status }) => status === "queued").length;
   const runningRuns = startedRuns.filter(({ status }) => status === "running").length;
   const progress = trackedRunCount ? Math.round((finishedRuns / trackedRunCount) * 100) : 0;
   const batchFinished = trackedRunCount > 0 && finishedRuns === trackedRunCount;
@@ -600,6 +607,7 @@ function EvaluationBatchRunBuilder() {
           <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-5">
             {trackedBatch ? (
               <BatchMonitor
+                cancelledRuns={cancelledRuns}
                 completedRuns={completedRuns}
                 dismiss={dismissBatch}
                 error={batchStatusError}
@@ -607,6 +615,7 @@ function EvaluationBatchRunBuilder() {
                 finishedRuns={finishedRuns}
                 models={models}
                 progress={progress}
+                queuedRuns={queuedRuns}
                 retry={() => setBatchRetry((current) => current + 1)}
                 runningRuns={runningRuns}
                 runs={startedRuns}
@@ -725,7 +734,7 @@ function EvaluationBatchRunBuilder() {
               {running
                 ? "Starting matrix…"
                 : batchRunning
-                  ? `Running ${runningRuns} of ${trackedRunCount}`
+                  ? `${queuedRuns} queued · ${runningRuns} running`
                   : batchFinished && tracksCurrentSetup
                     ? "Run matrix again"
                     : preview
@@ -741,6 +750,7 @@ function EvaluationBatchRunBuilder() {
 
 /** Reports the batch this browser started, independently of the draft below it, so editing the form never hides work that is still running. */
 function BatchMonitor({
+  cancelledRuns,
   completedRuns,
   dismiss,
   error,
@@ -748,12 +758,14 @@ function BatchMonitor({
   finishedRuns,
   models,
   progress,
+  queuedRuns,
   retry,
   runningRuns,
   runs,
   totalRuns,
   tracksCurrentSetup,
 }: {
+  cancelledRuns: number;
   completedRuns: number;
   dismiss(): void;
   error?: string;
@@ -761,6 +773,7 @@ function BatchMonitor({
   finishedRuns: number;
   models: ConfiguredModel[];
   progress: number;
+  queuedRuns: number;
   retry(): void;
   runningRuns: number;
   runs: EvaluationRunSummary[];
@@ -812,20 +825,26 @@ function BatchMonitor({
           style={{ width: `${progress}%` }}
         />
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+      <div className="mt-3 grid grid-cols-5 gap-2 text-[11px] text-muted-foreground">
         <span>
           <strong className="font-mono text-foreground">{completedRuns}</strong> completed
         </span>
         <span className="text-center">
+          <strong className="font-mono text-foreground">{queuedRuns}</strong> queued
+        </span>
+        <span className="text-center">
           <strong className="font-mono text-foreground">{runningRuns}</strong> running
         </span>
-        <span className="text-right">
+        <span className="text-center">
           <strong
             className={cn("font-mono", failedRuns > 0 ? "text-destructive" : "text-foreground")}
           >
             {failedRuns}
           </strong>{" "}
           failed
+        </span>
+        <span className="text-right">
+          <strong className="font-mono text-foreground">{cancelledRuns}</strong> cancelled
         </span>
       </div>
       {error ? (

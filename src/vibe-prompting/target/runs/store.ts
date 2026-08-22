@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { ModelMessage } from "ai";
 import type postgres from "postgres";
 
-import type { Database, DatabaseClient } from "../../database.ts";
+import type { Database, DatabaseClient } from "../../database/index.ts";
 import {
   type StoredTargetRun,
   TargetRunConflictError,
@@ -18,38 +18,42 @@ import {
 } from "./schemas.ts";
 
 type RunRow = {
-  chatId: string | null;
-  createdAt: Date;
-  effectiveInstructionsHash: string;
   id: string;
-  latestStatus: TargetRunTurnStatus;
   promptId: string;
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
-  reasoningEffort: TargetRunSummary["reasoningEffort"];
-  source: TargetRunSource;
-  targetConfiguration: Record<string, unknown>;
-  targetModelId: string;
   targetProfileId: string;
   targetProfileName: string;
   targetProfileRevisionId: string;
+  targetConfiguration: Record<string, unknown>;
+  targetModelId: string;
+  reasoningEffort: TargetRunSummary["reasoningEffort"];
+  source: TargetRunSource;
+  startedByUserId: string;
+  startedByName: string | null;
+  chatId: string | null;
+  chatOwnerUserId: string | null;
+  effectiveInstructionsHash: string;
+  latestStatus: TargetRunTurnStatus;
   turnCount: number;
+  createdAt: Date;
   updatedAt: Date;
 };
 
 type TurnRow = {
-  activity: TargetRunTurn["activity"];
-  completedAt: Date | null;
-  createdAt: Date;
-  errorMessage: string | null;
   id: string;
+  position: number;
+  status: TargetRunTurnStatus;
   input: string;
   output: string | null;
-  position: number;
+  activity: TargetRunTurn["activity"];
   responseMessages: ModelMessage[] | null;
-  status: TargetRunTurnStatus;
   usage: TargetRunUsage | null;
+  createdByUserId: string;
+  errorMessage: string | null;
+  createdAt: Date;
+  completedAt: Date | null;
 };
 
 export type TargetRunExecutionContext = {
@@ -65,16 +69,17 @@ export type TargetRunExecutionContext = {
 };
 
 export type NewTargetRun = {
-  chatId: string | null;
-  effectiveInstructionsHash: string;
-  instruction: string;
   promptId: string;
   promptRevisionId: string;
-  reasoningEffort: TargetRunSummary["reasoningEffort"];
-  source: TargetRunSource;
-  targetModelId: string;
   targetProfileId: string;
   targetProfileRevisionId: string;
+  targetModelId: string;
+  reasoningEffort: TargetRunSummary["reasoningEffort"];
+  effectiveInstructionsHash: string;
+  instruction: string;
+  source: TargetRunSource;
+  chatId: string | null;
+  startedByUserId: string;
 };
 
 export class TargetRunStore {
@@ -113,20 +118,22 @@ export class TargetRunStore {
       await sql`
         INSERT INTO target_runs (
           id, prompt_id, prompt_revision_id, target_profile_id, target_profile_revision_id,
-          target_model_id, reasoning_effort, effective_instructions_hash, source, chat_id
+          target_model_id, reasoning_effort, effective_instructions_hash, source, chat_id,
+          started_by_user_id
         )
         VALUES (
           ${runId}, ${input.promptId}, ${input.promptRevisionId}, ${input.targetProfileId},
           ${input.targetProfileRevisionId}, ${input.targetModelId},
-          ${input.reasoningEffort}, ${input.effectiveInstructionsHash}, ${input.source}, ${input.chatId}
+          ${input.reasoningEffort}, ${input.effectiveInstructionsHash}, ${input.source}, ${input.chatId},
+          ${input.startedByUserId}
         )
       `;
-      await insertTurn(sql, runId, turnId, 0, input.instruction);
+      await insertTurn(sql, runId, turnId, 0, input.instruction, input.startedByUserId);
     });
     return runId;
   }
 
-  async appendTurn(runId: string, instruction: string): Promise<void> {
+  async appendTurn(actorUserId: string, runId: string, instruction: string): Promise<void> {
     await this.#database.transaction(async (sql) => {
       const [run] = await sql<{ id: string }[]>`
         SELECT id
@@ -146,8 +153,26 @@ export class TargetRunStore {
         FROM target_run_turns
         WHERE run_id = ${runId}
       `;
-      await insertTurn(sql, runId, randomUUID(), position?.next ?? 0, instruction);
+      await insertTurn(sql, runId, randomUUID(), position?.next ?? 0, instruction, actorUserId);
       await sql`UPDATE target_runs SET updated_at = now() WHERE id = ${runId}`;
+    });
+  }
+
+  async cancelActiveTurn(runId: string, actorUserId: string): Promise<boolean> {
+    return this.#database.transaction(async (sql) => {
+      const rows = await sql`
+        UPDATE target_run_turns
+        SET
+          status = 'cancelled',
+          error_message = 'The Target Run turn was cancelled.',
+          cancelled_at = now(),
+          cancelled_by_user_id = ${actorUserId},
+          completed_at = now()
+        WHERE run_id = ${runId} AND status = 'running'
+        RETURNING id
+      `;
+      if (rows.length) await sql`UPDATE target_runs SET updated_at = now() WHERE id = ${runId}`;
+      return rows.length > 0;
     });
   }
 
@@ -192,17 +217,20 @@ export class TargetRunStore {
     });
   }
 
-  async get(runId: string): Promise<StoredTargetRun> {
+  async get(runId: string, viewerUserId: string): Promise<StoredTargetRun> {
     return this.#database.run(async (sql) => {
       const row = await requireRunRow(sql, runId);
-      return { ...projectRunSummary(row), turns: (await selectTurns(sql, runId)).map(projectTurn) };
+      return {
+        ...projectRunSummary(row, viewerUserId),
+        turns: (await selectTurns(sql, runId)).map(projectTurn),
+      };
     });
   }
 
-  async list(promptId: string, limit = 30): Promise<TargetRunSummary[]> {
+  async list(viewerUserId: string, promptId: string, limit = 30): Promise<TargetRunSummary[]> {
     return this.#database.run(async (sql) => {
       const rows = await selectRunRows(sql, promptId, Math.min(Math.max(limit, 1), 100));
-      return rows.map(projectRunSummary);
+      return rows.map((row) => projectRunSummary(row, viewerUserId));
     });
   }
 
@@ -241,10 +269,13 @@ async function insertTurn(
   turnId: string,
   position: number,
   instruction: string,
+  actorUserId: string,
 ): Promise<void> {
   await sql`
-    INSERT INTO target_run_turns (id, run_id, position, input_text, status)
-    VALUES (${turnId}, ${runId}, ${position}, ${instruction}, 'running')
+    INSERT INTO target_run_turns (
+      id, run_id, position, input_text, status, created_by_user_id
+    )
+    VALUES (${turnId}, ${runId}, ${position}, ${instruction}, 'running', ${actorUserId})
   `;
 }
 
@@ -279,12 +310,15 @@ function runProjection(sql: DatabaseClient) {
       target_runs.effective_instructions_hash,
       target_runs.source,
       target_runs.chat_id,
+      target_runs.started_by_user_id,
+      starter.name AS started_by_name,
       target_runs.created_at,
       target_runs.updated_at,
       prompts.title AS prompt_title,
       prompt_revisions.revision_number AS prompt_revision_number,
       target_profiles.name AS target_profile_name,
       target_profile_revisions.configuration AS target_configuration,
+      chats.owner_user_id AS chat_owner_user_id,
       count(target_run_turns.id)::integer AS turn_count,
       coalesce(
         (array_agg(target_run_turns.status ORDER BY target_run_turns.position DESC))[1],
@@ -293,11 +327,13 @@ function runProjection(sql: DatabaseClient) {
     FROM target_runs
     JOIN prompts ON prompts.id = target_runs.prompt_id
     JOIN prompt_revisions ON prompt_revisions.id = target_runs.prompt_revision_id
+    JOIN auth_users AS starter ON starter.id = target_runs.started_by_user_id
     JOIN target_profiles ON target_profiles.id = target_runs.target_profile_id
     JOIN target_profile_revisions
       ON target_profile_revisions.target_profile_id = target_runs.target_profile_id
       AND target_profile_revisions.id = target_runs.target_profile_revision_id
     LEFT JOIN target_run_turns ON target_run_turns.run_id = target_runs.id
+    LEFT JOIN chats ON chats.id = target_runs.chat_id
   `;
 }
 
@@ -307,7 +343,9 @@ function runGrouping(sql: DatabaseClient) {
     prompts.title,
     prompt_revisions.revision_number,
     target_profiles.name,
-    target_profile_revisions.configuration
+    target_profile_revisions.configuration,
+    chats.owner_user_id,
+    starter.name
   `;
 }
 
@@ -324,6 +362,7 @@ function selectTurns(sql: DatabaseClient, runId: string) {
       status,
       error_message,
       created_at,
+      created_by_user_id,
       completed_at
     FROM target_run_turns
     WHERE run_id = ${runId}
@@ -331,9 +370,9 @@ function selectTurns(sql: DatabaseClient, runId: string) {
   `;
 }
 
-function projectRunSummary(row: RunRow): TargetRunSummary {
+function projectRunSummary(row: RunRow, viewerUserId: string): TargetRunSummary {
   return {
-    chatId: row.chatId,
+    chatId: row.chatOwnerUserId === viewerUserId ? row.chatId : null,
     createdAt: row.createdAt.toISOString(),
     effectiveInstructionsHash: row.effectiveInstructionsHash,
     id: row.id,
@@ -344,6 +383,7 @@ function projectRunSummary(row: RunRow): TargetRunSummary {
     promptTitle: row.promptTitle,
     reasoningEffort: row.reasoningEffort,
     source: row.source,
+    startedByName: row.startedByName,
     targetConfiguration: row.targetConfiguration,
     targetModelId: row.targetModelId,
     targetProfileId: row.targetProfileId,

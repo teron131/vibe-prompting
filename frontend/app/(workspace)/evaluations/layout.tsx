@@ -19,6 +19,7 @@ export default function EvaluationsLayout({ children }: { children: ReactNode })
             <WorkspaceHomeLink />
           </div>
         }
+        scope="Shared"
         title="Evaluations"
       />
       {children}

@@ -2,37 +2,37 @@
 
 import { getApplicationServices } from "vibe-prompting/server";
 
+import { requireActiveSessionUser } from "@/auth/session";
 import type { CriteriaProfileResponse, CriteriaProfilesResponse } from "@/contracts/evaluations";
-
-import { evaluationErrorResponse } from "../request";
+import { NO_STORE_HEADERS, serverErrorResponse } from "@/server/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const NO_STORE_HEADERS = { "cache-control": "no-store" };
-
 export async function GET() {
   try {
+    await requireActiveSessionUser();
     const services = await getApplicationServices();
     return Response.json(
       { profiles: await services.criteriaProfiles.list() } satisfies CriteriaProfilesResponse,
       { headers: NO_STORE_HEADERS },
     );
   } catch (error) {
-    return evaluationErrorResponse(error);
+    return serverErrorResponse(error, "Evaluation storage failed.");
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const user = await requireActiveSessionUser();
     const services = await getApplicationServices();
     return Response.json(
       {
-        profile: await services.criteriaProfiles.create(await request.json()),
+        profile: await services.criteriaProfiles.create(user.id, await request.json()),
       } satisfies CriteriaProfileResponse,
       { headers: NO_STORE_HEADERS, status: 201 },
     );
   } catch (error) {
-    return evaluationErrorResponse(error);
+    return serverErrorResponse(error, "Evaluation storage failed.");
   }
 }

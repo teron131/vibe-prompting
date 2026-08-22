@@ -117,7 +117,7 @@ export function PromptList({
     setDeletingPromptId(prompt.id);
     try {
       await promptApi.json<{ promptId: string }>(`/api/prompts/${prompt.id}`, {
-        body: JSON.stringify({ expectedRevisionId: prompt.revisionId }),
+        body: JSON.stringify({ expectedActiveRevisionId: prompt.activeRevisionId }),
         headers: { "content-type": "application/json" },
         method: "DELETE",
       });

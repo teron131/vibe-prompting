@@ -2,15 +2,17 @@
 
 import { getApplicationServices } from "vibe-prompting/server";
 
+import { requireActiveSessionUser } from "@/auth/session";
 import type { EvaluationResultResponse } from "@/contracts/evaluation-workspace";
-
-import { evaluationErrorResponse, requireUuid } from "../../request";
+import { serverErrorResponse } from "@/server/errors";
+import { requireUuid } from "@/server/request";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(_request: Request, context: { params: Promise<{ caseId: string }> }) {
   try {
+    await requireActiveSessionUser();
     const { caseId } = await context.params;
     requireUuid(caseId, "Evaluation case ID");
     const services = await getApplicationServices();
@@ -26,6 +28,6 @@ export async function GET(_request: Request, context: { params: Promise<{ caseId
       headers: { "cache-control": "no-store" },
     });
   } catch (error) {
-    return evaluationErrorResponse(error);
+    return serverErrorResponse(error, "Evaluation storage failed.");
   }
 }

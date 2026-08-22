@@ -1,4 +1,4 @@
-/** Adapts prompt storage, durable evaluation workflows, and evaluation analysis to the headless Fastify and OpenAPI surface. */
+/** Adapts application services to a loopback-only Fastify surface for trusted local automation with validated active user IDs. */
 
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
@@ -37,21 +37,38 @@ const promptParamsSchema = z.object({ promptId: promptIdSchema });
 const runParamsSchema = z.object({ runId: z.uuid() });
 const caseParamsSchema = z.object({ caseId: z.uuid() });
 const criteriaProfileParamsSchema = z.object({ profileId: z.uuid() });
+const actorSchema = z.object({
+  actorUserId: z.uuid().describe("Active application user initiating the mutation."),
+});
 const evaluationRunsQuerySchema = z.object({
+  viewerUserId: z.uuid(),
   promptId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 const evaluationBatchStatusQuerySchema = z.object({
+  viewerUserId: z.uuid(),
   runId: z.union([z.uuid(), z.array(z.uuid()).min(1).max(200)]),
 });
 const evaluationExplorerRequestSchema = z.object({
   question: evaluationExplorerQuestionSchema,
 });
 const createPromptRequestSchema = z.object({
+  actorUserId: z.uuid().describe("Active application user initiating the mutation."),
   title: z.string().trim().min(1).describe("Human-readable prompt title."),
   markdown: z.string().describe("Initial textual prompt markdown."),
 });
+const createCriteriaProfileRequestSchema = criteriaProfileInputSchema.extend(actorSchema.shape);
+const updateCriteriaProfileRequestSchema = createCriteriaProfileRequestSchema.extend({
+  expectedVersion: z.number().int().positive(),
+});
+const deleteCriteriaProfileRequestSchema = actorSchema.extend({
+  expectedVersion: z.number().int().positive(),
+});
+const startEvaluationRequestSchema = evaluationRunInputSchema.extend(actorSchema.shape);
+const startEvaluationBatchRequestSchema = evaluationBatchInputSchema.extend(actorSchema.shape);
+const viewerQuerySchema = z.object({ viewerUserId: z.uuid() });
 const editPromptRequestSchema = z.object({
+  actorUserId: z.uuid().describe("Active application user initiating the mutation."),
   revisionId: promptIdSchema.describe("Revision the visible markdown was loaded from."),
   markdown: z.string().describe("Prompt markdown currently visible to the user."),
   instruction: z.string().trim().min(1).describe("Requested prompt change."),
@@ -100,6 +117,18 @@ export async function createApiServer(): Promise<FastifyInstance> {
   server.setValidatorCompiler(validatorCompiler);
   server.setSerializerCompiler(serializerCompiler);
   server.addHook("onClose", () => services.close());
+  server.addHook("onListen", async () => {
+    const address = server.server.address();
+    if (typeof address === "object" && address && !isLoopbackAddress(address.address)) {
+      await server.close();
+      throw new Error("The trusted Fastify adapter may listen only on a loopback address.");
+    }
+  });
+  server.addHook("preHandler", async (request) => {
+    const userId =
+      readUserId(request.body, "actorUserId") ?? readUserId(request.query, "viewerUserId");
+    if (userId) await services.auth.requireActiveUser(userId);
+  });
 
   await server.register(fastifySwagger, {
     openapi: {
@@ -139,7 +168,10 @@ export async function createApiServer(): Promise<FastifyInstance> {
         tags: ["prompts"],
       },
     },
-    (request) => prompts.createPrompt(request.body),
+    (request) => {
+      const { actorUserId, ...input } = request.body;
+      return prompts.createPrompt(actorUserId, input);
+    },
   );
 
   server.get(
@@ -168,20 +200,20 @@ export async function createApiServer(): Promise<FastifyInstance> {
     },
     async (request) => {
       const activePrompt = await prompts.getPrompt(request.params.promptId);
-      if (activePrompt.revisionId !== request.body.revisionId) {
-        throw new PromptConflictError();
+      if (activePrompt.activeRevisionId !== request.body.revisionId) {
+        throw new PromptConflictError(activePrompt.activeRevisionId);
       }
       const edit = await editPrompt({
         markdown: request.body.markdown,
         instruction: request.body.instruction,
         modelId: request.body.modelId,
       });
-      const prompt = await prompts.appendAiEdit({
+      const prompt = await prompts.appendAiEdit(request.body.actorUserId, {
         promptId: request.params.promptId,
-        editedMarkdown: edit.markdown,
-        expectedRevisionId: request.body.revisionId,
-        instruction: request.body.instruction,
+        expectedActiveRevisionId: request.body.revisionId,
         visibleMarkdown: request.body.markdown,
+        instruction: request.body.instruction,
+        editedMarkdown: edit.markdown,
       });
       return { prompt, model: edit.model.id, output: edit.message };
     },
@@ -212,8 +244,9 @@ export async function createApiServer(): Promise<FastifyInstance> {
     },
     async (request, reply) => {
       reply.header("cache-control", "no-store");
+      const { viewerUserId, ...input } = request.query;
       return {
-        runs: await services.evaluations.listRuns(request.query),
+        runs: await services.evaluations.listRuns(viewerUserId, input),
       };
     },
   );
@@ -222,7 +255,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
     "/api/evaluations",
     {
       schema: {
-        body: evaluationRunInputSchema,
+        body: startEvaluationRequestSchema,
         description:
           "Start one durable evaluation run and return immediately while it executes in the server process.",
         summary: "Start evaluation run",
@@ -230,7 +263,8 @@ export async function createApiServer(): Promise<FastifyInstance> {
       },
     },
     async (request, reply) => {
-      const run = await services.evaluations.startHumanRun(request.body);
+      const { actorUserId, ...input } = request.body;
+      const run = await services.evaluations.startHumanRun(actorUserId, input);
       return reply.header("cache-control", "no-store").code(202).send(run);
     },
   );
@@ -268,7 +302,11 @@ export async function createApiServer(): Promise<FastifyInstance> {
         : [request.query.runId];
       reply.header("cache-control", "no-store");
       return {
-        runs: await Promise.all(runIds.map((runId) => services.evaluations.getRunSummary(runId))),
+        runs: await Promise.all(
+          runIds.map((runId) =>
+            services.evaluations.getRunSummary(request.query.viewerUserId, runId),
+          ),
+        ),
       };
     },
   );
@@ -277,7 +315,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
     "/api/evaluations/batches",
     {
       schema: {
-        body: evaluationBatchInputSchema,
+        body: startEvaluationBatchRequestSchema,
         description:
           "Start a server-expanded evaluation batch and return immediately while its runs execute asynchronously.",
         summary: "Start evaluation batch",
@@ -285,7 +323,8 @@ export async function createApiServer(): Promise<FastifyInstance> {
       },
     },
     async (request, reply) => {
-      const batch = await services.evaluations.startHumanBatch(request.body);
+      const { actorUserId, ...input } = request.body;
+      const batch = await services.evaluations.startHumanBatch(actorUserId, input);
       return reply.header("cache-control", "no-store").code(202).send(batch);
     },
   );
@@ -309,14 +348,15 @@ export async function createApiServer(): Promise<FastifyInstance> {
     "/api/evaluations/criteria-profiles",
     {
       schema: {
-        body: criteriaProfileInputSchema,
+        body: createCriteriaProfileRequestSchema,
         description: "Create a reusable criteria profile.",
         summary: "Create criteria profile",
         tags: ["evaluation"],
       },
     },
     async (request, reply) => {
-      const profile = await services.criteriaProfiles.create(request.body);
+      const { actorUserId, ...input } = request.body;
+      const profile = await services.criteriaProfiles.create(actorUserId, input);
       return reply.header("cache-control", "no-store").code(201).send({ profile });
     },
   );
@@ -341,7 +381,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
     "/api/evaluations/criteria-profiles/:profileId",
     {
       schema: {
-        body: criteriaProfileInputSchema,
+        body: updateCriteriaProfileRequestSchema,
         description: "Replace one reusable criteria profile.",
         params: criteriaProfileParamsSchema,
         summary: "Update criteria profile",
@@ -349,9 +389,12 @@ export async function createApiServer(): Promise<FastifyInstance> {
       },
     },
     async (request, reply) => {
+      const { actorUserId, expectedVersion, ...input } = request.body;
       const profile = await services.criteriaProfiles.update(
+        actorUserId,
         request.params.profileId,
-        request.body,
+        expectedVersion,
+        input,
       );
       return reply.header("cache-control", "no-store").send({ profile });
     },
@@ -361,6 +404,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
     "/api/evaluations/criteria-profiles/:profileId",
     {
       schema: {
+        body: deleteCriteriaProfileRequestSchema,
         description: "Delete one user-created criteria profile.",
         params: criteriaProfileParamsSchema,
         summary: "Delete criteria profile",
@@ -368,7 +412,10 @@ export async function createApiServer(): Promise<FastifyInstance> {
       },
     },
     async (request, reply) => {
-      await services.criteriaProfiles.delete(request.params.profileId);
+      await services.criteriaProfiles.delete(
+        request.params.profileId,
+        request.body.expectedVersion,
+      );
       return reply.header("cache-control", "no-store").code(204).send();
     },
   );
@@ -467,13 +514,14 @@ export async function createApiServer(): Promise<FastifyInstance> {
         description:
           "Get one immutable evaluation report and its compatible Boolean score history.",
         params: runParamsSchema,
+        querystring: viewerQuerySchema,
         summary: "Get evaluation run",
         tags: ["evaluation"],
       },
     },
     async (request, reply) => {
       const [run, trend] = await Promise.all([
-        services.evaluations.getRun(request.params.runId),
+        services.evaluations.getRun(request.query.viewerUserId, request.params.runId),
         services.evaluations.getCompatibleBooleanTrend(request.params.runId),
       ]);
       return reply.header("cache-control", "no-store").send({ run, trend });
@@ -513,10 +561,20 @@ export async function createApiServer(): Promise<FastifyInstance> {
   return server;
 }
 
+function readUserId(value: unknown, field: "actorUserId" | "viewerUserId"): string | undefined {
+  if (!value || typeof value !== "object" || !(field in value)) return undefined;
+  const userId = (value as Record<string, unknown>)[field];
+  return typeof userId === "string" ? userId : undefined;
+}
+
+function isLoopbackAddress(address: string): boolean {
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+}
+
 if (import.meta.main) {
   const server = await createApiServer();
   await server.listen({
-    host: process.env.API_HOST ?? "127.0.0.1",
+    host: "127.0.0.1",
     port: Number(process.env.API_PORT ?? 3000),
   });
 }

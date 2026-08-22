@@ -32,7 +32,13 @@ const SIDEBAR_MIN_WIDTH = 224;
 const SIDEBAR_MAX_WIDTH = 416;
 const WORKSPACE_CONTENT_MIN_WIDTH = 480;
 
-export function WorkspaceShell({ children }: { children: ReactNode }) {
+export function WorkspaceShell({
+  children,
+  currentUser,
+}: {
+  children: ReactNode;
+  currentUser: { email: string; name: string | null };
+}) {
   const pathname = usePathname();
   const [sidebarDocked, setSidebarDocked] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -138,7 +144,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           role={sidebarDocked ? undefined : "dialog"}
           style={sidebarDocked && sidebarWidth !== undefined ? { width: sidebarWidth } : undefined}
         >
-          <AppSidebar closeButtonRef={closeButtonRef} onClose={closeSidebar} />
+          <AppSidebar
+            closeButtonRef={closeButtonRef}
+            currentUser={currentUser}
+            onClose={closeSidebar}
+          />
           {sidebarDocked && sidebarOpen ? (
             <ResizableDivider
               ariaLabel="Resize workspace sidebar"

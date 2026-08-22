@@ -2,14 +2,15 @@
 
 import { EmbeddingError, getApplicationServices } from "vibe-prompting/server";
 
+import { requireActiveSessionUser } from "@/auth/session";
 import type { PromptSearchResponse } from "@/contracts/prompts";
+import { NO_STORE_HEADERS } from "@/server/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const NO_STORE_HEADERS = { "cache-control": "no-store" };
-
 export async function GET(request: Request) {
+  await requireActiveSessionUser();
   const query = new URL(request.url).searchParams.get("q")?.replace(/\s+/g, " ").trim() ?? "";
   if (query.length < 2 || query.length > 200) {
     return Response.json(

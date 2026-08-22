@@ -30,6 +30,7 @@ import type {
 } from "@/contracts/target-runs";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 import { createApiRequester, createErrorReader } from "@/shared/api";
+import { memberDisplayName } from "@/shared/member";
 
 import { AssistantMessage } from "../assistant-message";
 import { ChatComposer } from "../chat-composer";
@@ -390,7 +391,8 @@ function PromptContextMessage({
 
 function formatRunOption(run: TargetRunSummary): string {
   const turns = `${run.turnCount} ${run.turnCount === 1 ? "turn" : "turns"}`;
-  const identity = `${runDateFormatter.format(new Date(run.createdAt))} · ${turns}`;
+  const starter = memberDisplayName(run.startedByName);
+  const identity = `${runDateFormatter.format(new Date(run.createdAt))} · ${turns} · ${starter}`;
   return run.latestStatus === "completed" ? identity : `${identity} · ${run.latestStatus}`;
 }
 

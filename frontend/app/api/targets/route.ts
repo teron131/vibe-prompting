@@ -2,23 +2,18 @@
 
 import { getApplicationServices } from "vibe-prompting/server";
 
+import { requireActiveSessionUser } from "@/auth/session";
 import type { TargetProfileResponse } from "@/contracts/targets";
+import { NO_STORE_HEADERS, projectServerError } from "@/server/errors";
+import { requireUuid } from "@/server/request";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const NO_STORE_HEADERS = { "cache-control": "no-store" };
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 export async function GET(request: Request) {
-  const promptId = new URL(request.url).searchParams.get("promptId") ?? "";
-  if (!UUID_PATTERN.test(promptId)) {
-    return Response.json(
-      { error: "Prompt ID must be a UUID." },
-      { headers: NO_STORE_HEADERS, status: 400 },
-    );
-  }
+  await requireActiveSessionUser();
   try {
+    const promptId = requireUuid(new URL(request.url).searchParams.get("promptId"), "Prompt ID");
     const services = await getApplicationServices();
     const profile = await services.targets.getProfileForPrompt(promptId);
     return Response.json(
@@ -28,14 +23,15 @@ export async function GET(request: Request) {
       { headers: NO_STORE_HEADERS },
     );
   } catch (error) {
-    if (error && typeof error === "object" && "statusCode" in error && error.statusCode === 404) {
+    const projected = projectServerError(error, "Target profile storage failed.");
+    if (projected.status === 404) {
       return Response.json({ profile: null } satisfies TargetProfileResponse, {
         headers: NO_STORE_HEADERS,
       });
     }
     return Response.json(
-      { error: "Target profile storage failed." },
-      { headers: NO_STORE_HEADERS, status: 500 },
+      { error: projected.message },
+      { headers: NO_STORE_HEADERS, status: projected.status },
     );
   }
 }

@@ -21,7 +21,7 @@ const promptEditRequestSchema = z.object({
   edits: promptHashlineEditsSchema,
 });
 
-export function createPromptLibraryTools(prompts: PromptSystem): AgentTool[] {
+export function createPromptLibraryTools(prompts: PromptSystem, actorUserId: string): AgentTool[] {
   return [
     defineAgentTool({
       name: "list_prompts",
@@ -63,7 +63,7 @@ export function createPromptLibraryTools(prompts: PromptSystem): AgentTool[] {
         markdown: z.string().min(1),
       }),
       async execute(input) {
-        const prompt = await prompts.createPrompt(input);
+        const prompt = await prompts.createPrompt(actorUserId, input);
         return promptResult(prompt, "Created prompt.");
       },
     }),
@@ -73,7 +73,7 @@ export function createPromptLibraryTools(prompts: PromptSystem): AgentTool[] {
         "Update one saved prompt after read_prompt with structured replace_range, insert_before, insert_after, or append operations. Copy LINE#HASH refs exactly and send content as complete physical lines without refs. The batch persists as one revision only if every ref is current and every edit succeeds. Never send diff or patch syntax.",
       parameters: promptEditRequestSchema,
       async execute(input) {
-        const saved = await editStoredPrompt(prompts, input);
+        const saved = await editStoredPrompt(prompts, actorUserId, input);
         return promptResult(saved, "Updated prompt.");
       },
     }),
@@ -82,17 +82,20 @@ export function createPromptLibraryTools(prompts: PromptSystem): AgentTool[] {
 
 async function editStoredPrompt(
   prompts: PromptSystem,
+  actorUserId: string,
   { changeRequest, edits, expectedRevisionId, promptId }: z.infer<typeof promptEditRequestSchema>,
 ): Promise<StoredPrompt> {
   const active = await prompts.getPrompt(promptId);
-  if (active.revisionId !== expectedRevisionId) throw new PromptConflictError();
+  if (active.activeRevisionId !== expectedRevisionId) {
+    throw new PromptConflictError(active.activeRevisionId);
+  }
   const editedMarkdown = applyPromptHashlineEdits(active.markdown, edits);
-  return prompts.appendAiEdit({
+  return prompts.appendAiEdit(actorUserId, {
     promptId,
-    editedMarkdown,
-    expectedRevisionId,
-    instruction: changeRequest,
+    expectedActiveRevisionId: expectedRevisionId,
     visibleMarkdown: active.markdown,
+    instruction: changeRequest,
+    editedMarkdown,
   });
 }
 

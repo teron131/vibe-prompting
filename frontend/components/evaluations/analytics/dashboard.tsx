@@ -735,8 +735,8 @@ function Diagnostics({ data }: { data: EvaluationAnalyticsResponse }) {
         <dl className="mt-4 divide-y text-xs">
           <DiagnosticRow
             detail="Whole evaluation run, not individual target or judge calls."
-            label="Median / p95 duration"
-            value={`${formatDuration(data.execution.medianDurationMs)} / ${formatDuration(data.execution.p95DurationMs)}`}
+            label="Median duration"
+            value={formatDuration(data.execution.medianDurationMs)}
           />
           <DiagnosticRow
             detail="Model-call usage is not yet attributed to evaluation run and case IDs."

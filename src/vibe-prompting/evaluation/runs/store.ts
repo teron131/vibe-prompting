@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import type postgres from "postgres";
 
-import type { Database, DatabaseClient } from "../../database.ts";
+import type { Database, DatabaseClient } from "../../database/index.ts";
 import {
   type Criterion,
   type CriterionEvaluation,
@@ -23,8 +23,6 @@ import {
 
 type RunSummaryRow = {
   id: string;
-  source: EvaluationRunSource;
-  status: EvaluationRunStatus;
   promptId: string;
   promptRevisionId: string;
   promptRevisionNumber: number;
@@ -39,8 +37,13 @@ type RunSummaryRow = {
   caseCount: number;
   configurationFingerprint: string;
   effectiveInstructionsHash: string | null;
+  source: EvaluationRunSource;
+  startedByUserId: string;
+  startedByName: string | null;
   chatId: string | null;
+  chatOwnerUserId: string | null;
   isSyntheticExample: boolean;
+  status: EvaluationRunStatus;
   errorMessage: string | null;
   createdAt: Date;
   completedAt: Date | null;
@@ -108,6 +111,20 @@ export type NewEvaluationRun = {
   isSyntheticExample: boolean;
   targetRunId: string | null;
   targetRunTurnId: string | null;
+  startedByUserId: string;
+  recordedOutputs?: unknown[];
+};
+
+export type EvaluationExecution = {
+  promptId: string;
+  promptRevisionId: string;
+  targetProfileId: string | null;
+  targetProfileRevisionId: string | null;
+  targetModelId: string;
+  judgeModelIds: string[];
+  cases: Array<{ input: unknown; criteria: Criterion[]; output: unknown | null }>;
+  targetRunTurnId: string | null;
+  startedByUserId: string;
 };
 
 /** Keeps every evaluation run state transition and projection behind one PostgreSQL owner. */
@@ -147,6 +164,48 @@ export class EvaluationRunStore {
     });
   }
 
+  async claimNextQueued(): Promise<string | undefined> {
+    return this.#database.transaction(async (sql) => {
+      const [claimed] = await sql<{ id: string }[]>`
+        WITH next_run AS (
+          SELECT id
+          FROM evaluation_runs
+          WHERE status = 'queued'
+          ORDER BY created_at, id
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        UPDATE evaluation_runs
+        SET status = 'running'
+        WHERE id = (SELECT id FROM next_run) AND status = 'queued'
+        RETURNING id
+      `;
+      return claimed?.id;
+    });
+  }
+
+  async cancel(runId: string, actorUserId: string): Promise<boolean> {
+    return this.#database.run(async (sql) => {
+      const rows = await sql`
+        UPDATE evaluation_runs
+        SET
+          status = 'cancelled',
+          error_message = 'The evaluation was cancelled.',
+          cancelled_at = now(),
+          cancelled_by_user_id = ${actorUserId},
+          completed_at = now()
+        WHERE id = ${runId} AND status IN ('queued', 'running')
+        RETURNING id
+      `;
+      if (rows.length) return true;
+      const [existing] = await sql<{ status: EvaluationRunStatus }[]>`
+        SELECT status FROM evaluation_runs WHERE id = ${runId}
+      `;
+      if (!existing) throw new EvaluationRunNotFoundError(runId);
+      return existing.status === "cancelled";
+    });
+  }
+
   /** Locks the run before completion so startup reconciliation and late workers cannot both win. */
   async complete(
     runId: string,
@@ -167,7 +226,7 @@ export class EvaluationRunStore {
     );
   }
 
-  async get(runId: string): Promise<StoredEvaluationRun> {
+  async get(runId: string, viewerUserId: string): Promise<StoredEvaluationRun> {
     return this.#database.run(async (sql) => {
       const row = await requireRunRow(sql, runId);
       const cases = await selectCases(sql, runId);
@@ -179,7 +238,7 @@ export class EvaluationRunStore {
         scoresByCase.set(score.caseId, grouped);
       }
       return {
-        ...projectRunSummary(row),
+        ...projectRunSummary(row, viewerUserId),
         promptMarkdown: row.promptMarkdown,
         targetConfiguration: row.targetConfiguration,
         cases: cases.map((testCase) => ({
@@ -203,17 +262,43 @@ export class EvaluationRunStore {
     });
   }
 
-  async getSummary(runId: string): Promise<EvaluationRunSummary> {
-    return this.#database.run(async (sql) => projectRunSummary(await requireRunRow(sql, runId)));
+  async getExecution(runId: string): Promise<EvaluationExecution> {
+    return this.#database.run(async (sql) => {
+      const row = await requireRunRow(sql, runId);
+      return {
+        promptId: row.promptId,
+        promptRevisionId: row.promptRevisionId,
+        targetProfileId: row.targetProfileId,
+        targetProfileRevisionId: row.targetProfileRevisionId,
+        targetModelId: row.targetModelId,
+        judgeModelIds: row.judgeModelIds,
+        cases: (await selectCases(sql, runId)).map(({ input, criteria, output }) => ({
+          input,
+          criteria,
+          output,
+        })),
+        targetRunTurnId: row.targetRunTurnId,
+        startedByUserId: row.startedByUserId,
+      };
+    });
   }
 
-  async list(input: { limit?: number; promptId?: string } = {}): Promise<EvaluationRunSummary[]> {
+  async getSummary(runId: string, viewerUserId: string): Promise<EvaluationRunSummary> {
+    return this.#database.run(async (sql) =>
+      projectRunSummary(await requireRunRow(sql, runId), viewerUserId),
+    );
+  }
+
+  async list(
+    viewerUserId: string,
+    input: { limit?: number; promptId?: string } = {},
+  ): Promise<EvaluationRunSummary[]> {
     const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
     return this.#database.run(async (sql) => {
       const rows = input.promptId
         ? await selectRunRowsForPrompt(sql, input.promptId, limit)
         : await selectRunRows(sql, limit);
-      return rows.map(projectRunSummary);
+      return rows.map((row) => projectRunSummary(row, viewerUserId));
     });
   }
 
@@ -301,24 +386,26 @@ async function insertRun(sql: DatabaseClient, input: NewEvaluationRun): Promise<
       judge_model_ids, status, configuration_fingerprint, is_synthetic_example,
       target_profile_id, target_profile_revision_id, effective_instructions_hash,
       target_run_id, target_run_turn_id,
-      completed_at
+      completed_at, started_by_user_id
     )
     VALUES (
       ${runId}, ${input.promptId}, ${input.promptRevisionId}, ${input.chatId}, ${input.source},
-      ${input.targetModelId}, ${sql.array(input.judgeModelIds)}, 'running',
+      ${input.targetModelId}, ${sql.array(input.judgeModelIds)}, 'queued',
       ${input.configurationFingerprint}, ${input.isSyntheticExample}, ${input.targetProfileId},
       ${input.targetProfileRevisionId}, ${input.effectiveInstructionsHash},
       ${input.targetRunId}, ${input.targetRunTurnId},
-      NULL
+      NULL, ${input.startedByUserId}
     )
   `;
   for (const [position, testCase] of input.cases.entries()) {
+    const output = input.recordedOutputs?.[position];
     await sql`
-      INSERT INTO evaluation_cases (id, run_id, position, input_json, criteria_json)
+      INSERT INTO evaluation_cases (id, run_id, position, input_json, criteria_json, output_json)
       VALUES (
         ${randomUUID()}, ${runId}, ${position},
         ${sql.json(testCase.input as postgres.JSONValue)},
-        ${sql.json(testCase.criteria as postgres.JSONValue[])}
+        ${sql.json(testCase.criteria as postgres.JSONValue[])},
+        ${output === undefined ? null : sql.json(output as postgres.JSONValue)}
       )
     `;
   }
@@ -401,7 +488,9 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
     SELECT
       evaluation_runs.id, evaluation_runs.prompt_id,
       evaluation_runs.prompt_revision_id,
-      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
+      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
+      starter.name AS started_by_name,
+      evaluation_runs.target_model_id,
       evaluation_runs.judge_model_ids, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
       evaluation_runs.is_synthetic_example,
@@ -410,6 +499,7 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
       evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
       target_profile_revisions.configuration AS target_configuration,
       evaluation_runs.created_at, evaluation_runs.completed_at,
+      chats.owner_user_id AS chat_owner_user_id,
       target_profiles.name AS target_profile_name,
       prompts.title AS prompt_title,
       prompt_revisions.revision_number AS prompt_revision_number,
@@ -418,15 +508,18 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
     FROM evaluation_runs
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    JOIN auth_users AS starter ON starter.id = evaluation_runs.started_by_user_id
     LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     LEFT JOIN target_profile_revisions
       ON target_profile_revisions.target_profile_id = evaluation_runs.target_profile_id
       AND target_profile_revisions.id = evaluation_runs.target_profile_revision_id
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
+    LEFT JOIN chats ON chats.id = evaluation_runs.chat_id
     WHERE evaluation_runs.id = ${runId}
     GROUP BY
       evaluation_runs.id, prompts.title, prompt_revisions.revision_number, prompt_revisions.markdown,
-      target_profiles.name, target_profile_revisions.configuration
+      target_profiles.name, target_profile_revisions.configuration, chats.owner_user_id,
+      starter.name
   `;
 }
 
@@ -435,7 +528,9 @@ function selectRunRows(sql: DatabaseClient, limit: number) {
     SELECT
       evaluation_runs.id, evaluation_runs.prompt_id,
       evaluation_runs.prompt_revision_id,
-      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
+      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
+      starter.name AS started_by_name,
+      evaluation_runs.target_model_id,
       evaluation_runs.judge_model_ids, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
       evaluation_runs.is_synthetic_example,
@@ -443,15 +538,18 @@ function selectRunRows(sql: DatabaseClient, limit: number) {
       evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
       evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
       evaluation_runs.created_at, evaluation_runs.completed_at,
+      chats.owner_user_id AS chat_owner_user_id,
       target_profiles.name AS target_profile_name,
       prompts.title AS prompt_title, prompt_revisions.revision_number AS prompt_revision_number,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    JOIN auth_users AS starter ON starter.id = evaluation_runs.started_by_user_id
     LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
-    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.revision_number, target_profiles.name
+    LEFT JOIN chats ON chats.id = evaluation_runs.chat_id
+    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.revision_number, target_profiles.name, chats.owner_user_id, starter.name
     ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
     LIMIT ${limit}
   `;
@@ -462,7 +560,9 @@ function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, limit: nu
     SELECT
       evaluation_runs.id, evaluation_runs.prompt_id,
       evaluation_runs.prompt_revision_id,
-      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.target_model_id,
+      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
+      starter.name AS started_by_name,
+      evaluation_runs.target_model_id,
       evaluation_runs.judge_model_ids, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
       evaluation_runs.is_synthetic_example,
@@ -470,16 +570,19 @@ function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, limit: nu
       evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
       evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
       evaluation_runs.created_at, evaluation_runs.completed_at,
+      chats.owner_user_id AS chat_owner_user_id,
       target_profiles.name AS target_profile_name,
       prompts.title AS prompt_title, prompt_revisions.revision_number AS prompt_revision_number,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
     JOIN prompts ON prompts.id = evaluation_runs.prompt_id
     JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    JOIN auth_users AS starter ON starter.id = evaluation_runs.started_by_user_id
     LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
+    LEFT JOIN chats ON chats.id = evaluation_runs.chat_id
     WHERE evaluation_runs.prompt_id = ${promptId}
-    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.revision_number, target_profiles.name
+    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.revision_number, target_profiles.name, chats.owner_user_id, starter.name
     ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
     LIMIT ${limit}
   `;
@@ -509,11 +612,9 @@ function selectScores(sql: DatabaseClient, runId: string) {
   `;
 }
 
-function projectRunSummary(row: RunSummaryRow): EvaluationRunSummary {
+function projectRunSummary(row: RunSummaryRow, viewerUserId: string): EvaluationRunSummary {
   return {
     id: row.id,
-    source: row.source,
-    status: row.status,
     promptId: row.promptId,
     promptRevisionId: row.promptRevisionId,
     promptRevisionNumber: row.promptRevisionNumber,
@@ -528,8 +629,11 @@ function projectRunSummary(row: RunSummaryRow): EvaluationRunSummary {
     caseCount: row.caseCount,
     configurationFingerprint: row.configurationFingerprint,
     effectiveInstructionsHash: row.effectiveInstructionsHash,
-    chatId: row.chatId,
+    source: row.source,
+    startedByName: row.startedByName,
+    chatId: row.chatOwnerUserId === viewerUserId ? row.chatId : null,
     isSyntheticExample: row.isSyntheticExample,
+    status: row.status,
     errorMessage: row.errorMessage,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,

@@ -81,24 +81,50 @@ function createSpendLimitMiddleware(model: ModelConfig): LanguageModelMiddleware
     specificationVersion: "v3",
     async wrapGenerate({ doGenerate }) {
       const call = await startSpendCall(model);
-      const result = await doGenerate();
-      await recordUsage(call, result.usage);
-      return result;
+      try {
+        const result = await doGenerate();
+        await recordUsage(call, result.usage);
+        return result;
+      } finally {
+        call.release();
+      }
     },
     async wrapStream({ doStream }) {
       const call = await startSpendCall(model);
-      const result = await doStream();
-      return {
-        ...result,
-        stream: result.stream.pipeThrough(
-          new TransformStream({
-            async transform(part, controller) {
-              if (part.type === "finish") await recordUsage(call, part.usage);
-              controller.enqueue(part);
+      try {
+        const result = await doStream();
+        const reader = result.stream.getReader();
+        return {
+          ...result,
+          stream: new ReadableStream({
+            async cancel(reason) {
+              try {
+                await reader.cancel(reason);
+              } finally {
+                call.release();
+              }
+            },
+            async pull(controller) {
+              try {
+                const part = await reader.read();
+                if (part.done) {
+                  call.release();
+                  controller.close();
+                  return;
+                }
+                if (part.value.type === "finish") await recordUsage(call, part.value.usage);
+                controller.enqueue(part.value);
+              } catch (error) {
+                call.release();
+                controller.error(error);
+              }
             },
           }),
-        ),
-      };
+        };
+      } catch (error) {
+        call.release();
+        throw error;
+      }
     },
   };
 }

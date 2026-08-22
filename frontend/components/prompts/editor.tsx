@@ -2,7 +2,7 @@
 
 "use client";
 
-import { GitCompareArrows, History, LoaderCircle, Redo2, Save, Undo2 } from "lucide-react";
+import { GitCompareArrows, History, LoaderCircle, Save } from "lucide-react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { PromptDiff } from "@/components/prompts/diff";
 import { PromptEvaluationView } from "@/components/prompts/evaluation-view";
 import { MarkdownPreview } from "@/components/prompts/markdown-preview";
+import { promptRevisionAuthorLabel } from "@/components/prompts/revision-author";
 import { PromptStats } from "@/components/prompts/stats";
 import { PromptViewModeControl } from "@/components/prompts/view-mode-control";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ import type {
   PromptRevisionSummary,
   PromptSearchPassage,
 } from "@/contracts/prompts";
-import { createApiRequester, createErrorReader } from "@/shared/api";
+import { ApiRequestError, createApiRequester, createErrorReader } from "@/shared/api";
 import { formatDateTime } from "@/shared/date";
 
 const promptApi = createApiRequester({ cache: "no-store" }, "Prompt request failed.");
@@ -54,9 +55,10 @@ export function PromptEditor({
   const [revisionError, setRevisionError] = useState<string>();
   const [revisionRequest, setRevisionRequest] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [historyAction, setHistoryAction] = useState<"redo" | "undo">();
   const [activatingRevisionId, setActivatingRevisionId] = useState<string>();
   const [error, setError] = useState<string>();
+  const [staleWrite, setStaleWrite] = useState(false);
+  const [loadingLatest, setLoadingLatest] = useState(false);
   const [runs, setRuns] = useState<EvaluationRunSummary[]>([]);
   const [trend, setTrend] = useState<BooleanTrendPoint[]>([]);
   const [latestRun, setLatestRun] = useState<EvaluationRun>();
@@ -66,13 +68,17 @@ export function PromptEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dirty = Boolean(detail && draft !== detail.prompt.markdown);
 
-  const loadPrompt = useCallback(async () => {
-    const value = await promptApi.json<PromptDetail>(`/api/prompts/${promptId}`);
-    setDetail(value);
-    setDraft(value.prompt.markdown);
-    setSelectedRevisionId(value.prompt.revisionId);
-    setError(undefined);
-  }, [promptId]);
+  const loadPrompt = useCallback(
+    async ({ preserveDraft = false } = {}) => {
+      const value = await promptApi.json<PromptDetail>(`/api/prompts/${promptId}`);
+      setDetail(value);
+      if (!preserveDraft) setDraft(value.prompt.markdown);
+      setSelectedRevisionId(value.prompt.revisionId);
+      setError(undefined);
+      setStaleWrite(false);
+    },
+    [promptId],
+  );
 
   const loadRuns = useCallback(async () => {
     try {
@@ -160,7 +166,9 @@ export function PromptEditor({
         setLatestRun(value.run);
         setTrend(value.trend);
         setLatestRunLoading(false);
-        if (value.run.status === "running") timer = window.setTimeout(refresh, 1500);
+        if (value.run.status === "queued" || value.run.status === "running") {
+          timer = window.setTimeout(refresh, 1500);
+        }
       } catch (cause) {
         if (cancelled) return;
         setLatestRunError(readError(cause));
@@ -193,18 +201,26 @@ export function PromptEditor({
   }, [dirty]);
 
   async function save() {
-    if (!detail || !dirty || saving) return;
+    if (!detail || !dirty || saving || staleWrite) return;
     setSaving(true);
     setError(undefined);
     try {
       await promptApi.json<PromptEditorSnapshot>(`/api/prompts/${promptId}`, {
-        body: JSON.stringify({ expectedRevisionId: detail.prompt.revisionId, markdown: draft }),
+        body: JSON.stringify({
+          expectedActiveRevisionId: detail.prompt.activeRevisionId,
+          markdown: draft,
+        }),
         headers: { "content-type": "application/json" },
         method: "PATCH",
       });
       await loadPrompt();
     } catch (cause) {
-      const message = readError(cause);
+      let message = readError(cause);
+      if (cause instanceof ApiRequestError && cause.code === "stale-write") {
+        message =
+          "Someone saved a newer prompt revision. Your draft is still open; load the latest version before saving again.";
+        setStaleWrite(true);
+      }
       setError(message);
       toast.error(message);
     } finally {
@@ -212,35 +228,12 @@ export function PromptEditor({
     }
   }
 
-  const navigateHistory = useCallback(
-    async (action: "redo" | "undo") => {
-      if (!detail || dirty || saving || historyAction) return;
-      setHistoryAction(action);
-      setError(undefined);
-      try {
-        await promptApi.json<PromptEditorSnapshot>(`/api/prompts/${promptId}`, {
-          body: JSON.stringify({ action, expectedRevisionId: detail.prompt.revisionId }),
-          headers: { "content-type": "application/json" },
-          method: "PATCH",
-        });
-        await loadPrompt();
-      } catch (cause) {
-        const message = readError(cause);
-        setError(message);
-        toast.error(message);
-      } finally {
-        setHistoryAction(undefined);
-      }
-    },
-    [detail, dirty, historyAction, loadPrompt, promptId, saving],
-  );
-
   async function makeActive(revisionId: string, version: number) {
     if (
       !detail ||
       dirty ||
       saving ||
-      historyAction ||
+      staleWrite ||
       activatingRevisionId ||
       revisionId === detail.prompt.activeRevisionId
     )
@@ -266,11 +259,30 @@ export function PromptEditor({
       await loadPrompt();
       toast.success(`v${version} is active.`);
     } catch (cause) {
-      const message = readError(cause);
+      let message = readError(cause);
+      if (cause instanceof ApiRequestError && cause.code === "stale-write") {
+        message =
+          "Someone saved a newer prompt revision. Load the latest version before trying again.";
+        setStaleWrite(true);
+      }
       setError(message);
       toast.error(message);
     } finally {
       setActivatingRevisionId(undefined);
+    }
+  }
+
+  async function loadLatestAfterConflict() {
+    setLoadingLatest(true);
+    try {
+      await loadPrompt({ preserveDraft: dirty });
+      toast.success(
+        dirty ? "Latest revision loaded. Your draft is still open." : "Latest revision loaded.",
+      );
+    } catch (cause) {
+      setError(readError(cause));
+    } finally {
+      setLoadingLatest(false);
     }
   }
 
@@ -280,27 +292,6 @@ export function PromptEditor({
     event.preventDefault();
     void save();
   }
-
-  useEffect(() => {
-    const handleSavedRevisionShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || isEditableTarget(event.target)) return;
-      if ((!event.ctrlKey && !event.metaKey) || event.altKey) return;
-      const key = event.key.toLowerCase();
-      const action =
-        key === "z" && !event.shiftKey
-          ? "undo"
-          : key === "y" || (key === "z" && event.shiftKey)
-            ? "redo"
-            : undefined;
-      if (!action) return;
-      const available = action === "undo" ? detail?.prompt.canUndo : detail?.prompt.canRedo;
-      if (!available || dirty || saving || historyAction) return;
-      event.preventDefault();
-      void navigateHistory(action);
-    };
-    window.addEventListener("keydown", handleSavedRevisionShortcut);
-    return () => window.removeEventListener("keydown", handleSavedRevisionShortcut);
-  }, [detail, dirty, historyAction, navigateHistory, saving]);
 
   const selectedRevisionSummary = detail?.revisions.find(({ id }) => id === selectedRevisionId);
   const selectedDate = selectedRevisionSummary
@@ -361,8 +352,22 @@ export function PromptEditor({
         </div>
       </div>
       {error ? (
-        <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-          {error}
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          <span>{error}</span>
+          {staleWrite ? (
+            <Button
+              className="shrink-0"
+              disabled={loadingLatest}
+              onClick={() => void loadLatestAfterConflict()}
+              size="sm"
+              variant="outline"
+            >
+              {loadingLatest ? (
+                <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+              ) : null}
+              Load latest
+            </Button>
+          ) : null}
         </div>
       ) : null}
       <div aria-label="Prompt views" className="mb-5 flex border-b" role="tablist">
@@ -383,41 +388,9 @@ export function PromptEditor({
               variant="editor"
             />
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
-              {!dirty && detail.prompt.canUndo ? (
-                <Button
-                  aria-label="Undo last saved change"
-                  disabled={saving || Boolean(historyAction)}
-                  onClick={() => navigateHistory("undo")}
-                  size="icon"
-                  title="Undo saved revision (Ctrl/Cmd+Z)"
-                  variant="ghost"
-                >
-                  {historyAction === "undo" ? (
-                    <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-                  ) : (
-                    <Undo2 aria-hidden="true" className="size-4" />
-                  )}
-                </Button>
-              ) : null}
-              {!dirty && detail.prompt.canRedo ? (
-                <Button
-                  aria-label="Redo saved change"
-                  disabled={saving || Boolean(historyAction)}
-                  onClick={() => navigateHistory("redo")}
-                  size="icon"
-                  title="Redo saved revision (Ctrl+Y or Cmd/Ctrl+Shift+Z)"
-                  variant="ghost"
-                >
-                  {historyAction === "redo" ? (
-                    <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-                  ) : (
-                    <Redo2 aria-hidden="true" className="size-4" />
-                  )}
-                </Button>
-              ) : null}
               {!dirty && detail.prompt.activeRevisionId !== detail.prompt.revisionId ? (
                 <Button
-                  disabled={Boolean(activatingRevisionId) || saving || Boolean(historyAction)}
+                  disabled={Boolean(activatingRevisionId) || saving || staleWrite}
                   onClick={() =>
                     void makeActive(detail.prompt.revisionId, detail.prompt.revisionNumber)
                   }
@@ -431,7 +404,7 @@ export function PromptEditor({
                 </Button>
               ) : null}
               {dirty ? (
-                <Button disabled={saving} onClick={save} size="sm">
+                <Button disabled={saving || staleWrite} onClick={save} size="sm">
                   {saving ? (
                     <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
                   ) : (
@@ -536,7 +509,7 @@ export function PromptEditor({
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                   <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                     <span className="rounded-full bg-secondary px-2 py-1 capitalize">
-                      {revisionAuthorLabel(selectedRevisionSummary.source)}
+                      {promptRevisionAuthorLabel(selectedRevisionSummary)}
                     </span>
                     <span>{selectedDate}</span>
                     {selectedRevisionSummary.changeRequest ? (
@@ -660,22 +633,11 @@ function RevisionButton({
         {revision.changeRequest ?? "Initial prompt"}
       </div>
       <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <span>{revisionAuthorLabel(revision.source)}</span>
+        <span>{promptRevisionAuthorLabel(revision)}</span>
         <span aria-hidden="true">·</span>
         <span className="font-mono">{revision.id.slice(0, 7)}</span>
       </div>
     </button>
-  );
-}
-
-function revisionAuthorLabel(source: PromptRevisionSummary["source"]): string {
-  return source === "ai" ? "AI" : "Human";
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof Element &&
-    Boolean(target.closest("input, textarea, [contenteditable='true']"))
   );
 }
 

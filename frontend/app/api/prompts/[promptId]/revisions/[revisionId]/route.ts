@@ -2,9 +2,11 @@
 
 import { getApplicationServices } from "vibe-prompting/server";
 
+import { requireActiveSessionUser } from "@/auth/session";
 import type { PromptRevisionResponse } from "@/contracts/prompts";
+import { requireUuid } from "@/server/request";
 
-import { promptErrorResponse, requireUuid } from "../../../request";
+import { projectPromptRevisionForViewer, promptErrorResponse } from "../../../request";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,6 +15,7 @@ type RouteContext = { params: Promise<{ promptId: string; revisionId: string }> 
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
+    const user = await requireActiveSessionUser();
     const { promptId, revisionId } = await context.params;
     requireUuid(promptId, "Prompt ID");
     requireUuid(revisionId, "Revision ID");
@@ -24,7 +27,7 @@ export async function GET(_request: Request, context: RouteContext) {
     return Response.json(
       {
         parentMarkdown,
-        revision,
+        revision: projectPromptRevisionForViewer(revision, user.id),
       } satisfies PromptRevisionResponse,
       {
         headers: { "cache-control": "no-store" },

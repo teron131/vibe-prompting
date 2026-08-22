@@ -85,6 +85,7 @@ export function PromptStudio({ initialPromptId }: { initialPromptId?: string }) 
         href="/prompts"
         icon={Sparkles}
         rightContent={<WorkspaceHomeLink />}
+        scope="Shared"
         title="Prompts"
       />
       <div className="flex min-h-0 flex-1">

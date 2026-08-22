@@ -62,9 +62,13 @@ class SpendLimitedModel implements Model {
 
   async getResponse(request: ModelRequest): Promise<ModelResponse> {
     const call = await startSpendCall(this.#config);
-    const response = await this.#model.getResponse(request);
-    await call.record(response.usage);
-    return response;
+    try {
+      const response = await this.#model.getResponse(request);
+      await call.record(response.usage);
+      return response;
+    } finally {
+      call.release();
+    }
   }
 
   getRetryAdvice(args: ModelRetryAdviceRequest) {
@@ -73,9 +77,13 @@ class SpendLimitedModel implements Model {
 
   async *getStreamedResponse(request: ModelRequest): AsyncIterable<StreamEvent> {
     const call = await startSpendCall(this.#config);
-    for await (const event of this.#model.getStreamedResponse(request)) {
-      if (event.type === "response_done") await call.record(event.response.usage);
-      yield event;
+    try {
+      for await (const event of this.#model.getStreamedResponse(request)) {
+        if (event.type === "response_done") await call.record(event.response.usage);
+        yield event;
+      }
+    } finally {
+      call.release();
     }
   }
 }

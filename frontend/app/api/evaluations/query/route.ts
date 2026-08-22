@@ -2,21 +2,22 @@
 
 import { getApplicationServices } from "vibe-prompting/server";
 
+import { requireActiveSessionUser } from "@/auth/session";
 import type { EvaluationQueryResponse } from "@/contracts/evaluation-workspace";
-
-import { evaluationErrorResponse } from "../request";
+import { serverErrorResponse } from "@/server/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
+    await requireActiveSessionUser();
     const services = await getApplicationServices();
     const response = await services.evaluationResults.query(await request.json());
     return Response.json(response satisfies EvaluationQueryResponse, {
       headers: { "cache-control": "no-store" },
     });
   } catch (error) {
-    return evaluationErrorResponse(error);
+    return serverErrorResponse(error, "Evaluation storage failed.");
   }
 }

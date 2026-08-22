@@ -10,11 +10,13 @@ export function FeaturePageHeader({
   href,
   icon,
   rightContent,
+  scope,
   title,
 }: {
   href?: string;
   icon: LucideIcon | ReactElement;
   rightContent?: ReactNode;
+  scope?: string;
   title: string;
 }) {
   return (
@@ -25,16 +27,24 @@ export function FeaturePageHeader({
           <Link className="flex min-w-0 items-center gap-2 hover:text-muted-foreground" href={href}>
             <HeaderIcon icon={icon} />
             <h1 className="truncate text-sm font-semibold">{title}</h1>
+            {scope ? <HeaderScope>{scope}</HeaderScope> : null}
           </Link>
         ) : (
           <div className="flex min-w-0 items-center gap-2">
             <HeaderIcon icon={icon} />
             <h1 className="truncate text-sm font-semibold">{title}</h1>
+            {scope ? <HeaderScope>{scope}</HeaderScope> : null}
           </div>
         )}
       </div>
       {rightContent}
     </header>
+  );
+}
+
+function HeaderScope({ children }: { children: ReactNode }) {
+  return (
+    <span className="shrink-0 text-[11px] font-normal text-muted-foreground">· {children}</span>
   );
 }
 

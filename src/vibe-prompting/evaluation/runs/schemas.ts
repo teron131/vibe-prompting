@@ -4,7 +4,13 @@ import { z } from "zod";
 
 import { criteriaSchema, type Criterion, requestSchema } from "../api.ts";
 
-export type EvaluationRunStatus = "completed" | "failed" | "interrupted" | "running";
+export type EvaluationRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
 export type EvaluationRunSource = "ai" | "human";
 
 export type EvaluationBatchJob = {
@@ -15,7 +21,6 @@ export type EvaluationBatchJob = {
   targetModelId: string;
   repetition: number;
   caseCount: number;
-  criterionCount: number;
   judgeScoreDecisions: number;
 };
 
@@ -33,8 +38,6 @@ export type EvaluationBatchStart = {
 
 export type EvaluationRunSummary = {
   id: string;
-  source: EvaluationRunSource;
-  status: EvaluationRunStatus;
   promptId: string;
   promptRevisionId: string;
   promptRevisionNumber: number;
@@ -49,8 +52,11 @@ export type EvaluationRunSummary = {
   caseCount: number;
   configurationFingerprint: string;
   effectiveInstructionsHash: string | null;
+  source: EvaluationRunSource;
+  startedByName: string | null;
   chatId: string | null;
   isSyntheticExample: boolean;
+  status: EvaluationRunStatus;
   errorMessage: string | null;
   createdAt: string;
   completedAt: string | null;

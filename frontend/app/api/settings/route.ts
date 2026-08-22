@@ -2,54 +2,31 @@
 
 import { type ApplicationSettings, getApplicationServices } from "vibe-prompting/server";
 
+import { requireActiveSessionUser } from "@/auth/session";
+import { NO_STORE_HEADERS, serverErrorResponse } from "@/server/errors";
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const NO_STORE_HEADERS = { "cache-control": "no-store" };
-
 export async function GET() {
   try {
+    await requireActiveSessionUser();
     const services = await getApplicationServices();
     return Response.json(services.settings.get() satisfies ApplicationSettings, {
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return errorResponse(error);
+    return serverErrorResponse(error, "The server could not complete the request.");
   }
 }
 
 export async function PUT(request: Request) {
   try {
+    const user = await requireActiveSessionUser();
     const services = await getApplicationServices();
-    const settings = await services.settings.update(await request.json());
+    const settings = await services.settings.update(user.id, await request.json());
     return Response.json(settings satisfies ApplicationSettings, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    return errorResponse(error);
+    return serverErrorResponse(error, "The server could not complete the request.");
   }
-}
-
-function errorResponse(error: unknown): Response {
-  if (error instanceof SyntaxError)
-    return Response.json(
-      { error: "Request body must contain valid JSON." },
-      { headers: NO_STORE_HEADERS, status: 400 },
-    );
-  const status =
-    error &&
-    typeof error === "object" &&
-    "statusCode" in error &&
-    typeof error.statusCode === "number"
-      ? error.statusCode
-      : error && typeof error === "object" && "name" in error && error.name === "ZodError"
-        ? 400
-        : 500;
-  return Response.json(
-    {
-      error:
-        status < 500 && error instanceof Error
-          ? error.message
-          : "The server could not complete the request.",
-    },
-    { headers: NO_STORE_HEADERS, status },
-  );
 }

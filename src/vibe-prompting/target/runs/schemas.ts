@@ -5,8 +5,8 @@ import { z } from "zod";
 import type { TargetActivityPart, TargetRuntimeEvent } from "../activity.ts";
 
 export type TargetRunSource = "ai" | "human";
-export type TargetRunTurnStatus = "completed" | "failed" | "interrupted" | "running";
-export type TargetReasoningEffort = "high" | "low" | "medium" | "xhigh";
+export type TargetRunTurnStatus = "running" | "completed" | "failed" | "cancelled" | "interrupted";
+export type TargetReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
 export type TargetRunUsage = {
   inputTokens: number | null;
@@ -15,36 +15,37 @@ export type TargetRunUsage = {
 };
 
 export type TargetRunTurn = {
-  activity: TargetActivityPart[];
-  completedAt: string | null;
-  createdAt: string;
-  errorMessage: string | null;
   id: string;
-  input: string;
-  output: string | null;
   position: number;
   status: TargetRunTurnStatus;
+  input: string;
+  output: string | null;
+  activity: TargetActivityPart[];
   usage: TargetRunUsage | null;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
 };
 
 export type TargetRunSummary = {
-  chatId: string | null;
-  createdAt: string;
-  effectiveInstructionsHash: string;
   id: string;
-  latestStatus: TargetRunTurnStatus;
   promptId: string;
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
-  reasoningEffort: TargetReasoningEffort;
-  source: TargetRunSource;
-  targetConfiguration: Record<string, unknown>;
-  targetModelId: string;
   targetProfileId: string;
   targetProfileName: string;
   targetProfileRevisionId: string;
+  targetConfiguration: Record<string, unknown>;
+  targetModelId: string;
+  reasoningEffort: TargetReasoningEffort;
+  source: TargetRunSource;
+  startedByName: string | null;
+  chatId: string | null;
+  effectiveInstructionsHash: string;
+  latestStatus: TargetRunTurnStatus;
   turnCount: number;
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -52,14 +53,14 @@ export type StoredTargetRun = TargetRunSummary & { turns: TargetRunTurn[] };
 
 export type TargetRunEvent =
   | TargetRuntimeEvent
-  | { message: string; type: "error" }
   | { type: "finish" }
-  | { type: "stopped" };
+  | { type: "stopped" }
+  | { message: string; type: "error" };
 
 export type TargetRunResponse = {
+  run: StoredTargetRun;
   active: boolean;
   events: TargetRunEvent[];
-  run: StoredTargetRun;
 };
 
 export const targetRunCreateInputSchema = z.object({

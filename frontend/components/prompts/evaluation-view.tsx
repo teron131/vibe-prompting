@@ -150,20 +150,20 @@ function LatestResult({
           <ExternalLink aria-hidden="true" className="size-3" />
         </Link>
       </div>
-      {run.status === "running" ? (
+      {run.status === "queued" || run.status === "running" ? (
         <div className="flex items-start gap-3 p-5">
           <LoaderCircle
             aria-hidden="true"
             className="mt-0.5 size-4 animate-spin text-muted-foreground"
           />
           <div>
-            <p className="text-sm font-medium">Evaluation is running</p>
+            <p className="text-sm font-medium">Evaluation is {run.status}</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Results will appear here as soon as the durable run completes.
             </p>
           </div>
         </div>
-      ) : run.status === "failed" || run.status === "interrupted" ? (
+      ) : run.status === "failed" || run.status === "cancelled" || run.status === "interrupted" ? (
         <div className="p-5">
           <p className="text-sm font-medium capitalize">{run.status} evaluation</p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -226,8 +226,9 @@ function Status({ status }: { status: EvaluationRunStatus }) {
       className={cn(
         "rounded-full px-2 py-0.5 text-[10px] font-medium capitalize",
         status === "completed" && "bg-chart-2/15 text-chart-2",
-        status === "running" && "bg-chart-4/20 text-foreground",
-        (status === "failed" || status === "interrupted") && "bg-destructive/10 text-destructive",
+        (status === "queued" || status === "running") && "bg-chart-4/20 text-foreground",
+        (status === "failed" || status === "cancelled" || status === "interrupted") &&
+          "bg-destructive/10 text-destructive",
       )}
     >
       {status}

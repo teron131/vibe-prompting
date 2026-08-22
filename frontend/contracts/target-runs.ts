@@ -3,9 +3,9 @@
 import type { MessagePart, RunEvent } from "./chat";
 
 export type TargetRunActivityPart = Extract<MessagePart, { type: "reasoning" | "tool" }>;
-export type TargetReasoningEffort = "high" | "low" | "medium" | "xhigh";
+export type TargetReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
-export type TargetRunTurnStatus = "completed" | "failed" | "interrupted" | "running";
+export type TargetRunTurnStatus = "running" | "completed" | "failed" | "cancelled" | "interrupted";
 
 export type TargetRunUsage = {
   inputTokens: number | null;
@@ -14,36 +14,37 @@ export type TargetRunUsage = {
 };
 
 export type TargetRunTurn = {
-  activity: TargetRunActivityPart[];
-  completedAt: string | null;
-  createdAt: string;
-  errorMessage: string | null;
   id: string;
-  input: string;
-  output: string | null;
   position: number;
   status: TargetRunTurnStatus;
+  input: string;
+  output: string | null;
+  activity: TargetRunActivityPart[];
   usage: TargetRunUsage | null;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
 };
 
 export type TargetRunSummary = {
-  chatId: string | null;
-  createdAt: string;
-  effectiveInstructionsHash: string;
   id: string;
-  latestStatus: TargetRunTurnStatus;
   promptId: string;
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
-  reasoningEffort: TargetReasoningEffort;
-  source: "ai" | "human";
-  targetConfiguration: Record<string, unknown>;
-  targetModelId: string;
   targetProfileId: string;
   targetProfileName: string;
   targetProfileRevisionId: string;
+  targetConfiguration: Record<string, unknown>;
+  targetModelId: string;
+  reasoningEffort: TargetReasoningEffort;
+  source: "ai" | "human";
+  startedByName: string | null;
+  chatId: string | null;
+  effectiveInstructionsHash: string;
+  latestStatus: TargetRunTurnStatus;
   turnCount: number;
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -53,21 +54,21 @@ export type TargetRunEvent = Extract<
   RunEvent,
   {
     type:
-      | "error"
-      | "finish"
-      | "reasoning"
-      | "reasoning-delta"
       | "reasoning-start"
-      | "stopped"
+      | "reasoning-delta"
+      | "reasoning"
+      | "tool"
       | "text-delta"
-      | "tool";
+      | "finish"
+      | "stopped"
+      | "error";
   }
 >;
 
 export type TargetRunResponse = {
+  run: TargetRun;
   active: boolean;
   events: TargetRunEvent[];
-  run: TargetRun;
 };
 
 export type TargetRunsResponse = { runs: TargetRunSummary[] };

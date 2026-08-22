@@ -1,13 +1,13 @@
 /** Publishes side-effect-free application services for server-only framework adapters. */
 
+import { AuthService } from "./auth/index.ts";
 import { resolveModelIdentities } from "./clients/llm/models-dev.ts";
 import { configureSpendLimit } from "./clients/llm/spend.ts";
 import { loadModelSpendLimits, loadRuntimeConfig } from "./config/index.ts";
 import { ConversationRunRegistry } from "./conversations/runs.ts";
 import { ConversationStore } from "./conversations/store.ts";
-import { createDatabase } from "./database.ts";
+import { Database } from "./database/index.ts";
 import { CriteriaProfiles } from "./evaluation/criteria-profiles.ts";
-import { ensureEvaluationDemo } from "./evaluation/demo.ts";
 import { EvaluationResults } from "./evaluation/results/index.ts";
 import { EvaluationRuns } from "./evaluation/runs/index.ts";
 import { PromptSystem } from "./prompt-system/index.ts";
@@ -24,6 +24,7 @@ export type ConfiguredModel = {
 };
 
 export type ApplicationServices = {
+  auth: AuthService;
   prompts: PromptSystem;
   targets: TargetSystem;
   targetRuns: TargetRuns;
@@ -40,7 +41,7 @@ const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 24;
+const APPLICATION_SERVICES_VERSION = 30;
 
 /** Resolves configured model identities after the shared services and database are ready. */
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
@@ -66,9 +67,8 @@ export async function isConfiguredModelId(id: string): Promise<boolean> {
 export async function createApplicationServices(
   databaseUrl?: string,
 ): Promise<ApplicationServices> {
-  const database = createDatabase(databaseUrl);
+  const database = new Database(databaseUrl);
   await database.initialize();
-  await ensureEvaluationDemo(database);
   const settings = new ApplicationSettingsStore(database);
   await settings.initialize();
   configureSpendLimit(database, loadModelSpendLimits());
@@ -79,6 +79,7 @@ export async function createApplicationServices(
   const evaluations = new EvaluationRuns(database, prompts, targets, targetRuns);
   const criteriaProfiles = new CriteriaProfiles(database);
   return {
+    auth: new AuthService(database),
     prompts,
     targets,
     targetRuns,
@@ -98,17 +99,26 @@ export function getApplicationServices(): Promise<ApplicationServices> {
     !sharedState.vibePromptingServices ||
     sharedState.vibePromptingServicesVersion !== APPLICATION_SERVICES_VERSION
   ) {
+    const previousServices = sharedState.vibePromptingServices;
     sharedState.vibePromptingServicesVersion = APPLICATION_SERVICES_VERSION;
-    sharedState.vibePromptingServices = createApplicationServices().then(async (services) => {
-      await services.evaluations.reconcileInterrupted();
-      await services.targetRuns.reconcileInterrupted();
-      return services;
-    });
+    sharedState.vibePromptingServices = replaceApplicationServices(previousServices);
   }
   return sharedState.vibePromptingServices;
 }
 
+async function replaceApplicationServices(
+  previousServices: Promise<ApplicationServices> | undefined,
+): Promise<ApplicationServices> {
+  const previous = await previousServices?.catch(() => undefined);
+  await previous?.close();
+  const services = await createApplicationServices();
+  await services.evaluations.reconcileInterrupted();
+  await services.targetRuns.reconcileInterrupted();
+  return services;
+}
+
 export { CHAT_TOOL_IDS, streamChatRun, streamPromptEdit } from "./agents/openai-agents/runtime.ts";
+export * from "./auth/index.ts";
 export type {
   AgentStreamEvent,
   ChatAttachment,

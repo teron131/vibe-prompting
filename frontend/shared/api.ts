@@ -2,6 +2,18 @@
 
 type ErrorFallback = string | ((status: number) => string);
 
+export class ApiRequestError extends Error {
+  readonly code: string | undefined;
+  readonly status: number;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
 export function createApiRequester(
   defaultInit: RequestInit = {},
   fallback: ErrorFallback = (status) => `Request failed with status ${status}.`,
@@ -22,7 +34,9 @@ export async function requestJson<T>(
   fallback: ErrorFallback = (status) => `Request failed with status ${status}.`,
 ): Promise<T> {
   const response = await fetch(input, init);
-  if (!response.ok) throw new Error(await readResponseError(response, fallback));
+  if (!response.ok) {
+    throw await createApiRequestError(response, fallback);
+  }
   return (await response.json()) as T;
 }
 
@@ -32,7 +46,9 @@ export async function requestEmpty(
   fallback: ErrorFallback = (status) => `Request failed with status ${status}.`,
 ): Promise<void> {
   const response = await fetch(input, init);
-  if (!response.ok) throw new Error(await readResponseError(response, fallback));
+  if (!response.ok) {
+    throw await createApiRequestError(response, fallback);
+  }
 }
 
 export function errorMessage(error: unknown, fallback: string): string {
@@ -47,7 +63,25 @@ export async function readResponseError(
   response: Response,
   fallback: ErrorFallback = (status) => `Request failed with status ${status}.`,
 ): Promise<string> {
-  const payload = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined;
-  if (typeof payload?.error === "string") return payload.error;
-  return typeof fallback === "function" ? fallback(response.status) : fallback;
+  return (await createApiRequestError(response, fallback)).message;
+}
+
+async function createApiRequestError(
+  response: Response,
+  fallback: ErrorFallback,
+): Promise<ApiRequestError> {
+  const payload = (await response.json().catch(() => undefined)) as
+    | { code?: unknown; error?: unknown }
+    | undefined;
+  const message =
+    typeof payload?.error === "string"
+      ? payload.error
+      : typeof fallback === "function"
+        ? fallback(response.status)
+        : fallback;
+  return new ApiRequestError(
+    message,
+    response.status,
+    typeof payload?.code === "string" ? payload.code : undefined,
+  );
 }

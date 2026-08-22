@@ -1,99 +1,105 @@
 /** Owns browser-safe evaluation attempt, score, report, and trend shapes shared by routes and components. */
 
 export type Criterion =
-  | { instruction: string; type: "boolean" }
-  | { categories: string[]; instruction: string; type: "categorical" }
-  | { instruction: string; max: number; min: number; type: "numeric" }
-  | { instruction: string; type: "text" }
-  | { instruction: string; type: "correction" };
+  | { type: "boolean"; instruction: string }
+  | { type: "categorical"; instruction: string; categories: string[] }
+  | { type: "numeric"; instruction: string; min: number; max: number }
+  | { type: "text"; instruction: string }
+  | { type: "correction"; instruction: string };
 
-export type EvaluationRunStatus = "completed" | "failed" | "interrupted" | "running";
+export type EvaluationRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
 
 export type EvaluationRunSummary = {
-  caseCount: number;
-  chatId: string | null;
-  completedAt: string | null;
-  configurationFingerprint: string;
-  createdAt: string;
-  effectiveInstructionsHash: string | null;
-  errorMessage: string | null;
   id: string;
-  isSyntheticExample: boolean;
-  judgeModelIds: string[];
   promptId: string;
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
-  source: "ai" | "human";
-  status: EvaluationRunStatus;
   targetProfileId: string | null;
   targetProfileName: string | null;
   targetProfileRevisionId: string | null;
+  targetModelId: string;
   targetRunId: string | null;
   targetRunTurnId: string | null;
-  targetModelId: string;
+  judgeModelIds: string[];
+  caseCount: number;
+  configurationFingerprint: string;
+  effectiveInstructionsHash: string | null;
+  source: "ai" | "human";
+  startedByName: string | null;
+  chatId: string | null;
+  isSyntheticExample: boolean;
+  status: EvaluationRunStatus;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
 };
 
 export type EvaluationScore = {
-  comment: string;
-  criterion: Criterion;
-  criterionPosition: number;
-  dataType: "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
-  evidence: string[];
   id: string;
+  criterionPosition: number;
+  criterion: Criterion;
+  dataType: "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
   judgeModelId: string;
   value: boolean | number | string;
+  comment: string;
+  evidence: string[];
 };
 
 export type EvaluationCase = {
-  criteria: Criterion[];
   id: string;
-  input: unknown;
-  output: unknown | null;
   position: number;
+  input: unknown;
+  criteria: Criterion[];
+  output: unknown | null;
   scores: EvaluationScore[];
 };
 
 export type EvaluationRun = EvaluationRunSummary & {
-  cases: EvaluationCase[];
   promptMarkdown: string;
   targetConfiguration: Record<string, unknown> | null;
+  cases: EvaluationCase[];
 };
 
 export type EvaluationBatchConfiguration = {
-  criteria: Criterion[];
   id: string;
   name: string;
+  criteria: Criterion[];
 };
 
 export type EvaluationBatchRequest = {
-  cases: Array<{ input: string }>;
-  configurations: EvaluationBatchConfiguration[];
-  isSyntheticExample: boolean;
-  judges: string[];
   promptId: string;
   promptRevisionId: string;
-  repetitions: number;
   targetModelIds: string[];
+  judges: string[];
+  configurations: EvaluationBatchConfiguration[];
+  cases: Array<{ input: string }>;
+  repetitions: number;
+  isSyntheticExample: boolean;
 };
 
 export type EvaluationBatchJob = {
-  caseCount: number;
+  id: string;
+  executionNumber: number;
   configurationId: string;
   configurationName: string;
-  criterionCount: number;
-  executionNumber: number;
-  id: string;
-  judgeScoreDecisions: number;
-  repetition: number;
   targetModelId: string;
+  repetition: number;
+  caseCount: number;
+  judgeScoreDecisions: number;
 };
 
 export type EvaluationBatchPreview = {
-  executionCount: number;
   jobs: EvaluationBatchJob[];
-  judgeScoreDecisions: number;
+  executionCount: number;
   targetCaseInvocations: number;
+  judgeScoreDecisions: number;
 };
 
 export type EvaluationBatchStart = {
@@ -104,23 +110,24 @@ export type EvaluationBatchStart = {
 export type EvaluationBatchStatus = { runs: EvaluationRunSummary[] };
 
 export type CriteriaProfile = {
-  criteria: Criterion[];
   id: string;
   name: string;
+  criteria: Criterion[];
+  version: number;
 };
 
-export type CriteriaProfileInput = { criteria: Criterion[]; name: string };
+export type CriteriaProfileInput = { name: string; criteria: Criterion[] };
 
 export type CriteriaProfileResponse = { profile: CriteriaProfile };
 
 export type CriteriaProfilesResponse = { profiles: CriteriaProfile[] };
 
 export type BooleanTrendPoint = {
-  completedAt: string;
-  rates: Array<{ criterion: string; criterionPosition: number; passed: number; total: number }>;
+  runId: string;
   revisionId: string;
   revisionNumber: number;
-  runId: string;
+  completedAt: string;
+  rates: Array<{ criterionPosition: number; criterion: string; passed: number; total: number }>;
 };
 
 export type EvaluationRunsResponse = { runs: EvaluationRunSummary[] };

@@ -9,7 +9,12 @@ import { WorkspaceHomeLink } from "@/components/shell/home-link";
 export default function SettingsRoute() {
   return (
     <main className="min-h-dvh">
-      <FeaturePageHeader icon={Settings} rightContent={<WorkspaceHomeLink />} title="Settings" />
+      <FeaturePageHeader
+        icon={Settings}
+        rightContent={<WorkspaceHomeLink />}
+        scope="Shared"
+        title="Settings"
+      />
       <SettingsEditor />
     </main>
   );

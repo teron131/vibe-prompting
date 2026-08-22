@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 import { z } from "zod";
 
-import type { Database, DatabaseClient } from "../database.ts";
+import type { Database, DatabaseClient } from "../database/index.ts";
 import { criteriaSchema, type Criterion } from "./api.ts";
 
 export const criteriaProfileInputSchema = z.object({
@@ -17,22 +17,26 @@ type ProfileRow = {
   id: string;
   name: string;
   criteria: unknown;
+  version: number;
 };
 
 export type CriteriaProfile = {
   id: string;
   name: string;
   criteria: Criterion[];
+  version: number;
 };
 
 export type CriteriaProfileInput = z.infer<typeof criteriaProfileInputSchema>;
 
 /** Reports profile validation and lifecycle failures with an HTTP-safe status code. */
 export class CriteriaProfileError extends Error {
+  readonly code: string | undefined;
   readonly statusCode: number;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, code?: string) {
     super(message);
+    this.code = code;
     this.name = "CriteriaProfileError";
     this.statusCode = statusCode;
   }
@@ -50,7 +54,7 @@ export class CriteriaProfiles {
   async list(): Promise<CriteriaProfile[]> {
     return this.#database.run(async (sql) => {
       const rows = await sql<ProfileRow[]>`
-        SELECT id, name, criteria_json AS criteria
+        SELECT id, name, criteria_json AS criteria, version
         FROM evaluation_criteria_profiles
         ORDER BY lower(name), id
       `;
@@ -64,18 +68,26 @@ export class CriteriaProfiles {
   }
 
   /** Validates and persists a named profile after enforcing case-insensitive name uniqueness. */
-  async create(value: unknown): Promise<CriteriaProfile> {
+  async create(actorUserId: string, value: unknown): Promise<CriteriaProfile> {
     const input = parseProfileInput(value);
     return this.#database.run(async (sql) => {
       await requireAvailableName(sql, input.name);
       const [row] = await sql<ProfileRow[]>`
-        INSERT INTO evaluation_criteria_profiles (id, name, criteria_json)
+        INSERT INTO evaluation_criteria_profiles (
+          id,
+          name,
+          criteria_json,
+          created_by_user_id,
+          updated_by_user_id
+        )
         VALUES (
           ${randomUUID()},
           ${input.name},
-          ${sql.json(input.criteria as postgres.JSONValue[])}
+          ${sql.json(input.criteria as postgres.JSONValue[])},
+          ${actorUserId},
+          ${actorUserId}
         )
-        RETURNING id, name, criteria_json AS criteria
+        RETURNING id, name, criteria_json AS criteria, version
       `;
       if (!row) throw new Error("Criteria profile creation returned no record.");
       return parseProfile(row);
@@ -83,36 +95,46 @@ export class CriteriaProfiles {
   }
 
   /** Replaces a profile atomically while preserving its identity. */
-  async update(id: string, value: unknown): Promise<CriteriaProfile> {
+  async update(
+    actorUserId: string,
+    id: string,
+    expectedVersion: number,
+    value: unknown,
+  ): Promise<CriteriaProfile> {
     const input = parseProfileInput(value);
     return this.#database.transaction(async (sql) => {
-      await requireProfile(sql, id);
       await requireAvailableName(sql, input.name, id);
       const [row] = await sql<ProfileRow[]>`
         UPDATE evaluation_criteria_profiles
         SET
           name = ${input.name},
-          criteria_json = ${sql.json(input.criteria as postgres.JSONValue[])}
-        WHERE id = ${id}
-        RETURNING id, name, criteria_json AS criteria
+          criteria_json = ${sql.json(input.criteria as postgres.JSONValue[])},
+          version = version + 1,
+          updated_by_user_id = ${actorUserId}
+        WHERE id = ${id} AND version = ${expectedVersion}
+        RETURNING id, name, criteria_json AS criteria, version
       `;
-      if (!row) throw new Error("Criteria profile update returned no record.");
+      if (!row) await throwMissingOrConflict(sql, id);
       return parseProfile(row);
     });
   }
 
   /** Deletes a persisted profile. */
-  async delete(id: string): Promise<void> {
+  async delete(id: string, expectedVersion: number): Promise<void> {
     await this.#database.transaction(async (sql) => {
-      await requireProfile(sql, id);
-      await sql`DELETE FROM evaluation_criteria_profiles WHERE id = ${id}`;
+      const [deleted] = await sql<{ id: string }[]>`
+        DELETE FROM evaluation_criteria_profiles
+        WHERE id = ${id} AND version = ${expectedVersion}
+        RETURNING id
+      `;
+      if (!deleted) await throwMissingOrConflict(sql, id);
     });
   }
 }
 
 async function requireProfile(sql: DatabaseClient, id: string): Promise<CriteriaProfile> {
   const [row] = await sql<ProfileRow[]>`
-    SELECT id, name, criteria_json AS criteria
+    SELECT id, name, criteria_json AS criteria, version
     FROM evaluation_criteria_profiles
     WHERE id = ${id}
   `;
@@ -140,7 +162,20 @@ function parseProfile(row: ProfileRow): CriteriaProfile {
     id: row.id,
     name: row.name,
     criteria: criteriaSchema.parse(row.criteria),
+    version: row.version,
   };
+}
+
+async function throwMissingOrConflict(sql: DatabaseClient, id: string): Promise<never> {
+  const [current] = await sql<{ version: number }[]>`
+    SELECT version FROM evaluation_criteria_profiles WHERE id = ${id}
+  `;
+  if (!current) throw new CriteriaProfileError(`Criteria profile ${id} was not found.`, 404);
+  throw new CriteriaProfileError(
+    "Someone saved a newer version of this criteria set.",
+    409,
+    "stale-write",
+  );
 }
 
 function parseProfileInput(value: unknown): CriteriaProfileInput {
