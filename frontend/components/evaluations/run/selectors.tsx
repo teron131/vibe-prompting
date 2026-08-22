@@ -1,8 +1,7 @@
-/** Owns reusable score-profile and model selection controls shared by both evaluation run workflows. */
+/** Owns reusable criteria-set and model selection controls shared by both evaluation run workflows. */
 
 "use client";
 
-import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
@@ -26,9 +25,9 @@ export function CriteriaProfilePicker({
 }) {
   return (
     <fieldset className={className}>
-      <legend className="sr-only">Score profiles</legend>
+      <legend className="sr-only">Criteria sets</legend>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <span className="font-medium">Score profiles</span>
+        <span className="font-medium">Criteria sets</span>
         <div className="flex items-center gap-3">
           <span className="text-muted-foreground">{selected.length} selected</span>
           {actions}
@@ -112,7 +111,6 @@ export function EvaluationModelPicker({
               onClick={() => onChange(toggleSelection(selected, model.id))}
               type="button"
             >
-              {active ? <Check aria-hidden="true" className="size-3.5 shrink-0" /> : null}
               <ModelIdentityLabel labelClassName="font-medium leading-none" model={model} />
             </button>
           );

@@ -70,6 +70,14 @@ function resultHref(filters: ResultFilters): string {
 
 function filterParams(filters: ResultFilters): URLSearchParams {
   const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) if (value) search.set(key, value);
+  for (const [key, value] of Object.entries(filters)) {
+    if (!value) continue;
+    if (Array.isArray(value)) {
+      const parameter = key === "targetModelIds" ? "targetModelId" : "judgeModelId";
+      for (const item of value) search.append(parameter, item);
+      continue;
+    }
+    search.set(key, value);
+  }
   return search;
 }

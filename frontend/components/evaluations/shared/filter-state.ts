@@ -12,7 +12,7 @@ export function parseEvaluationFilters(search: string): EvaluationWorkspaceFilte
     criterion: params.get("criterion") ?? undefined,
     dataType: (params.get("dataType") as EvaluationDataType | null) ?? undefined,
     from: params.get("from") ?? undefined,
-    judgeModelId: params.get("judgeModelId") ?? undefined,
+    judgeModelIds: repeated(params, "judgeModelId"),
     promptId: params.get("promptId") ?? undefined,
     promptRevisionId: params.get("promptRevisionId") ?? undefined,
     runId: params.get("runId") ?? undefined,
@@ -20,14 +20,22 @@ export function parseEvaluationFilters(search: string): EvaluationWorkspaceFilte
     searchField:
       (params.get("searchField") as EvaluationWorkspaceFilters["searchField"] | null) ?? undefined,
     status: (params.get("status") as EvaluationRunStatus | null) ?? undefined,
-    targetModelId: params.get("targetModelId") ?? undefined,
+    targetModelIds: repeated(params, "targetModelId"),
     to: params.get("to") ?? undefined,
   };
 }
 
 export function evaluationFilterParams(filters: EvaluationWorkspaceFilters): URLSearchParams {
   const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
+  for (const [key, value] of Object.entries(filters)) {
+    if (!value) continue;
+    if (key === "targetModelIds" || key === "judgeModelIds") {
+      const parameter = key === "targetModelIds" ? "targetModelId" : "judgeModelId";
+      for (const item of value as string[]) params.append(parameter, item);
+      continue;
+    }
+    params.set(key, value as string);
+  }
   return params;
 }
 
@@ -38,4 +46,9 @@ export function analyticsFilterParams(filters: EvaluationWorkspaceFilters): URLS
   if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) params.set("from", `${from}T00:00:00`);
   if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) params.set("to", `${to}T23:59:59.999`);
   return params;
+}
+
+function repeated(params: URLSearchParams, key: string): string[] | undefined {
+  const values = params.getAll(key);
+  return values.length > 0 ? values : undefined;
 }

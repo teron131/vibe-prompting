@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ModelIdentityLabel } from "@/components/chat/model-selector";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/components/ui/utils";
@@ -29,7 +30,12 @@ import { requestJson } from "@/shared/api";
 import { formatDateTime } from "@/shared/date";
 
 import { EvaluationHelper } from "../shared/evaluation-helper";
-import { ClearFilters, FilterSelect, MoreFilters } from "../shared/filter-controls";
+import {
+  ClearFilters,
+  FilterSelect,
+  MoreFilters,
+  MultiFilterSelect,
+} from "../shared/filter-controls";
 import { analyticsFilterParams, parseEvaluationFilters } from "../shared/filter-state";
 import { buildCriterionRows, type CriterionRow, formatDuration, formatPercent } from "./model";
 
@@ -65,7 +71,7 @@ export function EvaluationAnalyticsDashboard() {
     setReady(true);
   }, []);
 
-  const currentComparisonValue = comparisonDimension ? filters[comparisonDimension] : undefined;
+  const currentComparisonValue = currentComparison(filters, comparisonDimension);
   const hasComparison = Boolean(
     comparisonDimension &&
     currentComparisonValue &&
@@ -83,14 +89,18 @@ export function EvaluationAnalyticsDashboard() {
         hasComparison && comparisonDimension
           ? fetchAnalytics({
               ...filters,
-              [comparisonDimension]: baselineValue,
+              ...(comparisonDimension === "targetModelId"
+                ? { targetModelIds: [baselineValue] }
+                : { promptRevisionId: baselineValue }),
             })
           : Promise.resolve(undefined);
       const comparisonFacetRequest =
         comparisonDimension && currentComparisonValue
           ? fetchAnalytics({
               ...filters,
-              [comparisonDimension]: undefined,
+              ...(comparisonDimension === "targetModelId"
+                ? { targetModelIds: undefined }
+                : { promptRevisionId: undefined }),
             })
           : Promise.resolve(undefined);
       const [nextData, nextBaseline, nextComparisonSource] = await Promise.all([
@@ -246,7 +256,7 @@ function AnalyticsFilters({
     value: EvaluationWorkspaceFilters[Key],
   ): void;
 }) {
-  const currentComparisonValue = comparisonDimension ? filters[comparisonDimension] : undefined;
+  const currentComparisonValue = currentComparison(filters, comparisonDimension);
   const hiddenActiveCount = [filters.status, filters.dataType, filters.from, filters.to].filter(
     Boolean,
   ).length;
@@ -255,8 +265,8 @@ function AnalyticsFilters({
     [
       filters.promptId,
       filters.promptRevisionId,
-      filters.targetModelId,
-      filters.judgeModelId,
+      filters.targetModelIds?.length,
+      filters.judgeModelIds?.length,
       comparisonDimension,
     ].filter(Boolean).length;
   const baselineOptions =
@@ -287,7 +297,7 @@ function AnalyticsFilters({
         <FilterSelect
           className="w-auto max-w-[14rem] flex-1 basis-40"
           label="Prompt"
-          onChange={(event) => updateFilter("promptId", event.target.value || undefined)}
+          onValueChange={(value) => updateFilter("promptId", value || undefined)}
           value={filters.promptId ?? ""}
         >
           <option value="">All prompts</option>
@@ -300,7 +310,7 @@ function AnalyticsFilters({
         <FilterSelect
           className="w-auto max-w-[14rem] flex-1 basis-40 font-mono"
           label="Prompt revision"
-          onChange={(event) => updateFilter("promptRevisionId", event.target.value || undefined)}
+          onValueChange={(value) => updateFilter("promptRevisionId", value || undefined)}
           value={filters.promptRevisionId ?? ""}
         >
           <option value="">All revisions</option>
@@ -310,45 +320,46 @@ function AnalyticsFilters({
             </option>
           ))}
         </FilterSelect>
-        <FilterSelect
-          className="w-auto max-w-[14rem] flex-1 basis-40"
+        <MultiFilterSelect
+          allLabel="All target models"
+          className="min-w-0 flex-1 basis-40"
           label="Target model"
-          onChange={(event) => updateFilter("targetModelId", event.target.value || undefined)}
-          value={filters.targetModelId ?? ""}
+          onValuesChange={(values) =>
+            updateFilter("targetModelIds", values.length ? values : undefined)
+          }
+          values={filters.targetModelIds ?? []}
         >
-          <option value="">All target models</option>
           {facets.targetModels.map((facet) => (
             <option key={facet.value} value={facet.value}>
-              {facet.value} ({facet.count})
+              <ModelFacetLabel count={facet.count} modelId={facet.value} />
             </option>
           ))}
-        </FilterSelect>
-        <FilterSelect
-          className="w-auto max-w-[14rem] flex-1 basis-40"
+        </MultiFilterSelect>
+        <MultiFilterSelect
+          allLabel="All judges"
+          className="min-w-0 flex-1 basis-40"
           label="Judge"
-          onChange={(event) => updateFilter("judgeModelId", event.target.value || undefined)}
-          value={filters.judgeModelId ?? ""}
+          onValuesChange={(values) =>
+            updateFilter("judgeModelIds", values.length ? values : undefined)
+          }
+          values={filters.judgeModelIds ?? []}
         >
-          <option value="">All judges</option>
           {facets.judges.map((facet) => (
             <option key={facet.value} value={facet.value}>
-              {facet.value} ({facet.count})
+              <ModelFacetLabel count={facet.count} modelId={facet.value} />
             </option>
           ))}
-        </FilterSelect>
+        </MultiFilterSelect>
         <MoreFilters
           activeCount={hiddenActiveCount}
-          contentClassName="flex flex-wrap gap-2"
+          contentClassName="grid grid-cols-2 gap-2"
           hint="status · type · dates"
         >
           <FilterSelect
-            className="w-auto max-w-[14rem] flex-1 basis-40"
+            className="w-full"
             label="Run status"
-            onChange={(event) =>
-              updateFilter(
-                "status",
-                (event.target.value || undefined) as EvaluationRunStatus | undefined,
-              )
+            onValueChange={(value) =>
+              updateFilter("status", (value || undefined) as EvaluationRunStatus | undefined)
             }
             value={filters.status ?? ""}
           >
@@ -360,13 +371,10 @@ function AnalyticsFilters({
             ))}
           </FilterSelect>
           <FilterSelect
-            className="w-auto max-w-[14rem] flex-1 basis-40"
+            className="w-full"
             label="Score type"
-            onChange={(event) =>
-              updateFilter(
-                "dataType",
-                (event.target.value || undefined) as EvaluationDataType | undefined,
-              )
+            onValueChange={(value) =>
+              updateFilter("dataType", (value || undefined) as EvaluationDataType | undefined)
             }
             value={filters.dataType ?? ""}
           >
@@ -395,7 +403,7 @@ function AnalyticsFilters({
         <FilterSelect
           className="w-auto basis-40"
           label="Compare by"
-          onChange={(event) => updateComparison(event.target.value)}
+          onValueChange={updateComparison}
           value={comparisonDimension ?? ""}
         >
           <option value="">No baseline</option>
@@ -409,7 +417,7 @@ function AnalyticsFilters({
               <FilterSelect
                 className="w-auto basis-40"
                 label="Baseline"
-                onChange={(event) => setBaselineValue(event.target.value)}
+                onValueChange={setBaselineValue}
                 value={baselineValue}
               >
                 <option value="">Choose a baseline</option>
@@ -455,6 +463,25 @@ function DateFilter({
         value={value}
       />
     </label>
+  );
+}
+
+function currentComparison(
+  filters: EvaluationWorkspaceFilters,
+  dimension: ComparisonDimension | undefined,
+): string | undefined {
+  if (dimension === "targetModelId") {
+    return filters.targetModelIds?.length === 1 ? filters.targetModelIds[0] : undefined;
+  }
+  return dimension === "promptRevisionId" ? filters.promptRevisionId : undefined;
+}
+
+function ModelFacetLabel({ count, modelId }: { count: number; modelId: string }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <ModelIdentityLabel modelId={modelId} />
+      <span className="shrink-0 text-muted-foreground">({count})</span>
+    </span>
   );
 }
 

@@ -3,38 +3,69 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { type ReactNode, type SelectHTMLAttributes, useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 
-import { Select } from "@/components/ui/select";
+import { MultiSelect, Select } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
+
+const filterTriggerClassName = "px-2 shadow-none hover:border-foreground/30 hover:bg-accent/40";
 
 /** Carries its own name in the default option, so the control needs no separate label above it. */
 export function FilterSelect({
   className,
+  children,
   label,
+  onValueChange,
   value,
-  ...props
-}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; value: string }) {
+}: {
+  children: ReactNode;
+  className?: string;
+  label: string;
+  onValueChange(value: string): void;
+  value: string;
+}) {
   return (
-    <label
-      className={cn(
-        "flex h-8 min-w-0 items-center rounded-md border border-input bg-background px-2 transition-colors hover:border-foreground/30 hover:bg-accent/40 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring",
-        value
-          ? "border-foreground/40 bg-accent/50 font-medium text-foreground hover:bg-accent/70"
-          : "text-muted-foreground",
-        className,
-      )}
+    <Select
+      aria-label={label}
+      className={cn("h-8 min-w-0 text-xs", className)}
+      onValueChange={onValueChange}
+      prefix={<FilterLabel>{label}</FilterLabel>}
+      triggerClassName={filterTriggerClass(value.length > 0)}
+      value={value}
     >
-      <span className="shrink-0 font-mono text-[11px] uppercase text-muted-foreground">
-        {label}
-      </span>
-      <Select
-        aria-label={label}
-        className="h-7 min-w-0 flex-1 border-0 bg-transparent px-1.5 text-xs shadow-none focus-visible:outline-none"
-        value={value}
-        {...props}
-      />
-    </label>
+      {children}
+    </Select>
+  );
+}
+
+/** Presents repeated filter values with the same compact grammar while keeping the menu open for fast selection. */
+export function MultiFilterSelect({
+  allLabel,
+  className,
+  children,
+  label,
+  onValuesChange,
+  values,
+}: {
+  allLabel: ReactNode;
+  children: ReactNode;
+  className?: string;
+  label: string;
+  onValuesChange(values: string[]): void;
+  values: string[];
+}) {
+  return (
+    <MultiSelect
+      allLabel={allLabel}
+      aria-label={label}
+      className={cn("h-8 min-w-0 text-xs", className)}
+      onValuesChange={onValuesChange}
+      prefix={<FilterLabel>{label}</FilterLabel>}
+      triggerClassName={filterTriggerClass(values.length > 0)}
+      values={values}
+    >
+      {children}
+    </MultiSelect>
   );
 }
 
@@ -99,5 +130,22 @@ export function MoreFilters({
         </div>
       ) : null}
     </>
+  );
+}
+
+function FilterLabel({ children }: { children: ReactNode }) {
+  return (
+    <span className="shrink-0 font-mono text-[11px] uppercase text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+function filterTriggerClass(active: boolean): string {
+  return cn(
+    filterTriggerClassName,
+    active
+      ? "border-foreground/40 bg-accent/50 font-medium text-foreground hover:bg-accent/70"
+      : "text-muted-foreground",
   );
 }

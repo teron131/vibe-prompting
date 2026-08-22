@@ -4,7 +4,6 @@
 
 import {
   ChevronRight,
-  CircleAlert,
   LoaderCircle,
   Plus,
   RotateCcw,
@@ -22,9 +21,10 @@ import {
   CriteriaProfilePicker,
   EvaluationModelPicker,
 } from "@/components/evaluations/run/selectors";
+import { EvaluationPageBar } from "@/components/evaluations/shared/evaluation-page-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ResizableDivider } from "@/components/ui/resizable-divider";
+import { maximumResizablePanelWidth, ResizableDivider } from "@/components/ui/resizable-divider";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
@@ -294,7 +294,7 @@ function EvaluationBatchRunBuilder() {
 
   function saveConfiguration() {
     const name = savedName.trim();
-    if (!name) return toast.error("Name this configuration before saving it.");
+    if (!name) return toast.error("Name this setup before saving it.");
     const replaced = savedConfigurations.some((configuration) => configuration.name === name);
     const next = [
       ...savedConfigurations.filter((configuration) => configuration.name !== name),
@@ -333,26 +333,39 @@ function EvaluationBatchRunBuilder() {
   const tracksCurrentSetup = Boolean(
     request && trackedBatch && sameBatchRequest(request, trackedBatch.request),
   );
-  const missingRequirements = getMissingRequirements({
+  const setupRequirements = getSetupRequirements({
     cases,
     configurationIds,
     judges,
     promptId,
+    repetitions,
+    selectedPrompt,
     targetModelIds,
   });
+  const completeCaseCount = cases.filter((value) => value.trim()).length;
+  const selectedCriteriaSets = profiles.filter(({ id }) => configurationIds.includes(id));
+  const executionCount =
+    preview?.executionCount ?? selectedCriteriaSets.length * targetModelIds.length * repetitions;
+  const targetOutputCount = preview?.targetCaseInvocations ?? executionCount * completeCaseCount;
+  const judgeDecisionCount =
+    preview?.judgeScoreDecisions ??
+    targetModelIds.length *
+      repetitions *
+      completeCaseCount *
+      judges.length *
+      selectedCriteriaSets.reduce((total, profile) => total + profile.criteria.length, 0);
   const maximumManifestWidth = () => {
-    const workspaceWidth =
-      workspaceRef.current?.getBoundingClientRect().width ??
-      MANIFEST_MAX_WIDTH + RUN_FORM_MIN_WIDTH;
-    return Math.min(
-      MANIFEST_MAX_WIDTH,
-      Math.max(MANIFEST_MIN_WIDTH, workspaceWidth - RUN_FORM_MIN_WIDTH),
-    );
+    return maximumResizablePanelWidth({
+      contentMinWidth: RUN_FORM_MIN_WIDTH,
+      maxWidth: MANIFEST_MAX_WIDTH,
+      minWidth: MANIFEST_MIN_WIDTH,
+      workspace: workspaceRef.current,
+    });
   };
 
   return (
     <div
-      className="mx-auto grid w-full max-w-[1480px] grid-cols-1 bg-muted/15 @min-[720px]:grid-cols-[minmax(0,1fr)_1px_var(--run-manifest-width)] @min-[720px]:[--run-manifest-width:18rem] @min-[900px]:[--run-manifest-width:20rem] @min-[1200px]:[--run-manifest-width:25rem]"
+      className="mx-auto grid min-h-[calc(100dvh-var(--header-height))] w-full max-w-[1480px] grid-cols-1 @min-[720px]:grid-cols-[minmax(0,1fr)_1px_var(--run-manifest-width)] @min-[720px]:[--run-manifest-width:18rem] @min-[900px]:[--run-manifest-width:20rem] @min-[1200px]:[--run-manifest-width:25rem]"
       ref={workspaceRef}
       style={
         manifestWidth === undefined
@@ -360,205 +373,205 @@ function EvaluationBatchRunBuilder() {
           : ({ "--run-manifest-width": `${manifestWidth}px` } as CSSProperties)
       }
     >
-      <section className="min-w-0 bg-background px-4 py-5 sm:px-6 xl:px-10 xl:py-8">
-        <div className="mb-6 max-w-2xl xl:mb-8">
-          <h2 className="text-xl font-semibold tracking-[-0.02em]">
-            Configure an evaluation matrix
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Choose the target, score profiles, cases, and repetitions. The manifest at right is the
-            exact server-expanded workload.
+      <section className="min-w-0 bg-background">
+        <EvaluationPageBar sticky>
+          <h1 className="shrink-0 text-base font-semibold tracking-tight">Evaluation run</h1>
+          <p className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground @min-[920px]:block">
+            Configure prompt, models, criteria, cases, and repetitions.
           </p>
-        </div>
+          <p className="ml-auto shrink-0 font-mono text-[11px] uppercase text-muted-foreground">
+            {count(cases.length, "case")} · {repetitions}×
+          </p>
+        </EvaluationPageBar>
 
-        <RunSection
-          description="Run one active prompt revision through the AI SDK agent."
-          title="Target"
-        >
-          <Field label="Prompt">
-            <Select onChange={(event) => setPromptId(event.target.value)} value={promptId}>
-              <option value="">Choose a prompt revision</option>
-              {prompts.map((prompt) => (
-                <option key={prompt.id} value={prompt.id}>
-                  {prompt.title} · v{prompt.revisionNumber}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <div className="grid gap-3 py-2 text-sm sm:grid-cols-2">
-            <Definition
-              label="Target profile"
-              value={
-                !promptId
-                  ? "Choose a prompt first"
-                  : targetProfile === undefined
-                    ? "Loading…"
-                    : (targetProfile?.name ?? "AI SDK agent")
-              }
-            />
-            <Definition
-              label="Runtime"
-              value={
-                !promptId
-                  ? "—"
-                  : targetProfile
-                    ? `${targetProfile.configuration.maxSteps ?? "AI SDK default"} steps · ${targetProfile.configuration.tools?.length ? targetProfile.configuration.tools.join(", ") : "no tools"}`
-                    : "AI SDK defaults"
-              }
-            />
-          </div>
-          <EvaluationModelPicker
-            className="mt-4"
-            label="Target models"
-            models={models}
-            onChange={setTargetModelIds}
-            selected={targetModelIds}
-          />
-        </RunSection>
-
-        <RunSection
-          description="Each selected profile becomes an independent execution lane."
-          title="Score profiles"
-        >
-          <CriteriaProfilePicker
-            actions={
-              <div className="flex items-center gap-3 text-xs">
-                <button
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => setConfigurationIds(profiles.map(({ id }) => id))}
-                  type="button"
-                >
-                  Select all
-                </button>
-                <button
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => setConfigurationIds([])}
-                  type="button"
-                >
-                  Clear
-                </button>
-                <Link
-                  className="inline-flex items-center gap-1.5 font-medium hover:underline"
-                  href="/evaluations/criteria"
-                >
-                  <SlidersHorizontal className="size-3.5" /> Manage
-                </Link>
-              </div>
-            }
-            onChange={setConfigurationIds}
-            profiles={profiles}
-            selected={configurationIds}
-          />
-        </RunSection>
-
-        <RunSection
-          description="Every judge scores every criterion for every case in an execution."
-          title="Judges"
-        >
-          <EvaluationModelPicker
-            className="mt-4"
-            label="Judge models"
-            models={models}
-            onChange={setJudges}
-            selected={judges}
-          />
-        </RunSection>
-
-        <RunSection
-          description="These inputs run once inside every profile, model, and repetition combination."
-          title="Cases"
-        >
-          <div className="divide-y">
-            {cases.map((value, index) => (
-              <div className="flex gap-2 py-3" key={index}>
-                <span className="mt-2 w-6 shrink-0 font-mono text-[11px] text-muted-foreground">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <Textarea
-                  aria-label={`Case ${index + 1}`}
-                  className="min-h-20 shadow-none"
-                  onChange={(event) =>
-                    setCases(
-                      cases.map((item, itemIndex) =>
-                        itemIndex === index ? event.target.value : item,
-                      ),
-                    )
-                  }
-                  value={value}
-                />
-                <Button
-                  aria-label={`Remove case ${index + 1}`}
-                  disabled={cases.length === 1}
-                  onClick={() => setCases(cases.filter((_, itemIndex) => itemIndex !== index))}
-                  size="icon"
-                  variant="ghost"
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </div>
-            ))}
-          </div>
-          <Button
-            className="mt-3"
-            onClick={() => setCases([...cases, ""])}
-            size="sm"
-            variant="outline"
+        <div className="px-4 pb-12 sm:px-6 min-[840px]:px-7 xl:px-10">
+          <RunSection
+            description="Choose the prompt revision, target models that answer, and judge models that score."
+            title="Prompt and models"
           >
-            <Plus className="size-3.5" />
-            Add case
-          </Button>
-        </RunSection>
-
-        <RunSection
-          description="Repeat each target and score-profile combination to measure output variance."
-          title="Repetitions"
-        >
-          <Field label="Runs per combination">
-            <Input
-              className="max-w-40"
-              max={5}
-              min={1}
-              onChange={(event) =>
-                setRepetitions(Math.max(1, Math.min(5, Number(event.target.value) || 1)))
-              }
-              type="number"
-              value={repetitions}
-            />
-          </Field>
-        </RunSection>
-
-        <RunSection
-          description="Saved configurations stay in this browser and can be loaded before a run."
-          title="Saved configuration"
-        >
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <Select defaultValue="" onChange={(event) => loadConfiguration(event.target.value)}>
-              <option disabled value="">
-                Load saved configuration…
-              </option>
-              {savedConfigurations.map(({ name }) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </Select>
-            <div className="flex gap-2">
-              <Input
-                onChange={(event) => setSavedName(event.target.value)}
-                placeholder="Configuration name"
-                value={savedName}
-              />
-              <Button
-                aria-label="Save configuration"
-                onClick={saveConfiguration}
-                size="icon"
-                variant="outline"
-              >
-                <Save className="size-3.5" />
-              </Button>
+            <div className="grid gap-4 @min-[980px]:grid-cols-[minmax(18rem,1fr)_minmax(16rem,0.8fr)]">
+              <Field label="Prompt revision">
+                <Select onValueChange={setPromptId} value={promptId}>
+                  <option value="">Choose a prompt revision</option>
+                  {prompts.map((prompt) => (
+                    <option key={prompt.id} value={prompt.id}>
+                      {prompt.title} · v{prompt.revisionNumber}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <dl className="grid grid-cols-2 divide-x border-y text-xs">
+                <Definition
+                  label="Agent setup"
+                  value={
+                    !promptId
+                      ? "Choose a prompt"
+                      : targetProfile === undefined
+                        ? "Loading…"
+                        : (targetProfile?.name ?? "AI SDK agent")
+                  }
+                />
+                <Definition
+                  label="Runtime"
+                  value={
+                    !promptId
+                      ? "—"
+                      : targetProfile
+                        ? `${targetProfile.configuration.maxSteps ?? "Default"} steps · ${targetProfile.configuration.tools?.length ? targetProfile.configuration.tools.join(", ") : "no tools"}`
+                        : "AI SDK defaults"
+                  }
+                />
+              </dl>
             </div>
-          </div>
-        </RunSection>
+            <EvaluationModelPicker
+              className="mt-4"
+              label="Target models"
+              models={models}
+              onChange={setTargetModelIds}
+              selected={targetModelIds}
+            />
+            <EvaluationModelPicker
+              className="mt-4"
+              label="Judge models"
+              models={models}
+              onChange={setJudges}
+              selected={judges}
+            />
+          </RunSection>
+
+          <RunSection
+            description="Choose reusable criteria sets; every judge applies every criterion in each selected set."
+            title="Criteria"
+          >
+            <CriteriaProfilePicker
+              actions={
+                <div className="flex items-center gap-3 text-xs">
+                  <button
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => setConfigurationIds(profiles.map(({ id }) => id))}
+                    type="button"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => setConfigurationIds([])}
+                    type="button"
+                  >
+                    Clear
+                  </button>
+                  <Link
+                    className="inline-flex items-center gap-1.5 font-medium hover:underline"
+                    href="/evaluations/criteria"
+                  >
+                    <SlidersHorizontal className="size-3.5" /> Manage
+                  </Link>
+                </div>
+              }
+              onChange={setConfigurationIds}
+              profiles={profiles}
+              selected={configurationIds}
+            />
+          </RunSection>
+
+          <RunSection
+            action={
+              <Button onClick={() => setCases([...cases, ""])} size="sm" variant="outline">
+                <Plus className="size-3.5" /> Add case
+              </Button>
+            }
+            description="Each input runs through every selected criteria set, target model, and repetition."
+            title="Cases"
+          >
+            <div className="overflow-hidden border-y">
+              <div className="grid grid-cols-[3rem_minmax(0,1fr)_2.75rem] items-center bg-muted/40 text-[11px] uppercase text-muted-foreground">
+                <span className="px-3 py-2 font-mono">Case</span>
+                <span className="px-3 py-2 font-mono">Input</span>
+                <span className="sr-only">Actions</span>
+              </div>
+              <div className="divide-y">
+                {cases.map((value, index) => (
+                  <div
+                    className="grid grid-cols-[3rem_minmax(0,1fr)_2.75rem] items-start"
+                    key={index}
+                  >
+                    <span className="px-3 py-3 font-mono text-[11px] text-muted-foreground">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <Textarea
+                      aria-label={`Case ${index + 1}`}
+                      className="my-2 min-h-16 rounded-none border-0 px-3 shadow-none focus-visible:ring-1"
+                      onChange={(event) =>
+                        setCases(
+                          cases.map((item, itemIndex) =>
+                            itemIndex === index ? event.target.value : item,
+                          ),
+                        )
+                      }
+                      placeholder="Enter the input to evaluate"
+                      value={value}
+                    />
+                    <Button
+                      aria-label={`Remove case ${index + 1}`}
+                      className="mt-2"
+                      disabled={cases.length === 1}
+                      onClick={() => setCases(cases.filter((_, itemIndex) => itemIndex !== index))}
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </RunSection>
+
+          <RunSection
+            description="Set repetitions and save or reuse this browser's setup."
+            title="Run options"
+          >
+            <div className="grid gap-4 @min-[560px]:grid-cols-[8rem_minmax(12rem,1fr)] @min-[1040px]:grid-cols-[8rem_minmax(12rem,0.8fr)_minmax(14rem,1fr)]">
+              <Field label="Repetitions">
+                <Input
+                  max={5}
+                  min={1}
+                  onChange={(event) =>
+                    setRepetitions(Math.max(1, Math.min(5, Number(event.target.value) || 1)))
+                  }
+                  type="number"
+                  value={repetitions}
+                />
+              </Field>
+              <Field label="Load setup">
+                <Select defaultValue="" onValueChange={loadConfiguration}>
+                  <option disabled value="">
+                    Saved setups…
+                  </option>
+                  {savedConfigurations.map(({ name }) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <div className="@min-[560px]:col-span-2 @min-[1040px]:col-span-1">
+                <Field label="Save current setup">
+                  <div className="flex gap-2">
+                    <Input
+                      onChange={(event) => setSavedName(event.target.value)}
+                      placeholder="Setup name"
+                      value={savedName}
+                    />
+                    <Button aria-label="Save setup" onClick={saveConfiguration} size="icon">
+                      <Save className="size-3.5" />
+                    </Button>
+                  </div>
+                </Field>
+              </div>
+            </div>
+          </RunSection>
+        </div>
       </section>
 
       <ResizableDivider
@@ -573,122 +586,153 @@ function EvaluationBatchRunBuilder() {
         size={manifestWidth}
       />
 
-      <aside className="border-t bg-muted/35 @min-[720px]:border-t-0" ref={manifestRef}>
-        <div className="flex min-h-[calc(100dvh-var(--header-height))] flex-col px-4 py-5 sm:px-6 @min-[720px]:sticky @min-[720px]:top-0 @min-[720px]:max-h-[calc(100dvh-var(--header-height))] @min-[720px]:overflow-y-auto @min-[720px]:px-5 xl:px-6 xl:py-8">
-          {trackedBatch ? (
-            <BatchMonitor
-              completedRuns={completedRuns}
-              dismiss={dismissBatch}
-              error={batchStatusError}
-              failedRuns={failedRuns}
-              finishedRuns={finishedRuns}
-              models={models}
-              progress={progress}
-              retry={() => setBatchRetry((current) => current + 1)}
-              runningRuns={runningRuns}
-              runs={startedRuns}
-              totalRuns={trackedRunCount}
-              tracksCurrentSetup={tracksCurrentSetup}
-            />
-          ) : null}
-          <div className="flex items-center justify-between gap-3">
+      <aside className="border-t bg-muted/15 @min-[720px]:border-t-0" ref={manifestRef}>
+        <div className="flex min-h-[calc(100dvh-var(--header-height))] flex-col @min-[720px]:sticky @min-[720px]:top-0 @min-[720px]:max-h-[calc(100dvh-var(--header-height))] @min-[720px]:overflow-y-auto">
+          <EvaluationPageBar className="shrink-0" inset="panel">
             <h2 className="text-sm font-semibold">Execution manifest</h2>
-            {previewing && (
+            {previewing ? (
               <LoaderCircle
                 aria-label="Refreshing manifest"
                 className="size-4 animate-spin text-muted-foreground"
               />
-            )}
-          </div>
-          {preview ? (
-            <>
-              <div className="mt-5 rounded-xl bg-background/70 px-4 py-3">
-                <p className="flex items-baseline gap-2">
-                  <strong className="font-mono text-2xl font-semibold tabular-nums">
-                    {preview.targetCaseInvocations.toLocaleString()}
-                  </strong>
-                  <span className="text-sm font-medium">
-                    target output{preview.targetCaseInvocations === 1 ? "" : "s"}
-                  </span>
-                </p>
-                <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-                  {describeWorkload(request)}
-                </p>
-                <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-                  Saved as {count(preview.executionCount, "run")}
-                </p>
-              </div>
-              <div className="mt-5 divide-y">
-                {preview.jobs.slice(0, 200).map((job) => (
-                  <div
-                    className="grid grid-cols-[2rem_minmax(0,1fr)] items-center gap-2 py-1.5 text-xs"
-                    key={job.id}
-                  >
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {String(job.executionNumber).padStart(2, "0")}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium leading-4">
-                        {job.configurationName}
-                      </span>
-                      <span className="flex min-w-0 items-center gap-1 text-[11px] leading-4 text-muted-foreground">
-                        <ModelIdentityLabel
-                          className="min-w-0"
-                          labelClassName="truncate"
-                          model={models.find(({ id }) => id === job.targetModelId)}
-                          modelId={job.targetModelId}
-                        />
-                        <span className="shrink-0">· repetition {job.repetition}</span>
-                      </span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {preview.jobs.length > 200 && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Showing the first 200 of {preview.jobs.length} executions. All executions will
-                  run.
-                </p>
-              )}
-              <Button
-                className="mt-5 w-full"
-                disabled={running || batchRunning}
-                onClick={startBatch}
-              >
-                {running ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : batchRunning ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : batchFinished && tracksCurrentSetup ? (
-                  <RotateCcw className="size-4" />
-                ) : null}
-                {running
-                  ? "Starting matrix…"
-                  : batchRunning
-                    ? `Running ${runningRuns} of ${trackedRunCount}`
-                    : batchFinished && tracksCurrentSetup
-                      ? "Run matrix again"
-                      : `Run ${preview.executionCount} executions`}
-              </Button>
-            </>
-          ) : (
-            <>
-              <div className="mt-5 flex gap-3 py-5 text-sm text-muted-foreground">
-                <CircleAlert className="mt-0.5 size-4 shrink-0" />
-                <div>
-                  <p className="font-medium text-foreground">Complete setup to run</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-4 leading-6">
-                    {missingRequirements.map((requirement) => (
-                      <li key={requirement}>{requirement}</li>
-                    ))}
-                  </ul>
+            ) : null}
+          </EvaluationPageBar>
+          <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-5">
+            {trackedBatch ? (
+              <BatchMonitor
+                completedRuns={completedRuns}
+                dismiss={dismissBatch}
+                error={batchStatusError}
+                failedRuns={failedRuns}
+                finishedRuns={finishedRuns}
+                models={models}
+                progress={progress}
+                retry={() => setBatchRetry((current) => current + 1)}
+                runningRuns={runningRuns}
+                runs={startedRuns}
+                totalRuns={trackedRunCount}
+                tracksCurrentSetup={tracksCurrentSetup}
+              />
+            ) : null}
+            <div>
+              <p className="pb-3 text-xs font-medium">Setup readiness</p>
+              <div className="border-y">
+                <div className="grid grid-cols-[6.75rem_minmax(0,1fr)] gap-3 bg-muted/40 px-2 py-2 font-mono text-[10px] uppercase text-muted-foreground">
+                  <span>Requirement</span>
+                  <span className="text-right">Status</span>
+                </div>
+                <div className="divide-y">
+                  {setupRequirements.map((requirement) => (
+                    <div
+                      className="grid grid-cols-[6.75rem_minmax(0,1fr)] items-center gap-3 px-2 py-2.5 text-xs"
+                      key={requirement.label}
+                    >
+                      <span className="font-medium">{requirement.label}</span>
+                      <div
+                        className={cn(
+                          "min-w-0 text-right",
+                          requirement.ready ? "text-foreground" : "text-muted-foreground",
+                        )}
+                      >
+                        {requirement.modelIds?.length ? (
+                          <div className="flex min-w-0 flex-col items-end gap-1">
+                            {requirement.modelIds.map((modelId) => (
+                              <ModelIdentityLabel
+                                className="max-w-full"
+                                key={modelId}
+                                labelClassName="truncate"
+                                model={models.find(({ id }) => id === modelId)}
+                                modelId={modelId}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="block truncate">{requirement.value}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <Button className="mt-auto w-full" disabled>
-                Run evaluation
-              </Button>
-            </>
-          )}
+            </div>
+            <div className="mt-4 grid grid-cols-3 border-y">
+              <ManifestFact label="Executions" value={executionCount} />
+              <ManifestFact label="Outputs" value={targetOutputCount} />
+              <ManifestFact label="Decisions" value={judgeDecisionCount} />
+            </div>
+            <WorkloadCalculation
+              cases={completeCaseCount}
+              criteriaSets={selectedCriteriaSets.length}
+              executions={executionCount}
+              outputs={targetOutputCount}
+              repetitions={repetitions}
+              targets={targetModelIds.length}
+            />
+            {preview ? (
+              <>
+                <div className="border-y">
+                  <div className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2 bg-muted/40 px-2 py-2 font-mono text-[10px] uppercase text-muted-foreground">
+                    <span>No.</span>
+                    <span>Execution lane</span>
+                  </div>
+                  <div className="divide-y">
+                    {preview.jobs.slice(0, 200).map((job) => (
+                      <div
+                        className="grid grid-cols-[2rem_minmax(0,1fr)] items-center gap-2 px-2 py-2 text-xs"
+                        key={job.id}
+                      >
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          {String(job.executionNumber).padStart(2, "0")}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium leading-4">
+                            {job.configurationName}
+                          </span>
+                          <span className="flex min-w-0 items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+                            <ModelIdentityLabel
+                              className="min-w-0"
+                              labelClassName="truncate"
+                              model={models.find(({ id }) => id === job.targetModelId)}
+                              modelId={job.targetModelId}
+                            />
+                            <span className="shrink-0">· repetition {job.repetition}</span>
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {preview.jobs.length > 200 && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Showing the first 200 of {preview.jobs.length} executions. All executions will
+                    run.
+                  </p>
+                )}
+              </>
+            ) : null}
+            <Button
+              className="mt-4 w-full"
+              disabled={!preview || running || batchRunning}
+              onClick={startBatch}
+            >
+              {running ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : batchRunning ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : batchFinished && tracksCurrentSetup ? (
+                <RotateCcw className="size-4" />
+              ) : null}
+              {running
+                ? "Starting matrix…"
+                : batchRunning
+                  ? `Running ${runningRuns} of ${trackedRunCount}`
+                  : batchFinished && tracksCurrentSetup
+                    ? "Run matrix again"
+                    : preview
+                      ? `Run ${preview.executionCount} executions`
+                      : "Run evaluation"}
+            </Button>
+          </div>
         </div>
       </aside>
     </div>
@@ -842,19 +886,24 @@ function BatchMonitor({
 }
 
 function RunSection({
+  action,
   children,
   description,
   title,
 }: {
+  action?: React.ReactNode;
   children: React.ReactNode;
   description: string;
   title: string;
 }) {
   return (
-    <section className="grid gap-4 py-6 @min-[860px]:grid-cols-[11rem_minmax(0,1fr)] @min-[860px]:gap-6 xl:py-7">
-      <div>
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+    <section className="border-b py-5 last:border-b-0">
+      <div className="flex items-start justify-between gap-4 pb-4">
+        <div>
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description}</p>
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
       </div>
       <div className="min-w-0">{children}</div>
     </section>
@@ -870,43 +919,108 @@ function Field({ children, label }: { children: React.ReactNode; label: string }
   );
 }
 
-function getMissingRequirements(input: {
+function getSetupRequirements(input: {
   cases: string[];
   configurationIds: string[];
   judges: string[];
   promptId: string;
+  repetitions: number;
+  selectedPrompt?: PromptSummary;
   targetModelIds: string[];
-}): string[] {
-  const missing: string[] = [];
-  if (!input.promptId) missing.push("Choose a prompt revision.");
-  if (input.targetModelIds.length === 0) missing.push("Select at least one target model.");
-  if (input.configurationIds.length === 0) missing.push("Select at least one score profile.");
-  if (input.judges.length === 0) missing.push("Select at least one judge model.");
-  if (input.cases.some((value) => !value.trim())) missing.push("Fill in every case input.");
-  return missing.length > 0 ? missing : ["Waiting for the exact manifest to finish loading."];
+}): Array<{ label: string; modelIds?: string[]; ready: boolean; value: string }> {
+  const completeCases = input.cases.filter((value) => value.trim()).length;
+  return [
+    {
+      label: "Prompt revision",
+      ready: Boolean(input.promptId),
+      value: input.selectedPrompt
+        ? `${input.selectedPrompt.title} · v${input.selectedPrompt.revisionNumber}`
+        : "Choose a revision",
+    },
+    {
+      label: "Target models",
+      modelIds: input.targetModelIds,
+      ready: input.targetModelIds.length > 0,
+      value: input.targetModelIds.length ? count(input.targetModelIds.length, "model") : "Required",
+    },
+    {
+      label: "Judge models",
+      modelIds: input.judges,
+      ready: input.judges.length > 0,
+      value: input.judges.length ? count(input.judges.length, "model") : "Required",
+    },
+    {
+      label: "Criteria",
+      ready: input.configurationIds.length > 0,
+      value: input.configurationIds.length
+        ? count(input.configurationIds.length, "set")
+        : "Required",
+    },
+    {
+      label: "Cases",
+      ready: completeCases === input.cases.length,
+      value:
+        completeCases === input.cases.length
+          ? count(completeCases, "case")
+          : `${input.cases.length - completeCases} incomplete`,
+    },
+    {
+      label: "Repetitions",
+      ready: input.repetitions > 0,
+      value: String(input.repetitions),
+    },
+  ];
 }
 
 function Definition({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <span className="block text-xs text-muted-foreground">{label}</span>
-      <span className="mt-1 block font-medium">{value}</span>
+    <div className="min-w-0 px-3 py-2">
+      <dt className="text-[10px] uppercase text-muted-foreground">{label}</dt>
+      <dd className="mt-1 truncate font-medium">{value}</dd>
     </div>
   );
 }
 
-/** Multiplies out only the axes the user actually varied, because an axis left at one contributes nothing and reads as noise next to the ones that do. */
-function describeWorkload(request: EvaluationBatchRequest | null): string {
-  if (!request) return "";
-  const axes = [
-    [request.configurations.length, "profile"],
-    [request.targetModelIds.length, "target"],
-    [request.repetitions, "repetition"],
-    [request.cases.length, "case"],
-  ] as const;
-  const varied = axes.filter(([value]) => value > 1);
-  if (varied.length === 0) return "one case on one target";
-  return varied.map(([value, noun]) => count(value, noun)).join(" × ");
+function ManifestFact({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="min-w-0 border-r px-2 py-3 last:border-r-0">
+      <strong className="block truncate font-mono text-lg font-semibold tabular-nums">
+        {value.toLocaleString()}
+      </strong>
+      <span className="mt-0.5 block truncate text-[10px] uppercase text-muted-foreground">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function WorkloadCalculation({
+  cases,
+  criteriaSets,
+  executions,
+  outputs,
+  repetitions,
+  targets,
+}: {
+  cases: number;
+  criteriaSets: number;
+  executions: number;
+  outputs: number;
+  repetitions: number;
+  targets: number;
+}) {
+  return (
+    <div className="py-3 text-[11px] leading-4">
+      <p className="font-mono text-foreground">
+        {count(criteriaSets, "criteria set")} × {count(targets, "target model")} ×{" "}
+        {count(repetitions, "repetition")} × {count(cases, "complete case")} ={" "}
+        {count(outputs, "target output")}
+      </p>
+      <p className="mt-1 text-muted-foreground">
+        {count(executions, "execution")}. Every execution is saved as a separate run.
+      </p>
+    </div>
+  );
 }
 
 function count(value: number, noun: string): string {

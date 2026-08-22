@@ -1,4 +1,4 @@
-/** Adapts bounded evaluation filters to database-side typed aggregates, facets, and chronological totals. */
+/** Adapts bounded evaluation filters to typed aggregates, switchable facets, and chronological totals. */
 
 import { getApplicationServices } from "vibe-prompting/server";
 
@@ -17,14 +17,14 @@ export async function GET(request: Request) {
       criterion: optional(params, "criterion"),
       dataType: optional(params, "dataType"),
       from: optional(params, "from"),
-      judgeModelId: optional(params, "judgeModelId"),
+      judgeModelIds: repeated(params, "judgeModelId"),
       promptId: optional(params, "promptId"),
       promptRevisionId: optional(params, "promptRevisionId"),
       runId: optional(params, "runId"),
       search: optional(params, "search") ?? optional(params, "q"),
       searchField: optional(params, "searchField"),
       status: optional(params, "status"),
-      targetModelId: optional(params, "targetModelId"),
+      targetModelIds: repeated(params, "targetModelId"),
       to: optional(params, "to"),
     });
     return Response.json(response satisfies EvaluationAnalyticsResponse, {
@@ -37,4 +37,12 @@ export async function GET(request: Request) {
 
 function optional(params: URLSearchParams, name: string): string | undefined {
   return params.get(name)?.trim() || undefined;
+}
+
+function repeated(params: URLSearchParams, name: string): string[] | undefined {
+  const values = params
+    .getAll(name)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return values.length > 0 ? values : undefined;
 }

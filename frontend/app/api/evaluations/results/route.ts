@@ -1,4 +1,4 @@
-/** Adapts bounded result filters and opaque cursors to the evaluation workspace's paginated result service. */
+/** Adapts bounded result filters and opaque cursors to paginated results with switchable self-excluding facets. */
 
 import { getApplicationServices } from "vibe-prompting/server";
 
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
       cursor: optional(params, "cursor"),
       dataType: optional(params, "dataType"),
       from: optional(params, "from"),
-      judgeModelId: optional(params, "judgeModelId"),
+      judgeModelIds: repeated(params, "judgeModelId"),
       limit: optional(params, "limit"),
       promptId: optional(params, "promptId"),
       promptRevisionId: optional(params, "promptRevisionId"),
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       search: optional(params, "search") ?? optional(params, "q"),
       searchField: optional(params, "searchField"),
       status: optional(params, "status"),
-      targetModelId: optional(params, "targetModelId"),
+      targetModelIds: repeated(params, "targetModelId"),
       to: optional(params, "to"),
     });
     return Response.json(response satisfies EvaluationResultsResponse, {
@@ -39,4 +39,12 @@ export async function GET(request: Request) {
 
 function optional(params: URLSearchParams, name: string): string | undefined {
   return params.get(name)?.trim() || undefined;
+}
+
+function repeated(params: URLSearchParams, name: string): string[] | undefined {
+  const values = params
+    .getAll(name)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return values.length > 0 ? values : undefined;
 }

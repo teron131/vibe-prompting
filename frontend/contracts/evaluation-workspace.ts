@@ -8,8 +8,8 @@ export type EvaluationWorkspaceFilters = {
   runId?: string;
   promptId?: string;
   promptRevisionId?: string;
-  targetModelId?: string;
-  judgeModelId?: string;
+  targetModelIds?: string[];
+  judgeModelIds?: string[];
   criterion?: string;
   dataType?: EvaluationDataType;
   status?: EvaluationRunStatus;

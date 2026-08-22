@@ -45,8 +45,8 @@ export function EvaluationTraceViewer({ item }: { item: EvaluationResultItem }) 
   const hiddenMessageCount = messages.length - visibleMessages.length;
 
   return (
-    <section className="py-5" aria-labelledby={`trace-heading-${item.caseId}`}>
-      <header className="flex flex-wrap items-start justify-between gap-3">
+    <section className="py-4" aria-labelledby={`trace-heading-${item.caseId}`}>
+      <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
             <MessagesSquare aria-hidden="true" className="size-4 text-muted-foreground" />
@@ -64,7 +64,7 @@ export function EvaluationTraceViewer({ item }: { item: EvaluationResultItem }) 
         </Button>
       </header>
 
-      <div className="mt-4 border-y bg-muted/10">
+      <div className="mt-3 border-y bg-muted/10">
         {hiddenMessageCount ? (
           <div className="flex items-center justify-between gap-4 border-b bg-muted/20 px-3 py-2 text-xs">
             <span className="font-medium">Earlier context</span>
@@ -74,7 +74,7 @@ export function EvaluationTraceViewer({ item }: { item: EvaluationResultItem }) 
             </span>
           </div>
         ) : null}
-        <div className="space-y-3 px-3 py-3">
+        <div className="space-y-2 px-3 py-2.5">
           {visibleMessages.map((message, index) => (
             <CompactTraceMessage key={`${message.role}-${index}`} message={message} />
           ))}
@@ -96,9 +96,9 @@ function CompactTraceMessage({ message }: { message: TraceMessage }) {
         </div>
         <p
           className={cn(
-            "line-clamp-3 whitespace-pre-wrap break-words text-left text-xs leading-5",
+            "line-clamp-2 whitespace-pre-wrap break-words text-left text-xs leading-5",
             user
-              ? "rounded-xl rounded-br-sm bg-[var(--user-bubble-bg)] px-3 py-2 text-[var(--user-bubble-fg)]"
+              ? "rounded-xl rounded-br-sm bg-[var(--user-bubble-bg)] px-3 py-1.5 text-[var(--user-bubble-fg)]"
               : "text-foreground",
           )}
         >

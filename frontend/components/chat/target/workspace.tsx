@@ -251,15 +251,16 @@ export function TargetWorkspace({
                 {runs.length ? (
                   <Select
                     aria-label="Target Run history"
-                    className="h-7 w-32 px-2 text-xs shadow-none sm:w-36"
-                    onChange={(event) => {
-                      if (!event.target.value) {
+                    className="h-7 w-32 sm:w-36"
+                    onValueChange={(value) => {
+                      if (!value) {
                         startNew();
                         return;
                       }
-                      router.replace(`/target-runs/${event.target.value}`);
-                      void loadRun(event.target.value);
+                      router.replace(`/target-runs/${value}`);
+                      void loadRun(value);
                     }}
+                    triggerClassName="px-2 text-xs shadow-none"
                     value={run?.id ?? ""}
                   >
                     <option value="">New run</option>

@@ -81,15 +81,11 @@ export function selectResultRows(
       AND
       (${filters.promptId}::uuid IS NULL OR evaluation_runs.prompt_id = ${filters.promptId})
       AND (${filters.promptRevisionId}::uuid IS NULL OR evaluation_runs.prompt_revision_id = ${filters.promptRevisionId})
-      AND (${filters.targetModelId}::text IS NULL OR evaluation_runs.target_model_id = ${filters.targetModelId})
+      AND ${targetModelsCondition(sql, filters)}
       AND (${filters.status}::text IS NULL OR evaluation_runs.status = ${filters.status})
       AND (${filters.from}::timestamptz IS NULL OR evaluation_runs.created_at >= ${filters.from})
       AND (${filters.to}::timestamptz IS NULL OR evaluation_runs.created_at <= ${filters.to})
-      AND (${filters.judgeModelId}::text IS NULL OR EXISTS (
-        SELECT 1 FROM evaluation_scores
-        WHERE evaluation_scores.case_id = evaluation_cases.id
-          AND evaluation_scores.judge_model_id = ${filters.judgeModelId}
-      ))
+      AND ${caseJudgeModelsCondition(sql, filters)}
       AND (${filters.dataType}::text IS NULL OR EXISTS (
         SELECT 1 FROM evaluation_scores
         WHERE evaluation_scores.case_id = evaluation_cases.id
@@ -198,13 +194,11 @@ export function countFilteredCases(sql: DatabaseClient, filters: NormalizedFilte
       AND
       (${filters.promptId}::uuid IS NULL OR evaluation_runs.prompt_id = ${filters.promptId})
       AND (${filters.promptRevisionId}::uuid IS NULL OR evaluation_runs.prompt_revision_id = ${filters.promptRevisionId})
-      AND (${filters.targetModelId}::text IS NULL OR evaluation_runs.target_model_id = ${filters.targetModelId})
+      AND ${targetModelsCondition(sql, filters)}
       AND (${filters.status}::text IS NULL OR evaluation_runs.status = ${filters.status})
       AND (${filters.from}::timestamptz IS NULL OR evaluation_runs.created_at >= ${filters.from})
       AND (${filters.to}::timestamptz IS NULL OR evaluation_runs.created_at <= ${filters.to})
-      AND (${filters.judgeModelId}::text IS NULL OR EXISTS (
-        SELECT 1 FROM evaluation_scores WHERE evaluation_scores.case_id = evaluation_cases.id AND evaluation_scores.judge_model_id = ${filters.judgeModelId}
-      ))
+      AND ${caseJudgeModelsCondition(sql, filters)}
       AND (${filters.dataType}::text IS NULL OR EXISTS (
         SELECT 1 FROM evaluation_scores WHERE evaluation_scores.case_id = evaluation_cases.id AND evaluation_scores.data_type = ${filters.dataType}
       ))
@@ -254,15 +248,11 @@ export async function selectSearchDocuments(
       AND
       (${filters.promptId}::uuid IS NULL OR evaluation_runs.prompt_id = ${filters.promptId})
       AND (${filters.promptRevisionId}::uuid IS NULL OR evaluation_runs.prompt_revision_id = ${filters.promptRevisionId})
-      AND (${filters.targetModelId}::text IS NULL OR evaluation_runs.target_model_id = ${filters.targetModelId})
+      AND ${targetModelsCondition(sql, filters)}
       AND (${filters.status}::text IS NULL OR evaluation_runs.status = ${filters.status})
       AND (${filters.from}::timestamptz IS NULL OR evaluation_runs.created_at >= ${filters.from})
       AND (${filters.to}::timestamptz IS NULL OR evaluation_runs.created_at <= ${filters.to})
-      AND (${filters.judgeModelId}::text IS NULL OR EXISTS (
-        SELECT 1 FROM evaluation_scores
-        WHERE evaluation_scores.case_id = evaluation_cases.id
-          AND evaluation_scores.judge_model_id = ${filters.judgeModelId}
-      ))
+      AND ${caseJudgeModelsCondition(sql, filters)}
       AND (${filters.dataType}::text IS NULL OR EXISTS (
         SELECT 1 FROM evaluation_scores
         WHERE evaluation_scores.case_id = evaluation_cases.id
@@ -289,12 +279,12 @@ export async function selectFacets(
   filters: NormalizedFilters,
 ): Promise<EvaluationWorkspaceFacets> {
   const [prompts, revisions, targetModels, statuses, judges, dataTypes] = await Promise.all([
-    selectPromptFacets(sql, filters),
-    selectRunFacet(sql, filters, "revision"),
-    selectRunFacet(sql, filters, "targetModel"),
-    selectRunFacet(sql, filters, "status"),
-    selectScoreFacet(sql, filters, "judge"),
-    selectScoreFacet(sql, filters, "dataType"),
+    selectPromptFacets(sql, withoutFacet(filters, "promptId")),
+    selectRunFacet(sql, withoutFacet(filters, "promptRevisionId"), "revision"),
+    selectRunFacet(sql, withoutFacet(filters, "targetModelIds"), "targetModel"),
+    selectRunFacet(sql, withoutFacet(filters, "status"), "status"),
+    selectScoreFacet(sql, withoutFacet(filters, "judgeModelIds"), "judge"),
+    selectScoreFacet(sql, withoutFacet(filters, "dataType"), "dataType"),
   ]);
   return {
     prompts,
@@ -304,6 +294,13 @@ export async function selectFacets(
     statuses: statuses as EvaluationWorkspaceFacets["statuses"],
     dataTypes: dataTypes as EvaluationWorkspaceFacets["dataTypes"],
   };
+}
+
+function withoutFacet<Key extends keyof NormalizedFilters>(
+  filters: NormalizedFilters,
+  key: Key,
+): NormalizedFilters {
+  return { ...filters, [key]: null };
 }
 
 function selectPromptFacets(sql: DatabaseClient, filters: NormalizedFilters) {
@@ -365,11 +362,11 @@ function filterConditions(sql: DatabaseClient, filters: NormalizedFilters) {
     AND
     (${filters.promptId}::uuid IS NULL OR evaluation_runs.prompt_id = ${filters.promptId})
     AND (${filters.promptRevisionId}::uuid IS NULL OR evaluation_runs.prompt_revision_id = ${filters.promptRevisionId})
-    AND (${filters.targetModelId}::text IS NULL OR evaluation_runs.target_model_id = ${filters.targetModelId})
+    AND ${targetModelsCondition(sql, filters)}
     AND (${filters.status}::text IS NULL OR evaluation_runs.status = ${filters.status})
     AND (${filters.from}::timestamptz IS NULL OR evaluation_runs.created_at >= ${filters.from})
     AND (${filters.to}::timestamptz IS NULL OR evaluation_runs.created_at <= ${filters.to})
-    AND (${filters.judgeModelId}::text IS NULL OR evaluation_scores.judge_model_id = ${filters.judgeModelId})
+    AND ${judgeModelsCondition(sql, filters)}
     AND (${filters.dataType}::text IS NULL OR evaluation_scores.data_type = ${filters.dataType})
     AND (${filters.criterion}::text IS NULL OR evaluation_scores.criterion_json->>'instruction' = ${filters.criterion})
     AND ${caseIdsCondition(sql, filters)}
@@ -379,6 +376,25 @@ function filterConditions(sql: DatabaseClient, filters: NormalizedFilters) {
 function caseIdsCondition(sql: DatabaseClient, filters: NormalizedFilters) {
   if (filters.caseIds === null) return sql`TRUE`;
   return sql`evaluation_cases.id = ANY(${sql.array(filters.caseIds)}::uuid[])`;
+}
+
+function targetModelsCondition(sql: DatabaseClient, filters: NormalizedFilters) {
+  if (filters.targetModelIds === null) return sql`TRUE`;
+  return sql`evaluation_runs.target_model_id = ANY(${sql.array(filters.targetModelIds)}::text[])`;
+}
+
+function caseJudgeModelsCondition(sql: DatabaseClient, filters: NormalizedFilters) {
+  if (filters.judgeModelIds === null) return sql`TRUE`;
+  return sql`EXISTS (
+    SELECT 1 FROM evaluation_scores
+    WHERE evaluation_scores.case_id = evaluation_cases.id
+      AND evaluation_scores.judge_model_id = ANY(${sql.array(filters.judgeModelIds)}::text[])
+  )`;
+}
+
+function judgeModelsCondition(sql: DatabaseClient, filters: NormalizedFilters) {
+  if (filters.judgeModelIds === null) return sql`TRUE`;
+  return sql`evaluation_scores.judge_model_id = ANY(${sql.array(filters.judgeModelIds)}::text[])`;
 }
 
 export function selectTotals(sql: DatabaseClient, filters: NormalizedFilters) {

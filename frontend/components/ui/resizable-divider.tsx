@@ -21,6 +21,22 @@ type ResizableDividerProps = {
   step?: number;
 };
 
+/** Calculates the largest safe panel width while preserving the neighboring workspace's minimum width. */
+export function maximumResizablePanelWidth({
+  contentMinWidth,
+  maxWidth,
+  minWidth,
+  workspace,
+}: {
+  contentMinWidth: number;
+  maxWidth: number;
+  minWidth: number;
+  workspace: HTMLElement | null;
+}): number {
+  const workspaceWidth = workspace?.getBoundingClientRect().width ?? maxWidth + contentMinWidth;
+  return Math.min(maxWidth, Math.max(minWidth, workspaceWidth - contentMinWidth));
+}
+
 export function ResizableDivider({
   ariaLabel,
   className,

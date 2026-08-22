@@ -216,7 +216,20 @@ export class EvaluationResults {
     const filters = normalizeFilters(appliedFilters);
     if (!filters.search) return filters;
     const documents = await this.#database.run(async (sql) =>
-      selectSearchDocuments(sql, { ...filters, caseIds: null }, filters.searchField),
+      selectSearchDocuments(
+        sql,
+        {
+          ...filters,
+          caseIds: null,
+          dataType: null,
+          judgeModelIds: null,
+          promptId: null,
+          promptRevisionId: null,
+          status: null,
+          targetModelIds: null,
+        },
+        filters.searchField,
+      ),
     );
     const matches = await this.#search.findMatches(
       `evaluation:${filters.searchField}`,
@@ -243,7 +256,15 @@ function buildQueryResponse(
   answer: string,
 ): EvaluationQueryResponse {
   const search = new URLSearchParams();
-  for (const [key, filter] of Object.entries(appliedFilters)) if (filter) search.set(key, filter);
+  for (const [key, filter] of Object.entries(appliedFilters)) {
+    if (!filter) continue;
+    if (Array.isArray(filter)) {
+      const parameter = key === "targetModelIds" ? "targetModelId" : "judgeModelId";
+      for (const item of filter) search.append(parameter, item);
+      continue;
+    }
+    search.set(key, filter);
+  }
   const suffix = search.toString();
   return {
     operation: query.operation,

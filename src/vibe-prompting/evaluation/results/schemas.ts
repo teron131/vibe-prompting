@@ -14,8 +14,8 @@ export type ResultFilters = {
   runId?: string;
   promptId?: string;
   promptRevisionId?: string;
-  targetModelId?: string;
-  judgeModelId?: string;
+  targetModelIds?: string[];
+  judgeModelIds?: string[];
   status?: EvaluationRunStatus;
   dataType?: EvaluationDataType;
   from?: string;
@@ -168,8 +168,8 @@ export type NormalizedFilters = {
   runId: string | null;
   promptId: string | null;
   promptRevisionId: string | null;
-  targetModelId: string | null;
-  judgeModelId: string | null;
+  targetModelIds: string[] | null;
+  judgeModelIds: string[] | null;
   status: EvaluationRunStatus | null;
   dataType: EvaluationDataType | null;
   from: Date | null;
@@ -180,6 +180,7 @@ export type ResultCursor = { runId: string; position: number; createdAt: string 
 
 const dataTypeSchema = z.enum(["BOOLEAN", "CATEGORICAL", "CORRECTION", "NUMERIC", "TEXT"]);
 const statusSchema = z.enum(["completed", "failed", "interrupted", "running"]);
+const modelIdsSchema = z.array(z.string().trim().min(1).max(200)).max(20).optional();
 const optionalDateSchema = z
   .string()
   .trim()
@@ -193,8 +194,8 @@ export const evaluationFiltersSchema = z
     runId: z.uuid().optional(),
     promptId: z.uuid().optional(),
     promptRevisionId: z.uuid().optional(),
-    targetModelId: z.string().trim().min(1).max(200).optional(),
-    judgeModelId: z.string().trim().min(1).max(200).optional(),
+    targetModelIds: modelIdsSchema,
+    judgeModelIds: modelIdsSchema,
     status: statusSchema.optional(),
     dataType: dataTypeSchema.optional(),
     from: optionalDateSchema,
@@ -289,8 +290,8 @@ export function normalizeFilters(filters: ResultFilters): NormalizedFilters {
     runId: filters.runId ?? null,
     promptId: filters.promptId ?? null,
     promptRevisionId: filters.promptRevisionId ?? null,
-    targetModelId: filters.targetModelId ?? null,
-    judgeModelId: filters.judgeModelId ?? null,
+    targetModelIds: filters.targetModelIds?.length ? filters.targetModelIds : null,
+    judgeModelIds: filters.judgeModelIds?.length ? filters.judgeModelIds : null,
     status: filters.status ?? null,
     dataType: filters.dataType ?? null,
     from: filters.from ? new Date(filters.from) : null,

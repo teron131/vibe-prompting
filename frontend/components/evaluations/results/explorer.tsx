@@ -6,22 +6,25 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
   ExternalLink,
   LoaderCircle,
-  PanelLeftClose,
-  PanelLeftOpen,
   Search,
   SlidersHorizontal,
+  Sparkles,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { CSSProperties, SyntheticEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
+import { EvaluationPageBar } from "@/components/evaluations/shared/evaluation-page-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ResizableDivider } from "@/components/ui/resizable-divider";
+import { maximumResizablePanelWidth, ResizableDivider } from "@/components/ui/resizable-divider";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
 import type {
@@ -36,7 +39,7 @@ import { requestJson } from "@/shared/api";
 import { formatDateTime } from "@/shared/date";
 
 import { EvaluationHelper } from "../shared/evaluation-helper";
-import { ClearFilters, FilterSelect, MoreFilters } from "../shared/filter-controls";
+import { ClearFilters, FilterSelect, MultiFilterSelect } from "../shared/filter-controls";
 import { evaluationFilterParams, parseEvaluationFilters } from "../shared/filter-state";
 import { evaluationInputPreview, EvaluationTraceViewer, evaluationTurnCount } from "./trace-viewer";
 
@@ -166,92 +169,16 @@ export function EvaluationResultsExplorer() {
   }
 
   function maximumListWidth() {
-    const workspaceWidth =
-      workspaceRef.current?.getBoundingClientRect().width ?? LIST_MAX_WIDTH + DETAIL_MIN_WIDTH;
-    return Math.min(LIST_MAX_WIDTH, Math.max(LIST_MIN_WIDTH, workspaceWidth - DETAIL_MIN_WIDTH));
+    return maximumResizablePanelWidth({
+      contentMinWidth: DETAIL_MIN_WIDTH,
+      maxWidth: LIST_MAX_WIDTH,
+      minWidth: LIST_MIN_WIDTH,
+      workspace: workspaceRef.current,
+    });
   }
 
   return (
     <div className="flex min-h-[calc(100dvh-var(--header-height))] w-full min-w-0 max-w-full flex-col @min-[560px]:h-[calc(100dvh-var(--header-height))] @min-[560px]:min-h-[36rem] @min-[560px]:overflow-hidden">
-      <header className="page-gutter border-b bg-muted/20 py-3">
-        <div className="flex items-baseline justify-between gap-4">
-          <h1 className="text-base font-semibold tracking-tight">Result explorer</h1>
-          <div className="flex items-center gap-1">
-            <div className="mr-1 hidden font-mono text-[11px] uppercase text-muted-foreground sm:block">
-              {total.toLocaleString()} cases · {items.length.toLocaleString()} loaded
-            </div>
-            {controlsOpen !== null ? (
-              <Button
-                aria-controls="result-explorer-controls"
-                aria-expanded={controlsOpen}
-                aria-label={controlsOpen ? "Hide search and filters" : "Show search and filters"}
-                className="size-8"
-                onClick={toggleControls}
-                size="icon"
-                title={controlsOpen ? "Hide search and filters" : "Show search and filters"}
-                variant="ghost"
-              >
-                <SlidersHorizontal aria-hidden="true" className="size-3.5" />
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        {controlsOpen ? (
-          <div id="result-explorer-controls">
-            <form
-              className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap"
-              onSubmit={submitSearch}
-            >
-              <div className="relative col-span-2 min-w-0 sm:flex-1 sm:basis-56">
-                <Search
-                  aria-hidden="true"
-                  className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                  aria-label="Search evaluation results"
-                  className="h-8 pl-9 text-xs shadow-none"
-                  onChange={(event) => setDraftSearch(event.target.value)}
-                  placeholder="Find text in cases"
-                  value={draftSearch}
-                />
-              </div>
-              <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                in
-                <Select
-                  aria-label="Search field"
-                  className="h-8 w-auto text-xs shadow-none"
-                  onChange={(event) =>
-                    updateFilter(
-                      "searchField",
-                      (event.target.value === "all"
-                        ? undefined
-                        : event.target.value) as ResultFilters["searchField"],
-                    )
-                  }
-                  value={filters.searchField ?? "all"}
-                >
-                  <option value="all">All fields</option>
-                  <option value="input">Input</option>
-                  <option value="output">Output</option>
-                  <option value="comment">Rationale</option>
-                  <option value="evidence">Evidence</option>
-                </Select>
-              </label>
-              <Button size="sm" type="submit">
-                Search
-              </Button>
-            </form>
-            <EvaluationHelper className="mt-2 rounded-md border bg-accent/40 p-2" />
-            <ResultFiltersToolbar
-              clearFilters={clearFilters}
-              facets={facets}
-              filters={filters}
-              updateFilter={updateFilter}
-            />
-          </div>
-        ) : null}
-      </header>
-
       <div
         className="grid w-full min-w-0 max-w-full @min-[560px]:min-h-0 @min-[560px]:flex @min-[560px]:flex-1"
         ref={workspaceRef}
@@ -291,7 +218,8 @@ export function EvaluationResultsExplorer() {
         <section
           aria-label="Evaluation result list"
           className={cn(
-            "min-h-0 min-w-0 max-w-full bg-muted/15 @min-[560px]:block @min-[560px]:w-[var(--results-list-width)] @min-[560px]:min-w-56 @min-[560px]:max-w-[calc(100%-20rem)] @min-[560px]:shrink-0 @min-[560px]:overflow-y-auto @min-[560px]:[--results-list-width:16rem] @min-[760px]:[--results-list-width:20rem] @min-[1200px]:[--results-list-width:23rem]",
+            "relative min-h-0 min-w-0 max-w-full bg-muted/15 @min-[560px]:flex @min-[560px]:w-[var(--results-list-width)] @min-[560px]:min-w-56 @min-[560px]:max-w-[calc(100%-20rem)] @min-[560px]:shrink-0 @min-[560px]:flex-col @min-[560px]:[--results-list-width:16rem] @min-[760px]:[--results-list-width:20rem] @min-[1200px]:[--results-list-width:23rem]",
+            controlsOpen && "@min-[1100px]:[--results-list-width:35rem]",
             mobilePane === "results" ? "block" : "hidden",
             !resultListOpen && "@min-[560px]:hidden",
           )}
@@ -303,54 +231,74 @@ export function EvaluationResultsExplorer() {
               : ({ "--results-list-width": `${listWidth}px` } as CSSProperties)
           }
         >
-          {loading ? (
-            <LoadingState label="Loading evaluation results" />
-          ) : error ? (
-            <ErrorState message={error} retry={() => void load()} />
-          ) : items.length ? (
-            <>
-              {search && literalMatches === 0 ? (
-                <p className="border-b bg-background/60 px-4 py-3 text-xs leading-5 text-muted-foreground">
-                  Nothing contains “{search}” word for word. These cases are the closest by meaning,
-                  so the text below is not highlighted.
-                </p>
-              ) : null}
-              <div className="divide-y">
-                {items.map((item) => (
-                  <ResultRow
-                    item={item}
-                    key={item.caseId}
-                    onSelect={() => {
-                      setSelectedCaseId(item.caseId);
-                      setMobilePane("detail");
-                    }}
-                    related={Boolean(
-                      search && literalMatches > 0 && !hasVisibleMatch(item, search, searchField),
-                    )}
-                    search={searchForField(filters.search, searchField, "input")}
-                    selected={item.caseId === selectedCaseId}
-                  />
-                ))}
-              </div>
-              {nextCursor ? (
-                <div className="border-t p-3">
-                  <Button
-                    className="w-full"
-                    disabled={loadingMore}
-                    onClick={() => void load(nextCursor)}
-                    variant="outline"
-                  >
-                    {loadingMore ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-                    Load next {Math.min(PAGE_SIZE, total - items.length)}
-                  </Button>
+          <ResultExplorerControls
+            clearFilters={clearFilters}
+            controlsOpen={controlsOpen}
+            draftSearch={draftSearch}
+            facets={facets}
+            filters={filters}
+            itemCount={items.length}
+            setDraftSearch={setDraftSearch}
+            submitSearch={submitSearch}
+            toggleControls={toggleControls}
+            total={total}
+            updateFilter={updateFilter}
+          />
+          <div
+            className={cn(
+              "min-w-0 @min-[560px]:min-h-0 @min-[560px]:flex-1 @min-[560px]:overflow-y-auto",
+              controlsOpen && "@min-[1100px]:ml-[17.5rem]",
+            )}
+          >
+            {loading ? (
+              <LoadingState label="Loading evaluation results" />
+            ) : error ? (
+              <ErrorState message={error} retry={() => void load()} />
+            ) : items.length ? (
+              <>
+                {search && literalMatches === 0 ? (
+                  <p className="border-b bg-background/60 px-4 py-3 text-xs leading-5 text-muted-foreground">
+                    Nothing contains “{search}” word for word. These cases are the closest by
+                    meaning, so the text below is not highlighted.
+                  </p>
+                ) : null}
+                <div className="divide-y">
+                  {items.map((item) => (
+                    <ResultRow
+                      item={item}
+                      key={item.caseId}
+                      onSelect={() => {
+                        setSelectedCaseId(item.caseId);
+                        setMobilePane("detail");
+                      }}
+                      related={Boolean(
+                        search && literalMatches > 0 && !hasVisibleMatch(item, search, searchField),
+                      )}
+                      search={searchForField(filters.search, searchField, "input")}
+                      selected={item.caseId === selectedCaseId}
+                    />
+                  ))}
                 </div>
-              ) : null}
-            </>
-          ) : (
-            <div className="p-6 text-sm text-muted-foreground">
-              No cases match this query. Clear a filter or search a broader phrase.
-            </div>
-          )}
+                {nextCursor ? (
+                  <div className="border-t p-3">
+                    <Button
+                      className="w-full"
+                      disabled={loadingMore}
+                      onClick={() => void load(nextCursor)}
+                      variant="outline"
+                    >
+                      {loadingMore ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                      Load next {Math.min(PAGE_SIZE, total - items.length)}
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="p-6 text-sm text-muted-foreground">
+                No cases match this query. Clear a filter or search a broader phrase.
+              </div>
+            )}
+          </div>
         </section>
 
         {resultListOpen ? (
@@ -369,12 +317,49 @@ export function EvaluationResultsExplorer() {
         <section
           aria-label="Selected evaluation result"
           className={cn(
-            "relative min-w-0 bg-background @min-[560px]:block @min-[560px]:flex-1 @min-[560px]:overflow-hidden",
+            "relative min-w-0 bg-background @min-[560px]:flex @min-[560px]:flex-1 @min-[560px]:flex-col @min-[560px]:overflow-hidden",
             mobilePane === "detail" ? "block" : "hidden",
           )}
         >
+          <EvaluationPageBar>
+            <div className="flex min-w-0 items-center gap-4">
+              {resultListOpen !== null ? (
+                <Button
+                  aria-controls="evaluation-results-list"
+                  aria-expanded={resultListOpen}
+                  aria-label={resultListOpen ? "Collapse result list" : "Expand result list"}
+                  className="hidden h-8 shrink-0 px-2 text-muted-foreground @min-[560px]:inline-flex"
+                  onClick={toggleResultList}
+                  size="sm"
+                  title={resultListOpen ? "Collapse result list" : "Expand result list"}
+                  variant="ghost"
+                >
+                  Results
+                  {resultListOpen ? (
+                    <ChevronLeft aria-hidden="true" className="size-3.5" />
+                  ) : (
+                    <ChevronRight aria-hidden="true" className="size-3.5" />
+                  )}
+                </Button>
+              ) : null}
+              <h1 className="min-w-0 truncate text-base font-semibold tracking-tight">
+                {selected
+                  ? `${selected.promptTitle} · v${selected.promptRevisionNumber}`
+                  : "Results"}
+              </h1>
+            </div>
+            {selected ? (
+              <Link
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-xs font-medium hover:bg-accent"
+                href={`/evaluations/${selected.runId}`}
+              >
+                <span className="hidden @min-[760px]:inline">Run provenance</span>
+                <ExternalLink aria-hidden="true" className="size-3.5" />
+              </Link>
+            ) : null}
+          </EvaluationPageBar>
           <div
-            className="@min-[560px]:h-full @min-[560px]:overflow-y-auto"
+            className="@min-[560px]:min-h-0 @min-[560px]:flex-1 @min-[560px]:overflow-y-auto"
             onScroll={(event) => setDetailScrolled(event.currentTarget.scrollTop > 240)}
             ref={detailScrollRef}
           >
@@ -396,27 +381,6 @@ export function EvaluationResultsExplorer() {
               </div>
             ) : null}
           </div>
-          {resultListOpen !== null ? (
-            <Button
-              aria-controls="evaluation-results-list"
-              aria-expanded={resultListOpen}
-              aria-label={resultListOpen ? "Collapse result list" : "Expand result list"}
-              className={cn(
-                "absolute top-5 left-[var(--page-gutter)] z-20 hidden size-7 shrink-0 bg-background/95 backdrop-blur-sm @min-[560px]:inline-flex",
-                detailScrolled && "shadow-sm ring-1 ring-border",
-              )}
-              onClick={toggleResultList}
-              size="icon"
-              title={resultListOpen ? "Collapse result list" : "Expand result list"}
-              variant="ghost"
-            >
-              {resultListOpen ? (
-                <PanelLeftClose aria-hidden="true" className="size-3.5" />
-              ) : (
-                <PanelLeftOpen aria-hidden="true" className="size-3.5" />
-              )}
-            </Button>
-          ) : null}
           {detailScrolled ? (
             <Button
               aria-label="Back to top"
@@ -435,45 +399,176 @@ export function EvaluationResultsExplorer() {
   );
 }
 
-function ResultFiltersToolbar({
+function ResultExplorerControls({
+  clearFilters,
+  controlsOpen,
+  draftSearch,
+  facets,
+  filters,
+  itemCount,
+  setDraftSearch,
+  submitSearch,
+  toggleControls,
+  total,
+  updateFilter,
+}: {
+  clearFilters(): void;
+  controlsOpen: boolean | null;
+  draftSearch: string;
+  facets: EvaluationWorkspaceFacets;
+  filters: ResultFilters;
+  itemCount: number;
+  setDraftSearch(value: string): void;
+  submitSearch(event: SyntheticEvent<HTMLFormElement>): void;
+  toggleControls(): void;
+  total: number;
+  updateFilter<Key extends keyof ResultFilters>(key: Key, value: ResultFilters[Key]): void;
+}) {
+  const activeCount = resultFilterCount(filters);
+
+  return (
+    <div className="contents">
+      <EvaluationPageBar inset="panel">
+        <h2 className="shrink-0 whitespace-nowrap text-sm font-semibold tracking-tight">
+          Result explorer
+        </h2>
+        <div className="flex min-w-0 items-center gap-1">
+          <div
+            className="mr-1 hidden shrink-0 whitespace-nowrap font-mono text-[10px] text-muted-foreground @min-[320px]:block"
+            title={`${itemCount.toLocaleString()} loaded of ${total.toLocaleString()} cases`}
+          >
+            {itemCount.toLocaleString()} of {total.toLocaleString()}
+          </div>
+          {controlsOpen !== null ? (
+            <Button
+              aria-controls="result-explorer-controls"
+              aria-expanded={controlsOpen}
+              aria-label={controlsOpen ? "Hide search and filters" : "Show search and filters"}
+              aria-pressed={controlsOpen}
+              className={cn("relative size-8", controlsOpen && "bg-accent text-foreground")}
+              onClick={toggleControls}
+              size="icon"
+              title={controlsOpen ? "Hide search and filters" : "Show search and filters"}
+              variant="ghost"
+            >
+              <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+              {activeCount ? (
+                <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-foreground text-[9px] font-semibold text-background">
+                  {activeCount}
+                </span>
+              ) : null}
+            </Button>
+          ) : null}
+        </div>
+      </EvaluationPageBar>
+      {controlsOpen ? (
+        <div
+          className="relative z-30 min-h-0 overflow-y-auto border-b bg-background @min-[1100px]:absolute @min-[1100px]:top-(--header-height) @min-[1100px]:bottom-0 @min-[1100px]:left-0 @min-[1100px]:w-[17.5rem] @min-[1100px]:border-r @min-[1100px]:border-b-0"
+          id="result-explorer-controls"
+        >
+          <section aria-labelledby="result-search-heading" className="border-b px-4 py-3">
+            <h3 className="mb-2 text-xs font-semibold" id="result-search-heading">
+              Search cases
+            </h3>
+            <form
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
+              onSubmit={submitSearch}
+            >
+              <div className="relative col-span-2 min-w-0">
+                <Search
+                  aria-hidden="true"
+                  className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
+                  aria-label="Search evaluation results"
+                  className="h-8 pl-9 text-xs shadow-none"
+                  onChange={(event) => setDraftSearch(event.target.value)}
+                  placeholder="Find text in cases"
+                  value={draftSearch}
+                />
+              </div>
+              <Select
+                aria-label="Search field"
+                className="h-8 min-w-0"
+                onValueChange={(value) =>
+                  updateFilter(
+                    "searchField",
+                    (value === "all" ? undefined : value) as ResultFilters["searchField"],
+                  )
+                }
+                triggerClassName="text-xs shadow-none"
+                value={filters.searchField ?? "all"}
+              >
+                <option value="all">All fields</option>
+                <option value="input">Input</option>
+                <option value="output">Output</option>
+                <option value="comment">Rationale</option>
+                <option value="evidence">Evidence</option>
+              </Select>
+              <Button size="sm" type="submit">
+                Search
+              </Button>
+            </form>
+          </section>
+          <details className="group/ask border-b px-4 py-2.5">
+            <summary className="flex h-8 cursor-pointer list-none items-center gap-2 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+              <Sparkles aria-hidden="true" className="size-3.5" />
+              <span className="flex-1">Ask data</span>
+              <ChevronDown
+                aria-hidden="true"
+                className="size-3.5 transition-transform group-open/ask:rotate-180"
+              />
+            </summary>
+            <EvaluationHelper className="mt-2" />
+          </details>
+          <ResultFiltersPanel
+            activeCount={activeCount}
+            clearFilters={clearFilters}
+            facets={facets}
+            filters={filters}
+            updateFilter={updateFilter}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ResultFiltersPanel({
+  activeCount,
   clearFilters,
   facets,
   filters,
   updateFilter,
 }: {
+  activeCount: number;
   clearFilters(): void;
   facets: EvaluationWorkspaceFacets;
   filters: ResultFilters;
   updateFilter<Key extends keyof ResultFilters>(key: Key, value: ResultFilters[Key]): void;
 }) {
-  const hiddenActive = [filters.status, filters.dataType].filter(Boolean).length;
-  const activeCount = [
-    filters.promptId,
-    filters.promptRevisionId,
-    filters.targetModelId,
-    filters.judgeModelId,
-    filters.status,
-    filters.dataType,
-    filters.criterion,
-    filters.search,
-    filters.from,
-    filters.runId,
-    filters.to,
-  ].filter(Boolean).length;
   const hasLinkedScope = Boolean(
     filters.promptRevisionId || filters.from || filters.runId || filters.to,
   );
 
   return (
-    <section aria-labelledby="result-scope-heading" className="mt-2">
-      <h2 className="sr-only" id="result-scope-heading">
-        Scope
-      </h2>
-      <div className="flex flex-wrap items-center gap-2">
+    <section aria-labelledby="result-scope-heading" className="px-4 py-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 text-xs font-semibold" id="result-scope-heading">
+          Filters
+          {activeCount ? (
+            <span className="grid size-[18px] place-items-center rounded-full bg-accent font-mono text-[9px] text-muted-foreground">
+              {activeCount}
+            </span>
+          ) : null}
+        </h3>
+        <ClearFilters count={activeCount} onClear={clearFilters} />
+      </div>
+      <div className="space-y-2">
         <FilterSelect
-          className="w-auto max-w-[14rem] flex-1 basis-40"
+          className="w-full"
           label="Prompt"
-          onChange={(event) => updateFilter("promptId", event.target.value || undefined)}
+          onValueChange={(value) => updateFilter("promptId", value || undefined)}
           value={filters.promptId ?? ""}
         >
           <option value="">All prompts</option>
@@ -483,45 +578,42 @@ function ResultFiltersToolbar({
             </option>
           ))}
         </FilterSelect>
-        <FilterSelect
-          className="w-auto max-w-[14rem] flex-1 basis-40"
+        <MultiFilterSelect
+          allLabel="All target models"
+          className="w-full"
           label="Target model"
-          onChange={(event) => updateFilter("targetModelId", event.target.value || undefined)}
-          value={filters.targetModelId ?? ""}
+          onValuesChange={(values) =>
+            updateFilter("targetModelIds", values.length ? values : undefined)
+          }
+          values={filters.targetModelIds ?? []}
         >
-          <option value="">All target models</option>
           {facets.targetModels.map((facet) => (
             <option key={facet.value} value={facet.value}>
-              {facet.value} ({facet.count})
+              <ModelFacetLabel count={facet.count} modelId={facet.value} />
             </option>
           ))}
-        </FilterSelect>
-        <FilterSelect
-          className="w-auto max-w-[14rem] flex-1 basis-40"
+        </MultiFilterSelect>
+        <MultiFilterSelect
+          allLabel="All judges"
+          className="w-full"
           label="Judge"
-          onChange={(event) => updateFilter("judgeModelId", event.target.value || undefined)}
-          value={filters.judgeModelId ?? ""}
+          onValuesChange={(values) =>
+            updateFilter("judgeModelIds", values.length ? values : undefined)
+          }
+          values={filters.judgeModelIds ?? []}
         >
-          <option value="">All judges</option>
           {facets.judges.map((facet) => (
             <option key={facet.value} value={facet.value}>
-              {facet.value} ({facet.count})
+              <ModelFacetLabel count={facet.count} modelId={facet.value} />
             </option>
           ))}
-        </FilterSelect>
-        <MoreFilters
-          activeCount={hiddenActive}
-          contentClassName="flex flex-wrap gap-2"
-          hint="status · type"
-        >
+        </MultiFilterSelect>
+        <div className="space-y-2">
           <FilterSelect
-            className="w-auto max-w-[14rem] flex-1 basis-40"
+            className="w-full"
             label="Run status"
-            onChange={(event) =>
-              updateFilter(
-                "status",
-                (event.target.value || undefined) as EvaluationRunStatus | undefined,
-              )
+            onValueChange={(value) =>
+              updateFilter("status", (value || undefined) as EvaluationRunStatus | undefined)
             }
             value={filters.status ?? ""}
           >
@@ -533,13 +625,10 @@ function ResultFiltersToolbar({
             ))}
           </FilterSelect>
           <FilterSelect
-            className="w-auto max-w-[14rem] flex-1 basis-40"
+            className="w-full"
             label="Score type"
-            onChange={(event) =>
-              updateFilter(
-                "dataType",
-                (event.target.value || undefined) as EvaluationDataType | undefined,
-              )
+            onValueChange={(value) =>
+              updateFilter("dataType", (value || undefined) as EvaluationDataType | undefined)
             }
             value={filters.dataType ?? ""}
           >
@@ -550,8 +639,7 @@ function ResultFiltersToolbar({
               </option>
             ))}
           </FilterSelect>
-        </MoreFilters>
-        <ClearFilters count={activeCount} onClear={clearFilters} />
+        </div>
       </div>
       {filters.criterion ? (
         <div className="mt-2 flex min-w-0 items-center gap-2 rounded-md border bg-accent/50 px-2 py-1 text-xs">
@@ -600,6 +688,31 @@ function ResultFiltersToolbar({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function resultFilterCount(filters: ResultFilters): number {
+  return [
+    filters.promptId,
+    filters.promptRevisionId,
+    filters.targetModelIds?.length,
+    filters.judgeModelIds?.length,
+    filters.status,
+    filters.dataType,
+    filters.criterion,
+    filters.search,
+    filters.from,
+    filters.runId,
+    filters.to,
+  ].filter(Boolean).length;
+}
+
+function ModelFacetLabel({ count, modelId }: { count: number; modelId: string }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <ModelIdentityLabel modelId={modelId} />
+      <span className="shrink-0 text-muted-foreground">({count})</span>
+    </span>
   );
 }
 
@@ -739,31 +852,17 @@ function ResultDetailPane({
   }
 
   return (
-    <article className="page-gutter py-5 lg:py-6">
-      <header className="border-b pb-5">
-        <div className="flex flex-wrap items-start justify-between gap-4 @min-[560px]:pl-9">
-          <div className="flex min-w-0 items-start gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold">
-                {item.promptTitle} · v{item.promptRevisionNumber}
-              </h2>
-              {item.isSyntheticExample ? (
-                <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[11px] font-medium uppercase text-muted-foreground">
-                  Synthetic
-                </span>
-              ) : null}
-              <Status status={item.status} />
-            </div>
-          </div>
-          <Link
-            className="inline-flex items-center gap-1.5 text-xs font-medium hover:underline"
-            href={`/evaluations/${item.runId}`}
-          >
-            Run provenance
-            <ExternalLink aria-hidden="true" className="size-3.5" />
-          </Link>
+    <article className="page-gutter py-4">
+      <header className="border-b pb-3">
+        <div className="flex min-h-8 flex-wrap items-center gap-2">
+          {item.isSyntheticExample ? (
+            <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[11px] font-medium uppercase text-muted-foreground">
+              Synthetic
+            </span>
+          ) : null}
+          <Status status={item.status} />
         </div>
-        <dl className="mt-4 grid gap-x-6 gap-y-2 pt-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
+        <dl className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs">
           <ModelMetadata label="Target" modelIds={[item.targetModelId]} />
           <Metadata
             label="Revision"
@@ -785,8 +884,8 @@ function ResultDetailPane({
 
       <EvaluationTraceViewer item={item} />
 
-      <section className="pt-5">
-        <div className="flex items-center justify-between gap-4 pb-3">
+      <section className="pt-4">
+        <div className="flex items-center justify-between gap-4 pb-2">
           <h3 className="text-sm font-semibold">Attributed score evidence</h3>
           <div className="flex shrink-0 items-center gap-2">
             <span className="font-mono text-[11px] text-muted-foreground">
@@ -863,15 +962,15 @@ function ResultDetailPane({
               <tbody className="divide-y">
                 {item.scores.map((score) => (
                   <tr className="align-top" key={score.id}>
-                    <th className="border-r px-4 py-3 text-left font-normal" scope="row">
+                    <th className="border-r px-4 py-2.5 text-left font-normal" scope="row">
                       <span className="font-mono text-[11px] uppercase text-muted-foreground">
                         C{score.criterionPosition + 1} · {score.dataType}
                       </span>
-                      <span className="mt-1 block max-w-sm text-sm font-medium leading-5">
+                      <span className="mt-1 block max-w-sm text-xs font-medium leading-5">
                         {score.criterion.instruction}
                       </span>
                     </th>
-                    <td className="w-px whitespace-nowrap border-r px-3 py-3">
+                    <td className="w-px whitespace-nowrap border-r px-3 py-2.5">
                       <span
                         className={cn(
                           "font-mono text-xs font-semibold",
@@ -881,7 +980,7 @@ function ResultDetailPane({
                         {formatScore(score.value)}
                       </span>
                     </td>
-                    <td className="w-px whitespace-nowrap border-r px-3 py-3">
+                    <td className="w-px whitespace-nowrap border-r px-3 py-2.5">
                       <ModelIdentityLabel
                         className="text-muted-foreground"
                         labelClassName="font-mono text-[11px]"
@@ -889,33 +988,43 @@ function ResultDetailPane({
                         variant="short-id"
                       />
                     </td>
-                    <td className="min-w-80 px-4 py-3">
-                      <p className="text-sm leading-relaxed text-muted-foreground">
+                    <td className="min-w-80 px-4 py-2.5">
+                      <p className="text-xs leading-5 text-foreground">
                         <HighlightedText
                           search={searchForField(search, searchField, "comment")}
                           value={score.comment}
                         />
                       </p>
                       {score.evidence.length ? (
-                        <ul className="mt-3 space-y-1.5 text-xs leading-relaxed">
-                          {score.evidence.map((evidence) => (
-                            <li
-                              className="grid grid-cols-[0.375rem_minmax(0,1fr)] items-start gap-2.5"
-                              key={evidence}
-                            >
-                              <span
-                                aria-hidden="true"
-                                className="mt-[0.6em] size-1.5 rounded-full bg-muted-foreground/50"
-                              />
-                              <span>
-                                <HighlightedText
-                                  search={searchForField(search, searchField, "evidence")}
-                                  value={evidence}
+                        <details className="group/evidence mt-1.5">
+                          <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                            <ChevronDown
+                              aria-hidden="true"
+                              className="size-3 transition-transform group-open/evidence:rotate-180"
+                            />
+                            {score.evidence.length} evidence{" "}
+                            {score.evidence.length === 1 ? "item" : "items"}
+                          </summary>
+                          <ul className="mt-1 space-y-1 text-xs leading-5 text-muted-foreground">
+                            {score.evidence.map((evidence) => (
+                              <li
+                                className="grid grid-cols-[0.25rem_minmax(0,1fr)] items-start gap-2"
+                                key={evidence}
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className="mt-[0.6em] size-1 rounded-full bg-muted-foreground/70"
                                 />
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
+                                <span>
+                                  <HighlightedText
+                                    search={searchForField(search, searchField, "evidence")}
+                                    value={evidence}
+                                  />
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
                       ) : null}
                     </td>
                   </tr>
@@ -935,18 +1044,18 @@ function ResultDetailPane({
 
 function Metadata({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0">
+    <div className="flex min-w-0 items-center gap-1.5">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 truncate font-mono text-[11px]">{value}</dd>
+      <dd className="truncate font-mono text-[11px]">{value}</dd>
     </div>
   );
 }
 
 function ModelMetadata({ label, modelIds }: { label: string; modelIds: string[] }) {
   return (
-    <div className="min-w-0">
+    <div className="flex min-w-0 items-center gap-1.5">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-1">
+      <dd className="flex min-w-0 flex-wrap gap-x-2 gap-y-1">
         {[...new Set(modelIds)].map((modelId) => (
           <ModelIdentityLabel
             className="max-w-full text-foreground"

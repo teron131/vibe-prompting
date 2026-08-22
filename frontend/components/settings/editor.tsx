@@ -2,7 +2,18 @@
 
 "use client";
 
-import { Check, CircleAlert, KeyRound, LoaderCircle, Plus, RotateCcw, Trash2 } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  KeyRound,
+  LoaderCircle,
+  Plug,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Terminal,
+  Trash2,
+} from "lucide-react";
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -29,6 +40,12 @@ const PLATFORM_OPTIONS: Array<{ label: string; value: SettingsPlatformId }> = [
   { label: "Gemini API", value: "gemini" },
   { label: "OpenAI-compatible", value: "llm" },
 ];
+
+const PLATFORM_ICONS = {
+  cliproxy: Terminal,
+  gemini: Sparkles,
+  llm: Plug,
+} satisfies Record<SettingsPlatformId, typeof Plug>;
 
 type ProviderDraft = {
   apiKey: string;
@@ -117,9 +134,9 @@ export function SettingsEditor() {
   }
 
   return (
-    <div className="page-gutter mx-auto w-full max-w-5xl py-8 sm:py-10">
+    <div className="page-gutter mx-auto w-full max-w-5xl py-7 sm:py-9">
       <div className="max-w-2xl">
-        <h2 className="text-xl font-semibold tracking-tight">Models and provider access</h2>
+        <h1 className="text-xl font-semibold tracking-tight">Models and provider access</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Choose which models appear across chat and evaluations. Saved API keys stay on the server
           and are never shown again.
@@ -137,7 +154,7 @@ export function SettingsEditor() {
 
       {settings ? (
         <>
-          <section className="mt-10" aria-labelledby="model-catalog-title">
+          <section className="mt-8" aria-labelledby="model-catalog-title">
             <div className="flex items-end justify-between gap-4 border-b pb-3">
               <div>
                 <h3 className="text-sm font-semibold" id="model-catalog-title">
@@ -171,10 +188,10 @@ export function SettingsEditor() {
             </div>
           </section>
 
-          <section className="mt-12" aria-labelledby="helper-model-title">
+          <section className="mt-10" aria-labelledby="helper-model-title">
             <div className="border-b pb-3">
               <h3 className="text-sm font-semibold" id="helper-model-title">
-                Helper Model
+                Helper model
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">
                 Handles small background tasks across the app at low reasoning effort.
@@ -183,7 +200,7 @@ export function SettingsEditor() {
             <HelperModelRow model={helperModel} onChange={setHelperModel} />
           </section>
 
-          <section className="mt-12" aria-labelledby="provider-access-title">
+          <section className="mt-10" aria-labelledby="provider-access-title">
             <div className="border-b pb-3">
               <h3 className="text-sm font-semibold" id="provider-access-title">
                 Provider access
@@ -241,8 +258,8 @@ function HelperModelRow({
   return (
     <div className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_13rem] sm:items-center">
       <ModelFields
-        connectionLabel="Helper Model connection"
-        idLabel="Helper Model ID"
+        connectionLabel="Helper model connection"
+        idLabel="Helper model ID"
         model={model}
         onChange={onChange}
       />
@@ -262,7 +279,7 @@ function ModelRow({
   setModels: Dispatch<SetStateAction<SettingsModel[]>>;
 }) {
   return (
-    <div className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_13rem_auto] sm:items-center">
+    <div className="relative grid gap-3 py-4 pr-10 sm:grid-cols-[minmax(0,1fr)_13rem_auto] sm:items-center sm:pr-0">
       <ModelFields
         connectionLabel={`Model ${index + 1} connection`}
         idLabel={`Model ${index + 1} ID`}
@@ -271,7 +288,7 @@ function ModelRow({
       />
       <Button
         aria-label={`Remove ${model.id || `model ${index + 1}`}`}
-        className="self-end text-muted-foreground hover:text-destructive sm:self-auto"
+        className="absolute top-7 right-0 text-muted-foreground hover:text-destructive sm:static sm:self-auto"
         disabled={!canRemove}
         onClick={() => removeModel(index, model, setModels)}
         size="icon"
@@ -318,13 +335,17 @@ function ModelFields({
           </div>
         </div>
       </label>
-      <label className="grid gap-1.5">
+      <div className="grid gap-1.5">
         <span className="text-xs font-medium text-muted-foreground">Connection</span>
         <Select
           aria-label={connectionLabel}
-          onChange={(event) =>
-            onChange({ ...model, platform: event.target.value as SettingsPlatformId })
+          onValueChange={(platform) =>
+            onChange({ ...model, platform: platform as SettingsPlatformId })
           }
+          renderIcon={(platform) => {
+            const Icon = PLATFORM_ICONS[platform as SettingsPlatformId];
+            return <Icon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />;
+          }}
           value={model.platform}
         >
           {PLATFORM_OPTIONS.map((option) => (
@@ -333,7 +354,7 @@ function ModelFields({
             </option>
           ))}
         </Select>
-      </label>
+      </div>
     </>
   );
 }
@@ -511,7 +532,7 @@ function removeModel(
 }
 
 function validateModels(models: SettingsModel[], helperModel: SettingsModel): string | undefined {
-  if (!helperModel.id.trim()) return "The Helper Model needs a model ID.";
+  if (!helperModel.id.trim()) return "The helper model needs a model ID.";
   if (!models.length) return "Add at least one model.";
   const normalized = models.map(({ id }) => id.trim());
   if (normalized.some((id) => !id)) return "Every model needs an ID.";
