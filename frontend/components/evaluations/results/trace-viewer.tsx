@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AssistantMessage } from "@/components/chat/assistant-message";
+import { ResponseText } from "@/components/chat/elements/response";
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
 import { projectTargetRunMessages } from "@/components/chat/target/messages";
 import { Button } from "@/components/ui/button";
@@ -41,8 +42,10 @@ export function EvaluationTraceViewer({ item }: { item: EvaluationResultItem }) 
   const [expanded, setExpanded] = useState(false);
   const messages = useMemo(() => projectStoredMessages(item), [item]);
   const turnCount = evaluationTurnCount(item);
-  const visibleMessages = messages.slice(-4);
-  const hiddenMessageCount = messages.length - visibleMessages.length;
+  const condensed = messages.length > 8;
+  const leadingMessages = condensed ? messages.slice(0, 4) : messages;
+  const trailingMessages = condensed ? messages.slice(-4) : [];
+  const omittedMessageCount = condensed ? messages.length - 8 : 0;
 
   return (
     <section className="py-4" aria-labelledby={`trace-heading-${item.caseId}`}>
@@ -65,18 +68,23 @@ export function EvaluationTraceViewer({ item }: { item: EvaluationResultItem }) 
       </header>
 
       <div className="mt-3 border-y bg-muted/10">
-        {hiddenMessageCount ? (
-          <div className="flex items-center justify-between gap-4 border-b bg-muted/20 px-3 py-2 text-xs">
-            <span className="font-medium">Earlier context</span>
-            <span className="text-muted-foreground">
-              {hiddenMessageCount} earlier {hiddenMessageCount === 1 ? "message" : "messages"}{" "}
-              available in full trace
-            </span>
-          </div>
-        ) : null}
         <div className="space-y-2 px-3 py-2.5">
-          {visibleMessages.map((message, index) => (
+          {leadingMessages.map((message, index) => (
             <CompactTraceMessage key={`${message.role}-${index}`} message={message} />
+          ))}
+          {condensed ? (
+            <div className="flex items-center gap-3 py-1 text-[11px] text-muted-foreground">
+              <span className="h-px flex-1 bg-border" />
+              <span aria-hidden="true">…</span>
+              <span className="sr-only">{omittedMessageCount} messages omitted</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+          ) : null}
+          {trailingMessages.map((message, index) => (
+            <CompactTraceMessage
+              key={`${message.role}-${messages.length - 4 + index}`}
+              message={message}
+            />
           ))}
         </div>
       </div>
@@ -88,25 +96,41 @@ export function EvaluationTraceViewer({ item }: { item: EvaluationResultItem }) 
 
 function CompactTraceMessage({ message }: { message: TraceMessage }) {
   const user = message.role === "user";
+  const preview = compactTracePreview(message.content);
   return (
     <article className={cn("flex min-w-0 gap-3", user ? "justify-end" : "justify-start")}>
       <div className={cn("min-w-0 max-w-[86%]", user && "text-right")}>
         <div className="mb-1 font-mono text-[10px] uppercase text-muted-foreground">
           {user ? "User" : "AI"}
         </div>
-        <p
+        <div
           className={cn(
-            "line-clamp-2 whitespace-pre-wrap break-words text-left text-xs leading-5",
+            "overflow-hidden rounded-xl px-3 py-1.5 text-left",
             user
-              ? "rounded-xl rounded-br-sm bg-[var(--user-bubble-bg)] px-3 py-1.5 text-[var(--user-bubble-fg)]"
-              : "text-foreground",
+              ? "rounded-br-sm bg-[var(--user-bubble-bg)] text-[var(--user-bubble-fg)]"
+              : "rounded-bl-sm bg-muted text-foreground",
           )}
         >
-          {message.content}
-        </p>
+          <ResponseText
+            className="line-clamp-3 overflow-hidden break-words text-xs! leading-5! [&_.katex-display]:inline! [&_.katex-display]:my-0! [&_p]:m-0! [&_p]:inline"
+            compact
+            renderImages={false}
+            text={preview}
+          />
+        </div>
       </div>
     </article>
   );
+}
+
+function compactTracePreview(content: string): string {
+  return content
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function EvaluationTraceDialog({ item, onClose }: { item: EvaluationResultItem; onClose(): void }) {
@@ -163,8 +187,8 @@ function EvaluationTraceDialog({ item, onClose }: { item: EvaluationResultItem; 
     : projectFallbackChatMessages(item);
   const condensed = messages.length > 8;
   const leadingMessages = condensed ? messages.slice(0, 4) : messages;
-  const middleMessages = condensed ? messages.slice(4, -3) : [];
-  const trailingMessages = condensed ? messages.slice(-3) : [];
+  const middleMessages = condensed ? messages.slice(4, -4) : [];
+  const trailingMessages = condensed ? messages.slice(-4) : [];
   const turnCount = messages.filter(({ role }) => role === "user").length;
   const activityCount = messages
     .flatMap(({ parts }) => parts)
@@ -256,7 +280,7 @@ function EvaluationTraceDialog({ item, onClose }: { item: EvaluationResultItem; 
                         <span className="h-px flex-1 bg-border transition-colors group-hover:bg-foreground/30 group-focus-visible:bg-ring" />
                         <span className="rounded-full border bg-background px-3 py-1.5 font-medium">
                           {middleMessagesOpen ? "Hide" : "Show"} messages 5–
-                          {messages.length - 3} · {middleMessages.length} omitted
+                          {messages.length - 4} · {middleMessages.length} omitted
                         </span>
                         <span className="h-px flex-1 bg-border transition-colors group-hover:bg-foreground/30 group-focus-visible:bg-ring" />
                       </button>

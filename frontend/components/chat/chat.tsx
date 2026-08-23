@@ -7,10 +7,10 @@ import {
   FileText,
   FlaskConical,
   LoaderCircle,
+  PanelRightClose,
   PanelRightOpen,
   TriangleAlert,
 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import { AppIcon } from "@/components/app-icon";
 import { Conversation as ConversationView } from "@/components/chat/elements/conversation";
 import { PromptContextPanel } from "@/components/prompts/context-panel";
 import { FeaturePageHeader } from "@/components/shell/header";
+import { ButtonLink } from "@/components/ui/button";
 import type {
   Attachment,
   ChatMessage,
@@ -50,7 +51,7 @@ import { ChatHistoryIcon } from "./history-icon";
 import { TargetWorkspace } from "./target/workspace";
 
 const DEFAULT_TOOLS: ChatToolId[] = ["prompt-library", "evaluations", "web-search"];
-const PROMPT_PANEL_MEDIA_QUERY = "(min-width: 1280px)";
+const PROMPT_PANEL_MEDIA_QUERY = "(min-width: 800px)";
 const chatApi = createApiRequester({ cache: "no-store" });
 const readError = createErrorReader("The request failed.");
 
@@ -353,15 +354,15 @@ export function Chat({
           )
         }
         rightContent={
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <div
               aria-label="Workspace mode"
-              className="flex h-8 items-stretch rounded-md border"
+              className="flex h-8 shrink-0 items-stretch rounded-full border border-border/80"
               role="group"
             >
               <button
                 aria-pressed={workspaceMode === "agent"}
-                className={`inline-flex items-center gap-1.5 rounded-none px-2 text-xs font-medium first:rounded-l-[calc(var(--radius-md)-1px)] last:rounded-r-[calc(var(--radius-md)-1px)] ${workspaceMode === "agent" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                className={`inline-flex items-center gap-1.5 rounded-none px-2.5 text-xs font-medium transition-colors first:rounded-l-full last:rounded-r-full ${workspaceMode === "agent" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                 onClick={() => switchWorkspaceMode("agent")}
                 type="button"
               >
@@ -369,37 +370,51 @@ export function Chat({
               </button>
               <button
                 aria-pressed={workspaceMode === "target"}
-                className={`inline-flex items-center gap-1.5 rounded-none px-2 text-xs font-medium first:rounded-l-[calc(var(--radius-md)-1px)] last:rounded-r-[calc(var(--radius-md)-1px)] ${workspaceMode === "target" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                className={`inline-flex items-center gap-1.5 rounded-none px-2.5 text-xs font-medium transition-colors first:rounded-l-full last:rounded-r-full ${workspaceMode === "target" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                 onClick={() => switchWorkspaceMode("target")}
                 type="button"
               >
                 <FlaskConical aria-hidden="true" className="size-3.5" /> Target
               </button>
             </div>
-            <Link
+            <ButtonLink
               aria-expanded={panelOpen}
               aria-label={
                 panelOpen
-                  ? "Close prompt panel"
+                  ? "Close prompt editor"
                   : activePrompt
-                    ? `Open ${activePrompt.title}`
-                    : "Open prompt workspace"
+                    ? `Open prompt editor for ${activePrompt.title}`
+                    : "Open prompt editor"
               }
-              className="hidden h-8 max-w-[min(18rem,45vw)] items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-accent xl:inline-flex"
+              className={`hidden max-w-[min(20rem,45vw)] shrink-0 rounded-full border-border/80 px-3 min-[800px]:inline-flex ${panelOpen ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               href={activePrompt ? `/prompts/${activePrompt.id}` : "/prompts"}
               onClick={(event) => {
                 if (!window.matchMedia(PROMPT_PANEL_MEDIA_QUERY).matches) return;
                 event.preventDefault();
                 setPanelOpen((open) => !open);
               }}
+              size="sm"
+              variant="outline"
             >
               <FileText aria-hidden="true" className="size-3.5 shrink-0" />
-              <span className="truncate">{activePrompt?.title ?? "Prompt"}</span>
-              <PanelRightOpen
-                aria-hidden="true"
-                className="size-3.5 shrink-0 text-muted-foreground"
-              />
-            </Link>
+              <span className="shrink-0">Prompt Editor</span>
+              {activePrompt ? (
+                <span className="hidden truncate text-muted-foreground min-[1120px]:inline">
+                  {activePrompt.title}
+                </span>
+              ) : null}
+              {panelOpen ? (
+                <PanelRightClose
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                />
+              ) : (
+                <PanelRightOpen
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                />
+              )}
+            </ButtonLink>
           </div>
         }
         title={

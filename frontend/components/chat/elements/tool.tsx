@@ -109,7 +109,8 @@ function StructuredValue({ nested = false, value }: { nested?: boolean; value: u
 
   if (isRecord(value)) {
     const directText = typeof value.text === "string" ? value.text : undefined;
-    if (directText) return <ResponseText compact text={directText} />;
+    if (directText)
+      return <ResponseText compact renderImages={false} renderMath={false} text={directText} />;
     const entries = Object.entries(value).filter(([key]) => !key.startsWith("_") && key !== "type");
     if (!entries.length) return <span className="text-zinc-500">None</span>;
     return (
@@ -151,7 +152,8 @@ function StructuredValue({ nested = false, value }: { nested?: boolean; value: u
       </a>
     );
   }
-  if (typeof value === "string") return <ResponseText compact text={value} />;
+  if (typeof value === "string")
+    return <ResponseText compact renderImages={false} renderMath={false} text={value} />;
   return <span className="whitespace-pre-wrap break-words">{String(value)}</span>;
 }
 

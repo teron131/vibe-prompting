@@ -21,6 +21,7 @@ import Link from "next/link";
 import { CSSProperties, SyntheticEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
+import { DefaultExampleBadge } from "@/components/evaluations/shared/default-example-badge";
 import { EvaluationPageBar } from "@/components/evaluations/shared/evaluation-page-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -219,7 +220,6 @@ export function EvaluationResultsExplorer() {
           aria-label="Evaluation result list"
           className={cn(
             "relative min-h-0 min-w-0 max-w-full bg-muted/15 @min-[560px]:flex @min-[560px]:w-[var(--results-list-width)] @min-[560px]:min-w-56 @min-[560px]:max-w-[calc(100%-20rem)] @min-[560px]:shrink-0 @min-[560px]:flex-col @min-[560px]:[--results-list-width:16rem] @min-[760px]:[--results-list-width:20rem] @min-[1200px]:[--results-list-width:23rem]",
-            controlsOpen && "@min-[1100px]:[--results-list-width:35rem]",
             mobilePane === "results" ? "block" : "hidden",
             !resultListOpen && "@min-[560px]:hidden",
           )}
@@ -244,12 +244,7 @@ export function EvaluationResultsExplorer() {
             total={total}
             updateFilter={updateFilter}
           />
-          <div
-            className={cn(
-              "min-w-0 @min-[560px]:min-h-0 @min-[560px]:flex-1 @min-[560px]:overflow-y-auto",
-              controlsOpen && "@min-[1100px]:ml-[17.5rem]",
-            )}
-          >
+          <div className="min-w-0 @min-[560px]:min-h-0 @min-[560px]:flex-1 @min-[560px]:overflow-y-auto">
             {loading ? (
               <LoadingState label="Loading evaluation results" />
             ) : error ? (
@@ -465,7 +460,7 @@ function ResultExplorerControls({
       </EvaluationPageBar>
       {controlsOpen ? (
         <div
-          className="relative z-30 min-h-0 overflow-y-auto border-b bg-background @min-[1100px]:absolute @min-[1100px]:top-(--header-height) @min-[1100px]:bottom-0 @min-[1100px]:left-0 @min-[1100px]:w-[17.5rem] @min-[1100px]:border-r @min-[1100px]:border-b-0"
+          className="relative z-30 min-h-0 overflow-y-auto border-b bg-background"
           id="result-explorer-controls"
         >
           <section aria-labelledby="result-search-heading" className="border-b px-4 py-3">
@@ -780,6 +775,9 @@ function ResultRow({
               {turnCount} turns
             </span>
           ) : null}
+          {item.isSyntheticExample ? (
+            <DefaultExampleBadge className="text-[10px] tracking-wide" />
+          ) : null}
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
           {related ? (
@@ -857,11 +855,7 @@ function ResultDetailPane({
     <article className="page-gutter py-4">
       <header className="border-b pb-3">
         <div className="flex min-h-8 flex-wrap items-center gap-2">
-          {item.isSyntheticExample ? (
-            <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[11px] font-medium uppercase text-muted-foreground">
-              Synthetic
-            </span>
-          ) : null}
+          {item.isSyntheticExample ? <DefaultExampleBadge className="text-[11px]" /> : null}
           <Status status={item.status} />
         </div>
         <dl className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs">

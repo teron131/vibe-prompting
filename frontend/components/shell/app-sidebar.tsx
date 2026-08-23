@@ -18,6 +18,8 @@ const links = [
   { href: "/prompts", icon: Sparkles, label: "Prompts" },
   { href: "/evaluations", icon: FlaskConical, label: "Evaluations" },
 ];
+const footerActionClassName =
+  "inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 export function AppSidebar({
   closeButtonRef,
@@ -80,7 +82,7 @@ export function AppSidebar({
         </div>
       </div>
       <div className="border-t border-sidebar-border p-1.5">
-        <div className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1">
+        <div className="flex min-w-0 items-center gap-2 rounded-lg py-1 pl-[7px]">
           <div
             aria-hidden="true"
             className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground text-[10px] font-semibold text-background"
@@ -96,7 +98,7 @@ export function AppSidebar({
           <form action="/api/auth/logout" method="post">
             <button
               aria-label="Sign out"
-              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              className={footerActionClassName}
               title="Sign out"
               type="submit"
             >
@@ -111,7 +113,7 @@ export function AppSidebar({
           aria-current={pathname.startsWith("/settings") ? "page" : undefined}
           aria-label="Settings"
           className={cn(
-            "inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+            footerActionClassName,
             pathname.startsWith("/settings") &&
               "bg-foreground text-background hover:bg-foreground hover:text-background",
           )}

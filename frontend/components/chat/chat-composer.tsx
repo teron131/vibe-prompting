@@ -10,6 +10,7 @@ import {
   ChevronDown,
   FileText,
   FlaskConical,
+  PanelRightOpen,
   Paperclip,
   Square,
   Wrench,
@@ -188,7 +189,7 @@ export function ChatComposer({
   return (
     <div className="mx-auto w-full max-w-3xl px-3 pb-4 sm:px-6 sm:pb-6">
       <form
-        className="relative rounded-3xl border border-border/70 bg-background p-3 shadow-lg transition-shadow focus-within:shadow-xl"
+        className="@container relative rounded-3xl border border-border/70 bg-background p-3 shadow-lg transition-shadow focus-within:shadow-xl"
         onSubmit={(event) => {
           event.preventDefault();
           if (running ? variant === "agent" && canSteer : canSubmit) onSubmit();
@@ -213,6 +214,7 @@ export function ChatComposer({
             {activePrompt ? (
               <span className="inline-flex max-w-full items-center rounded-full bg-secondary text-xs font-medium">
                 <button
+                  aria-label={`Open prompt editor for ${activePrompt.title}`}
                   className="inline-flex min-w-0 items-center gap-1.5 rounded-l-full py-1 pl-2.5 pr-1.5 hover:bg-secondary/80"
                   onClick={onOpenPrompt}
                   type="button"
@@ -222,6 +224,10 @@ export function ChatComposer({
                   <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                     {activePrompt.revisionId.slice(0, 8)}
                   </span>
+                  <PanelRightOpen
+                    aria-hidden="true"
+                    className="size-3.5 shrink-0 text-muted-foreground"
+                  />
                 </button>
                 {variant === "agent" ? (
                   <button
@@ -349,7 +355,7 @@ export function ChatComposer({
           value={instruction}
         />
         <div className="mt-1 flex min-w-0 items-center gap-2">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] sm:overflow-visible [&::-webkit-scrollbar]:hidden">
             <div className="flex w-max items-center gap-1 pr-1 [&>details]:shrink-0">
               {variant === "agent" ? (
                 <button
@@ -566,7 +572,8 @@ function ReasoningSelector({
         </div>
         {REASONING_OPTIONS.map((option) => (
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-accent"
+            aria-pressed={option.value === value}
+            className="touch-target flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-accent"
             key={option.value}
             onClick={() => {
               onChange(option.value);
@@ -575,9 +582,6 @@ function ReasoningSelector({
             type="button"
           >
             <span className="whitespace-nowrap text-left">{option.label}</span>
-            <span className="ml-auto grid size-4 place-items-center">
-              {option.value === value ? <Check aria-label="Selected" className="size-3.5" /> : null}
-            </span>
           </button>
         ))}
       </ComposerMenu>
@@ -602,8 +606,7 @@ function ToolSelector({
       <summary
         aria-label="Tools"
         className={cn(
-          "flex size-8 cursor-pointer list-none items-center justify-center rounded-full transition-colors hover:bg-accent [&::-webkit-details-marker]:hidden",
-          value.length > 0 && "bg-primary text-primary-foreground hover:bg-primary/90",
+          "flex size-8 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground group-open/tools:bg-accent group-open/tools:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden",
           disabled && "pointer-events-none opacity-50",
         )}
       >

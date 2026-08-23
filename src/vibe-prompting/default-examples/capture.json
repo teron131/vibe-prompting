@@ -1,0 +1,1225 @@
+{
+  "prompt": {
+    "id": "ce18263f-2eec-4277-9d6b-424f0634f492",
+    "title": "EXAMPLE — AI Concepts, Clearly",
+    "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
+    "revisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+    "revisionNumber": 2,
+    "activeRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+    "activeRevisionNumber": 2,
+    "revisionCount": 2,
+    "updatedAt": "2026-08-23T06:15:26.191Z"
+  },
+  "promptRows": [
+    {
+      "id": "b88672e6-a20c-44bd-9983-3451273da17f",
+      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "parentRevisionId": null,
+      "revisionNumber": 1,
+      "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers.\n\n## Response style\n\n- Start with a direct answer.\n- Use a familiar example when it helps.\n- Define technical terms.\n- Keep the answer concise.",
+      "changeRequest": null,
+      "author": "human",
+      "createdAt": "2026-08-23T06:15:12.383Z"
+    },
+    {
+      "id": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "parentRevisionId": "b88672e6-a20c-44bd-9983-3451273da17f",
+      "revisionNumber": 2,
+      "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
+      "changeRequest": "Improve the saved prompt for clear, concise explanations of reinforcement learning, language models versus computer vision, and training versus inference. Keep explanations equation-free and preserve the title.",
+      "author": "ai",
+      "createdAt": "2026-08-23T06:15:26.191Z"
+    }
+  ],
+  "targetProfileRows": [
+    {
+      "id": "aa9c1065-236e-4887-b9c0-62216c9539dc",
+      "name": "AI SDK agent",
+      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "currentRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
+      "revisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
+      "parentRevisionId": null,
+      "revisionNumber": 1,
+      "instructions": "",
+      "configuration": {}
+    }
+  ],
+  "targetTurnRows": [
+    {
+      "id": "a1884e48-0c65-4736-a3fb-aec6e767f5ef",
+      "responseMessages": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "**Reinforcement learning (RL)** is a way for an AI system to learn by **trying actions, receiving feedback, and improving over time**.\n\n### How it works\n\nAn RL system has:\n\n- **Agent:** the learner or decision-maker\n- **Environment:** the world it operates in\n- **Actions:** choices the agent can make\n- **Rewards:** feedback indicating whether an action was helpful or harmful\n\nFor example, in a game, the agent might move a character, the game is the environment, and winning or losing provides rewards. The agent learns through **trial and error**, discovering which sequences of actions tend to produce better long-term results.\n\n### How it differs from supervised learning\n\n**Supervised learning** learns from examples that already include the correct answer.\n\n- Input: a picture\n- Correct label: “cat”\n- Goal: learn to predict the label for new pictures\n\n**Reinforcement learning** usually does not receive the correct action directly. Instead, it receives feedback after acting.\n\n- Situation: a robot is near an obstacle\n- Action: move left or right\n- Feedback: avoid the obstacle and make progress, or collide and receive a negative reward\n\n| | Supervised learning | Reinforcement learning |\n|---|---|---|\n| Main feedback | Correct answers or labels | Rewards and penalties |\n| Learning style | Learn from examples | Learn through interaction and trial and error |\n| Main goal | Make accurate predictions | Choose actions that maximize long-term rewards |\n| Typical tasks | Image classification, spam detection, forecasting | Robotics, game playing, resource allocation, control |\n\n### When to use reinforcement learning\n\nRL is a good fit when:\n\n1. **The system must make a sequence of decisions**, not just one prediction.\n2. **Actions affect what happens next.**\n3. **Success can be measured with a reward**, even if the ideal action is unknown.\n4. **The system can safely or affordably experiment**, either in the real world or in a simulation.\n\nExamples include:\n\n- Teaching robots to walk or grasp objects\n- Training game-playing systems\n- Managing traffic signals\n- Optimizing warehouse operations\n- Adjusting recommendations over a series of user interactions\n- Controlling energy use in buildings\n\nUse **supervised learning instead** when you have many reliable examples of the correct answers and the task is mainly to predict or classify something.\n\nA practical rule: **supervised learning learns from answer keys; reinforcement learning learns from consequences.**",
+              "type": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1e1e746e-703b-41db-b57a-4c132777095e",
+      "responseMessages": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "Consider a **smartphone**:\n\n- A **language model** works mainly with language, such as text or transcribed speech. In a voice assistant, it interprets “Remind me to call Mom at six” and generates a reply or turns the request into an action.\n- A **computer-vision model** works mainly with images or video. In the phone’s camera app, it can recognize faces, detect objects, improve focus, or identify text in a photograph.\n\n| | Language model | Computer-vision model |\n|---|---|---|\n| Main input | Text or speech converted to text | Photos or video frames |\n| Main purpose | Understand and generate language | Interpret visual content |\n| Smartphone example | Answering a question or drafting a message | Recognizing a document or taking a better portrait |\n\nThey learn different patterns during **training**: language models learn from text-like sequences, while vision models learn from images or video. During **inference**, they use those learned patterns to respond to a request or analyze new content.\n\nModern phones can combine both. For example, you could photograph a restaurant menu, have a vision model read it, and then ask a language model, “Which dishes are vegetarian?”",
+              "type": "text"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "chat": {
+    "chat": {
+      "createdAt": "2026-08-23T06:15:12.385Z",
+      "icon": "message-circle",
+      "id": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+      "modelId": "gpt-5.6-luna",
+      "title": "EXAMPLE — Improve and evaluate an AI explainer",
+      "updatedAt": "2026-08-23T06:16:43.939Z"
+    },
+    "context": {
+      "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "enabledTools": [
+        "prompt-library",
+        "evaluations"
+      ],
+      "panelOpen": true,
+      "reasoningEffort": "medium"
+    },
+    "messages": [
+      {
+        "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+        "createdAt": "2026-08-23T06:15:12.385Z",
+        "id": "dcf8d898-80cb-48b5-8d3e-d954dcad23fe",
+        "metadata": {},
+        "parts": [
+          {
+            "text": "Read this saved prompt, improve it for clear explanations of reinforcement learning, language models versus computer vision, and training versus inference, and keep it free of equations. After saving the edit, start one Target Run on the new revision asking: What is reinforcement learning, and when would you use it instead of supervised learning? Use GPT-5.6 Luna for the Target Run.",
+            "type": "text"
+          }
+        ],
+        "role": "user"
+      },
+      {
+        "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+        "createdAt": "2026-08-23T06:15:34.343Z",
+        "id": "f364c2ec-c020-483b-8a30-6eb66c3c1646",
+        "metadata": {
+          "modelId": "gpt-5.6-luna",
+          "completedAt": "2026-08-23T06:15:34.343Z",
+          "enabledTools": [
+            "prompt-library",
+            "evaluations"
+          ],
+          "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+          "reasoningEffort": "medium",
+          "activePromptRevisionId": "b88672e6-a20c-44bd-9983-3451273da17f"
+        },
+        "parts": [
+          {
+            "type": "reasoning",
+            "summary": "**Planning to read and edit content**"
+          },
+          {
+            "name": "read_prompt",
+            "type": "tool",
+            "input": {
+              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492"
+            },
+            "state": "completed",
+            "callId": "call_pKdC2oONpy1JxDYvkHopnqf1",
+            "output": {
+              "id": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "title": "EXAMPLE — AI Concepts, Clearly",
+              "content": "1#34e742:# AI Concepts, Clearly\n2#e3b0c4:\n3#4a3d43:Explain artificial intelligence concepts for curious general readers.\n4#e3b0c4:\n5#9d5109:## Response style\n6#e3b0c4:\n7#b37e98:- Start with a direct answer.\n8#140906:- Use a familiar example when it helps.\n9#81e8d4:- Define technical terms.\n10#43fd44:- Keep the answer concise.",
+              "updatedAt": "2026-08-23T06:15:12.383Z",
+              "revisionId": "b88672e6-a20c-44bd-9983-3451273da17f",
+              "revisionCount": 1
+            },
+            "summary": "Read the current prompt."
+          },
+          {
+            "type": "reasoning",
+            "summary": "**Planning content revision for lines 3-10**"
+          },
+          {
+            "name": "edit_prompt",
+            "type": "tool",
+            "input": {
+              "edits": [
+                {
+                  "lines": [
+                    "Explain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.",
+                    "",
+                    "## Response style",
+                    "",
+                    "- Start with a direct, plain-language answer.",
+                    "- Define technical terms when first introduced.",
+                    "- Use familiar examples or analogies when they clarify the idea.",
+                    "- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.",
+                    "- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.",
+                    "- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.",
+                    "- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.",
+                    "- Use no equations, formulas, or symbolic mathematical notation.",
+                    "- Keep the answer concise but include enough context for a beginner to understand it."
+                  ],
+                  "endRef": "10#43fd44",
+                  "startRef": "3#4a3d43",
+                  "operation": "replace_range"
+                }
+              ],
+              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "changeRequest": "Improve the saved prompt for clear, concise explanations of reinforcement learning, language models versus computer vision, and training versus inference. Keep explanations equation-free and preserve the title.",
+              "expectedRevisionId": "b88672e6-a20c-44bd-9983-3451273da17f"
+            },
+            "state": "completed",
+            "callId": "call_lD41EsPDXMM0hU3qK6IFB1wK",
+            "output": {
+              "prompt": {
+                "id": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                "title": "EXAMPLE — AI Concepts, Clearly",
+                "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
+                "updatedAt": "2026-08-23T06:15:26.191Z",
+                "revisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "revisionCount": 2
+              },
+              "summary": "Updated prompt.",
+              "artifact": {
+                "id": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                "href": "/prompts/ce18263f-2eec-4277-9d6b-424f0634f492",
+                "kind": "prompt",
+                "title": "EXAMPLE — AI Concepts, Clearly",
+                "revisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+              }
+            },
+            "summary": "Updated the working prompt."
+          },
+          {
+            "type": "reasoning",
+            "summary": "**Starting target run with new revision**"
+          },
+          {
+            "name": "start_target_run",
+            "type": "tool",
+            "input": {
+              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "instruction": "What is reinforcement learning, and when would you use it instead of supervised learning?",
+              "targetModelId": "GPT-5.6 Luna",
+              "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+            },
+            "state": "completed",
+            "callId": "call_64DQaRweEOqiRDn3Xc8qiVyO",
+            "output": {
+              "run": {
+                "id": "1e4812c4-4b0c-40c0-97ec-66a983942d81",
+                "turns": [
+                  {
+                    "id": "a1884e48-0c65-4736-a3fb-aec6e767f5ef",
+                    "input": "What is reinforcement learning, and when would you use it instead of supervised learning?",
+                    "usage": null,
+                    "output": null,
+                    "status": "running",
+                    "activity": [],
+                    "position": 0,
+                    "createdAt": "2026-08-23T06:15:30.524Z",
+                    "completedAt": null,
+                    "errorMessage": null
+                  }
+                ],
+                "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+                "source": "ai",
+                "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                "createdAt": "2026-08-23T06:15:30.524Z",
+                "turnCount": 1,
+                "updatedAt": "2026-08-23T06:15:30.524Z",
+                "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                "latestStatus": "running",
+                "startedByName": "Example Builder",
+                "targetModelId": "gpt-5.6-luna",
+                "reasoningEffort": "medium",
+                "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
+                "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "targetProfileName": "AI SDK agent",
+                "targetConfiguration": {},
+                "promptRevisionNumber": 2,
+                "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
+                "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
+              },
+              "summary": "Started Target Run 1e4812c4-4b0c-40c0-97ec-66a983942d81.",
+              "artifact": {
+                "id": "1e4812c4-4b0c-40c0-97ec-66a983942d81",
+                "href": "/target-runs/1e4812c4-4b0c-40c0-97ec-66a983942d81",
+                "kind": "target-run"
+              }
+            },
+            "summary": "Completed."
+          },
+          {
+            "text": "Updated the saved prompt with clearer guidance on:\n\n- Reinforcement learning versus supervised learning\n- Language models versus computer vision\n- Training versus inference\n- Equation-free explanations for beginners\n\nNew revision: `cef0bd7f-1439-4737-b7c8-701640c6c415`\n\nStarted the Target Run with **GPT-5.6 Luna**. It is currently running: [View Target Run]( /target-runs/1e4812c4-4b0c-40c0-97ec-66a983942d81 ).",
+            "type": "text"
+          },
+          {
+            "type": "prompt-revision",
+            "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+            "revisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+          }
+        ],
+        "role": "assistant"
+      },
+      {
+        "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+        "createdAt": "2026-08-23T06:15:42.456Z",
+        "id": "7693c1bc-20c4-4a75-b6c8-12bc6bda5473",
+        "metadata": {},
+        "parts": [
+          {
+            "text": "Continue the existing Target Run once with: Compare a language model with a computer-vision model using one everyday product example. Then start exactly two separate evaluation runs on the current prompt revision using GPT-5.6 Luna as the target and both GPT-5.6 Luna and Gemini 3.7 Flash as judges. Run one case asking what reinforcement learning is, and one case comparing language models with computer vision. For both runs, judge whether the answer is clear for a general reader and whether it correctly distinguishes the concepts without equations.",
+            "type": "text"
+          }
+        ],
+        "role": "user"
+      },
+      {
+        "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+        "createdAt": "2026-08-23T06:15:58.246Z",
+        "id": "bd199ebf-f870-4db8-a33d-ae98499b3d63",
+        "metadata": {
+          "modelId": "gpt-5.6-luna",
+          "completedAt": "2026-08-23T06:15:58.246Z",
+          "enabledTools": [
+            "prompt-library",
+            "evaluations"
+          ],
+          "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+          "reasoningEffort": "medium",
+          "activePromptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+        },
+        "parts": [
+          {
+            "type": "reasoning",
+            "summary": "**Planning parallel evaluation runs**"
+          },
+          {
+            "name": "continue_target_run",
+            "type": "tool",
+            "input": {
+              "runId": "1e4812c4-4b0c-40c0-97ec-66a983942d81",
+              "instruction": "Compare a language model with a computer-vision model using one everyday product example."
+            },
+            "state": "completed",
+            "callId": "call_iUYak5zupge33iUZnBK4byHb",
+            "output": {
+              "run": {
+                "id": "1e4812c4-4b0c-40c0-97ec-66a983942d81",
+                "turns": [
+                  {
+                    "id": "a1884e48-0c65-4736-a3fb-aec6e767f5ef",
+                    "input": "What is reinforcement learning, and when would you use it instead of supervised learning?",
+                    "usage": {
+                      "inputTokens": 541,
+                      "totalTokens": 1088,
+                      "outputTokens": 547
+                    },
+                    "output": "**Reinforcement learning (RL)** is a way for an AI system to learn by **trying actions, receiving feedback, and improving over time**.\n\n### How it works\n\nAn RL system has:\n\n- **Agent:** the learner or decision-maker\n- **Environment:** the world it operates in\n- **Actions:** choices the agent can make\n- **Rewards:** feedback indicating whether an action was helpful or harmful\n\nFor example, in a game, the agent might move a character, the game is the environment, and winning or losing provides rewards. The agent learns through **trial and error**, discovering which sequences of actions tend to produce better long-term results.\n\n### How it differs from supervised learning\n\n**Supervised learning** learns from examples that already include the correct answer.\n\n- Input: a picture\n- Correct label: “cat”\n- Goal: learn to predict the label for new pictures\n\n**Reinforcement learning** usually does not receive the correct action directly. Instead, it receives feedback after acting.\n\n- Situation: a robot is near an obstacle\n- Action: move left or right\n- Feedback: avoid the obstacle and make progress, or collide and receive a negative reward\n\n| | Supervised learning | Reinforcement learning |\n|---|---|---|\n| Main feedback | Correct answers or labels | Rewards and penalties |\n| Learning style | Learn from examples | Learn through interaction and trial and error |\n| Main goal | Make accurate predictions | Choose actions that maximize long-term rewards |\n| Typical tasks | Image classification, spam detection, forecasting | Robotics, game playing, resource allocation, control |\n\n### When to use reinforcement learning\n\nRL is a good fit when:\n\n1. **The system must make a sequence of decisions**, not just one prediction.\n2. **Actions affect what happens next.**\n3. **Success can be measured with a reward**, even if the ideal action is unknown.\n4. **The system can safely or affordably experiment**, either in the real world or in a simulation.\n\nExamples include:\n\n- Teaching robots to walk or grasp objects\n- Training game-playing systems\n- Managing traffic signals\n- Optimizing warehouse operations\n- Adjusting recommendations over a series of user interactions\n- Controlling energy use in buildings\n\nUse **supervised learning instead** when you have many reliable examples of the correct answers and the task is mainly to predict or classify something.\n\nA practical rule: **supervised learning learns from answer keys; reinforcement learning learns from consequences.**",
+                    "status": "completed",
+                    "activity": [
+                      {
+                        "type": "reasoning",
+                        "summary": "**Planning concise agent explanation**"
+                      }
+                    ],
+                    "position": 0,
+                    "createdAt": "2026-08-23T06:15:30.524Z",
+                    "completedAt": "2026-08-23T06:15:42.211Z",
+                    "errorMessage": null
+                  },
+                  {
+                    "id": "1e1e746e-703b-41db-b57a-4c132777095e",
+                    "input": "Compare a language model with a computer-vision model using one everyday product example.",
+                    "usage": null,
+                    "output": null,
+                    "status": "running",
+                    "activity": [],
+                    "position": 1,
+                    "createdAt": "2026-08-23T06:15:52.638Z",
+                    "completedAt": null,
+                    "errorMessage": null
+                  }
+                ],
+                "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+                "source": "ai",
+                "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                "createdAt": "2026-08-23T06:15:30.524Z",
+                "turnCount": 2,
+                "updatedAt": "2026-08-23T06:15:52.638Z",
+                "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                "latestStatus": "running",
+                "startedByName": "Example Builder",
+                "targetModelId": "gpt-5.6-luna",
+                "reasoningEffort": "medium",
+                "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
+                "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "targetProfileName": "AI SDK agent",
+                "targetConfiguration": {},
+                "promptRevisionNumber": 2,
+                "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
+                "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
+              },
+              "summary": "Continued Target Run 1e4812c4-4b0c-40c0-97ec-66a983942d81.",
+              "artifact": {
+                "id": "1e4812c4-4b0c-40c0-97ec-66a983942d81",
+                "href": "/target-runs/1e4812c4-4b0c-40c0-97ec-66a983942d81",
+                "kind": "target-run"
+              }
+            },
+            "summary": "Completed."
+          },
+          {
+            "name": "evaluate",
+            "type": "tool",
+            "input": {
+              "cases": [
+                {
+                  "input": "What is reinforcement learning?",
+                  "criteria": [
+                    "The answer is clear and understandable for a general reader.",
+                    "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
+                  ]
+                }
+              ],
+              "judges": [
+                "GPT-5.6 Luna",
+                "Gemini 3.7 Flash"
+              ],
+              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "repetitions": null,
+              "targetModelId": "GPT-5.6 Luna",
+              "targetModelIds": null,
+              "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+              "batchConfigurations": null
+            },
+            "state": "completed",
+            "callId": "call_feIpVIJonsDMYhqLKAoZV6hz",
+            "output": {
+              "run": {
+                "id": "b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e",
+                "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+                "source": "ai",
+                "status": "running",
+                "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                "caseCount": 1,
+                "createdAt": "2026-08-23T06:15:52.641Z",
+                "completedAt": null,
+                "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                "targetRunId": null,
+                "errorMessage": null,
+                "judgeModelIds": [
+                  "gpt-5.6-luna",
+                  "gemini-3.7-flash"
+                ],
+                "startedByName": "Example Builder",
+                "targetModelId": "gpt-5.6-luna",
+                "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
+                "targetRunTurnId": null,
+                "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "targetProfileName": "AI SDK agent",
+                "isSyntheticExample": false,
+                "promptRevisionNumber": 2,
+                "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
+                "configurationFingerprint": "d4f77a308a3e734b3fce86f4bc2851bb8571077cc15700a7b3fa7bfec697d62e",
+                "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
+              },
+              "summary": "Started persisted evaluation run.",
+              "artifact": {
+                "id": "b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e",
+                "href": "/evaluations/b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e",
+                "kind": "evaluation"
+              }
+            },
+            "summary": "Started an evaluation run."
+          },
+          {
+            "name": "evaluate",
+            "type": "tool",
+            "input": {
+              "cases": [
+                {
+                  "input": "Compare language models with computer vision.",
+                  "criteria": [
+                    "The answer is clear and understandable for a general reader.",
+                    "The answer correctly distinguishes language models from computer-vision models and uses no equations."
+                  ]
+                }
+              ],
+              "judges": [
+                "GPT-5.6 Luna",
+                "Gemini 3.7 Flash"
+              ],
+              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "repetitions": null,
+              "targetModelId": "GPT-5.6 Luna",
+              "targetModelIds": null,
+              "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+              "batchConfigurations": null
+            },
+            "state": "completed",
+            "callId": "call_cIaE00s0VWhVviVnDMjB5xaW",
+            "output": {
+              "run": {
+                "id": "9f21237d-3f89-46d2-bdee-ed699895e8b0",
+                "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+                "source": "ai",
+                "status": "running",
+                "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                "caseCount": 1,
+                "createdAt": "2026-08-23T06:15:52.648Z",
+                "completedAt": null,
+                "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                "targetRunId": null,
+                "errorMessage": null,
+                "judgeModelIds": [
+                  "gpt-5.6-luna",
+                  "gemini-3.7-flash"
+                ],
+                "startedByName": "Example Builder",
+                "targetModelId": "gpt-5.6-luna",
+                "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
+                "targetRunTurnId": null,
+                "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "targetProfileName": "AI SDK agent",
+                "isSyntheticExample": false,
+                "promptRevisionNumber": 2,
+                "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
+                "configurationFingerprint": "6a726c0277401c9cf2aae836fe360d180659456bf593c82dc00f7a45a28a3585",
+                "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
+              },
+              "summary": "Started persisted evaluation run.",
+              "artifact": {
+                "id": "9f21237d-3f89-46d2-bdee-ed699895e8b0",
+                "href": "/evaluations/9f21237d-3f89-46d2-bdee-ed699895e8b0",
+                "kind": "evaluation"
+              }
+            },
+            "summary": "Started an evaluation run."
+          },
+          {
+            "text": "Completed the requested actions on prompt revision `cef0bd7f-1439-4737-b7c8-701640c6c415`:\n\n- Continued Target Run `1e4812c4-4b0c-40c0-97ec-66a983942d81` with the language-model versus computer-vision comparison request. It is still running: [View Target Run](/target-runs/1e4812c4-4b0c-40c0-97ec-66a983942d81).\n- Started evaluation run `b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e` for “What is reinforcement learning?”\n- Started evaluation run `9f21237d-3f89-46d2-bdee-ed699895e8b0` for comparing language models with computer vision.\n\nBoth evaluation runs use **GPT-5.6 Luna** as the target, with **GPT-5.6 Luna** and **Gemini 3.7 Flash** as judges, assessing clarity, conceptual correctness, and the absence of equations.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant"
+      },
+      {
+        "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+        "createdAt": "2026-08-23T06:16:07.370Z",
+        "id": "f0e31ddc-ecdc-4196-b74d-7e55c0613c93",
+        "metadata": {},
+        "parts": [
+          {
+            "text": "Both evaluation runs are complete. Use search_evaluations to inspect the persisted cases and summarize whether the two judges agreed. Mention the saved prompt, Target Run, and evaluation evidence without inventing anything.",
+            "type": "text"
+          }
+        ],
+        "role": "user"
+      },
+      {
+        "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+        "createdAt": "2026-08-23T06:16:43.939Z",
+        "id": "61d34acc-a693-4100-9996-2184d96deaf7",
+        "metadata": {
+          "modelId": "gpt-5.6-luna",
+          "completedAt": "2026-08-23T06:16:43.938Z",
+          "enabledTools": [
+            "prompt-library",
+            "evaluations"
+          ],
+          "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+          "reasoningEffort": "medium",
+          "activePromptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+        },
+        "parts": [
+          {
+            "type": "reasoning",
+            "summary": "**Planning parallel evaluation searches by run IDs**"
+          },
+          {
+            "name": "search_evaluations",
+            "type": "tool",
+            "input": {
+              "to": null,
+              "from": null,
+              "limit": 50,
+              "runId": "b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e",
+              "caseId": null,
+              "cursor": null,
+              "search": null,
+              "status": "completed",
+              "dataType": null,
+              "promptId": null,
+              "criterion": null,
+              "searchField": null,
+              "judgeModelIds": null,
+              "targetModelIds": null,
+              "promptRevisionId": null
+            },
+            "state": "completed",
+            "callId": "call_0n4oPdmEZXVJks0kSjnDEcbF",
+            "output": "An error occurred while running the tool. Please try again. Error: InvalidToolInputError: Invalid JSON input for tool",
+            "summary": "Searched persisted evaluation cases."
+          },
+          {
+            "name": "search_evaluations",
+            "type": "tool",
+            "input": {
+              "to": null,
+              "from": null,
+              "limit": 50,
+              "runId": "9f21237d-3f89-46d2-bdee-ed699895e8b0",
+              "caseId": null,
+              "cursor": null,
+              "search": null,
+              "status": "completed",
+              "dataType": null,
+              "promptId": null,
+              "criterion": null,
+              "searchField": null,
+              "judgeModelIds": null,
+              "targetModelIds": null,
+              "promptRevisionId": null
+            },
+            "state": "completed",
+            "callId": "call_WeFkbc3OmIIyqIgOtWwSqjCN",
+            "output": "An error occurred while running the tool. Please try again. Error: InvalidToolInputError: Invalid JSON input for tool",
+            "summary": "Searched persisted evaluation cases."
+          },
+          {
+            "type": "reasoning",
+            "summary": "**Investigating nullable caseId issue**"
+          },
+          {
+            "name": "search_evaluations",
+            "type": "tool",
+            "input": {
+              "to": null,
+              "from": null,
+              "limit": 50,
+              "runId": "b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e",
+              "caseId": null,
+              "cursor": null,
+              "search": null,
+              "status": "completed",
+              "dataType": null,
+              "promptId": null,
+              "criterion": null,
+              "searchField": null,
+              "judgeModelIds": null,
+              "targetModelIds": null,
+              "promptRevisionId": null
+            },
+            "state": "completed",
+            "callId": "call_oLf8FTHIHfu07DDX4P2CLjWr",
+            "output": "An error occurred while running the tool. Please try again. Error: InvalidToolInputError: Invalid JSON input for tool",
+            "summary": "Searched persisted evaluation cases."
+          },
+          {
+            "type": "reasoning",
+            "summary": "**Investigating runId and search input issues**"
+          },
+          {
+            "name": "search_evaluations",
+            "type": "tool",
+            "input": {
+              "to": null,
+              "from": null,
+              "limit": 20,
+              "runId": null,
+              "caseId": null,
+              "cursor": null,
+              "search": "reinforcement learning",
+              "status": null,
+              "dataType": null,
+              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "criterion": null,
+              "searchField": "input",
+              "judgeModelIds": null,
+              "targetModelIds": null,
+              "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+            },
+            "state": "completed",
+            "callId": "call_eCxOmHzRGHkNZ12xK20DgkrO",
+            "output": {
+              "result": {
+                "items": [
+                  {
+                    "input": "What is reinforcement learning?",
+                    "runId": "b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e",
+                    "caseId": "c58cc8f4-f3e5-4b6e-b1a9-30528d448090",
+                    "output": "**Reinforcement learning** is a way for an AI system to learn by trying actions and receiving feedback about how good those actions were.\n\nImagine training a dog:\n\n- The **agent** is the learner, such as a robot or game-playing program.\n- The **environment** is the world it interacts with, such as a maze or video game.\n- An **action** is something it chooses to do, such as moving left or picking up an object.\n- A **reward** is feedback: positive for helpful behavior and negative—or no reward—for poor behavior.\n\nThe agent learns through **trial and error**. Over many attempts, it discovers which actions tend to produce better long-term results. For example, a game-playing AI may learn that sacrificing a piece early can lead to winning later.\n\n### Reinforcement learning versus supervised learning\n\nIn **supervised learning**, the AI is shown examples with correct answers—for instance, many labeled pictures of cats and dogs. It learns to imitate those answers.\n\nIn **reinforcement learning**, the AI usually is not given the correct action directly. It must explore, make choices, and learn from rewards over time.\n\n- **Supervised learning** is useful when correct examples are available.\n- **Reinforcement learning** is useful for decisions that unfold over time, especially when success depends on a sequence of actions, such as robotics, games, navigation, or resource management.\n\nDuring **training**, the agent experiments and adjusts its behavior. During **inference**, it uses what it learned to choose actions in a new situation.",
+                    "scores": [
+                      {
+                        "id": "05d639e2-a972-487c-940c-42bf0c1e632a",
+                        "value": true,
+                        "comment": "The explanation uses intuitive analogies (training a dog) and straightforward language that makes the concept easy to understand for a general audience.",
+                        "dataType": "BOOLEAN",
+                        "evidence": [
+                          "Imagine training a dog:",
+                          "The agent learns through trial and error.",
+                          "Over many attempts, it discovers which actions tend to produce better long-term results."
+                        ],
+                        "criterion": {
+                          "type": "boolean",
+                          "instruction": "The answer is clear and understandable for a general reader."
+                        },
+                        "judgeModelId": "gemini-3.7-flash",
+                        "criterionPosition": 0
+                      },
+                      {
+                        "id": "217aafe7-9211-4ba8-9bc6-32f34c2f06df",
+                        "value": true,
+                        "comment": "The answer is clear and understandable for a general reader, using plain language, concrete examples, and organized comparisons.",
+                        "dataType": "BOOLEAN",
+                        "evidence": [
+                          "It explains reinforcement learning as learning by trying actions and receiving feedback.",
+                          "The dog-training analogy and examples such as mazes, video games, and robotics make the concepts accessible.",
+                          "The bullet points clearly define agent, environment, action, and reward."
+                        ],
+                        "criterion": {
+                          "type": "boolean",
+                          "instruction": "The answer is clear and understandable for a general reader."
+                        },
+                        "judgeModelId": "gpt-5.6-luna",
+                        "criterionPosition": 0
+                      },
+                      {
+                        "id": "dbe5438b-eb74-4643-862f-34867fba90f0",
+                        "value": true,
+                        "comment": "The response clearly contrasts reinforcement learning with supervised learning without using any mathematical equations.",
+                        "dataType": "BOOLEAN",
+                        "evidence": [
+                          "In supervised learning, the AI is shown examples with correct answers—for instance, many labeled pictures of cats and dogs.",
+                          "In reinforcement learning, the AI usually is not given the correct action directly. It must explore, make choices, and learn from rewards over time."
+                        ],
+                        "criterion": {
+                          "type": "boolean",
+                          "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
+                        },
+                        "judgeModelId": "gemini-3.7-flash",
+                        "criterionPosition": 1
+                      },
+                      {
+                        "id": "8fd96fe8-668f-4ed6-88fc-c84f73b5d9a2",
+                        "value": true,
+                        "comment": "The answer correctly distinguishes reinforcement learning from supervised learning and contains no equations.",
+                        "dataType": "BOOLEAN",
+                        "evidence": [
+                          "It states that supervised learning uses examples with correct answers, while reinforcement learning learns through choices, exploration, and rewards.",
+                          "It accurately notes that reinforcement learning involves decisions unfolding over time and sequences of actions.",
+                          "The response contains no equations."
+                        ],
+                        "criterion": {
+                          "type": "boolean",
+                          "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
+                        },
+                        "judgeModelId": "gpt-5.6-luna",
+                        "criterionPosition": 1
+                      }
+                    ],
+                    "status": "completed",
+                    "position": 0,
+                    "createdAt": "2026-08-23T06:15:52.641Z",
+                    "completedAt": "2026-08-23T06:16:06.609Z",
+                    "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                    "targetRunId": null,
+                    "errorMessage": null,
+                    "judgeModelIds": [
+                      "gpt-5.6-luna",
+                      "gemini-3.7-flash"
+                    ],
+                    "targetModelId": "gpt-5.6-luna",
+                    "targetRunTurnId": null,
+                    "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                    "isSyntheticExample": false,
+                    "promptRevisionNumber": 2
+                  }
+                ],
+                "total": 1,
+                "nextCursor": null,
+                "provenance": {
+                  "source": "evaluation_storage",
+                  "generatedAt": "2026-08-23T06:16:24.594Z",
+                  "syntheticExamplesIncluded": true
+                },
+                "appliedFilters": {
+                  "search": "reinforcement learning",
+                  "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                  "searchField": "input",
+                  "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+                }
+              },
+              "summary": "Found 1 matching evaluation cases and returned 1.",
+              "artifact": {
+                "href": "/evaluations/results?search=reinforcement+learning&searchField=input&promptId=ce18263f-2eec-4277-9d6b-424f0634f492&promptRevisionId=cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "kind": "evaluation-search"
+              }
+            },
+            "summary": "Searched persisted evaluation cases."
+          },
+          {
+            "type": "reasoning",
+            "summary": "Thinking through the request."
+          },
+          {
+            "name": "search_evaluations",
+            "type": "tool",
+            "input": {
+              "to": null,
+              "from": null,
+              "limit": 20,
+              "runId": null,
+              "caseId": null,
+              "cursor": null,
+              "search": "language model",
+              "status": null,
+              "dataType": null,
+              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "criterion": null,
+              "searchField": "input",
+              "judgeModelIds": null,
+              "targetModelIds": null,
+              "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+            },
+            "state": "completed",
+            "callId": "call_yB5t9e6KU2BMq5i7hmrAkanv",
+            "output": {
+              "result": {
+                "items": [
+                  {
+                    "input": "Compare language models with computer vision.",
+                    "runId": "9f21237d-3f89-46d2-bdee-ed699895e8b0",
+                    "caseId": "9d4047d0-4424-45f7-a500-b96b8249835e",
+                    "output": "**Language models** and **computer vision systems** are both AI systems, but they work with different kinds of information.\n\n| Aspect | Language models | Computer vision |\n|---|---|---|\n| **Primary input** | Text, speech converted to text, code, and other sequential data | Images, video, and visual sensor data |\n| **Main purpose** | Understand, generate, or transform language | Recognize, locate, or interpret visual content |\n| **Typical outputs** | Answers, summaries, translations, stories, code | Labels, detected objects, image descriptions, segmentations, or alerts |\n| **Example question** | “Summarize this report.” | “Is there a person in this security-camera frame?” |\n| **Common applications** | Chatbots, translation, writing assistance, search, coding tools | Face or object recognition, medical-image analysis, self-driving systems, quality inspection |\n\n### How they learn\n\nDuring **training**, a model studies many examples and learns patterns.\n\n- A language model might learn by predicting missing or next words in text. It develops patterns about grammar, meaning, facts, and how ideas relate.\n- A computer vision model might learn from images labeled “cat,” “car,” or “tumor,” or learn to identify visual patterns directly from large collections of images and videos.\n\nDuring **inference**, the trained model uses what it learned to handle a new input—for example, answering a question or identifying an object in an unfamiliar image.\n\n### Key difference\n\nA language model mainly processes information as a **sequence of symbols**, such as words or code. Computer vision processes **spatial patterns**, such as shapes, colors, edges, and the arrangement of objects in an image.\n\nModern AI systems can combine both. A multimodal model might examine a photograph and answer, “What is happening in this picture?” It uses vision to interpret the image and language capabilities to explain it.",
+                    "scores": [
+                      {
+                        "id": "590f3e9d-31d8-4605-a1bf-cbc0bdfdd9d1",
+                        "value": true,
+                        "comment": "The response is structured clearly with a comparison table and plain-language explanations suitable for a general reader.",
+                        "dataType": "BOOLEAN",
+                        "evidence": [
+                          "**Language models** and **computer vision systems** are both AI systems, but they work with different kinds of information."
+                        ],
+                        "criterion": {
+                          "type": "boolean",
+                          "instruction": "The answer is clear and understandable for a general reader."
+                        },
+                        "judgeModelId": "gemini-3.7-flash",
+                        "criterionPosition": 0
+                      },
+                      {
+                        "id": "d1d9f8d7-1511-4245-8cb8-52634b8b97b2",
+                        "value": true,
+                        "comment": "The answer is clearly organized with a comparison table, headings, examples, and concise explanations that are understandable to a general reader.",
+                        "dataType": "BOOLEAN",
+                        "evidence": [
+                          "The response directly compares inputs, purposes, outputs, example questions, and applications in a table.",
+                          "The sections “How they learn” and “Key difference” explain the distinction in accessible language."
+                        ],
+                        "criterion": {
+                          "type": "boolean",
+                          "instruction": "The answer is clear and understandable for a general reader."
+                        },
+                        "judgeModelId": "gpt-5.6-luna",
+                        "criterionPosition": 0
+                      },
+                      {
+                        "id": "e18976b6-656b-4783-af5d-ea45d5099b6a",
+                        "value": true,
+                        "comment": "The answer accurately distinguishes between language models and computer-vision systems without including any mathematical equations.",
+                        "dataType": "BOOLEAN",
+                        "evidence": [
+                          "A language model mainly processes information as a **sequence of symbols**, such as words or code. Computer vision processes **spatial patterns**, such as shapes, colors, edges, and the arrangement of objects in an image."
+                        ],
+                        "criterion": {
+                          "type": "boolean",
+                          "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
+                        },
+                        "judgeModelId": "gemini-3.7-flash",
+                        "criterionPosition": 1
+                      },
+                      {
+                        "id": "605cf079-dd8c-447e-b484-261b7c7f5ddf",
+                        "value": true,
+                        "comment": "The answer correctly distinguishes language models as primarily handling sequential symbolic information such as text and code from computer-vision systems handling images, video, and spatial visual patterns. It contains no equations.",
+                        "dataType": "BOOLEAN",
+                        "evidence": [
+                          "It states that language models process text, speech converted to text, code, and other sequential data.",
+                          "It states that computer vision systems process images, video, and visual sensor data and interpret spatial patterns.",
+                          "The response includes no equations."
+                        ],
+                        "criterion": {
+                          "type": "boolean",
+                          "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
+                        },
+                        "judgeModelId": "gpt-5.6-luna",
+                        "criterionPosition": 1
+                      }
+                    ],
+                    "status": "completed",
+                    "position": 0,
+                    "createdAt": "2026-08-23T06:15:52.648Z",
+                    "completedAt": "2026-08-23T06:16:06.903Z",
+                    "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                    "targetRunId": null,
+                    "errorMessage": null,
+                    "judgeModelIds": [
+                      "gpt-5.6-luna",
+                      "gemini-3.7-flash"
+                    ],
+                    "targetModelId": "gpt-5.6-luna",
+                    "targetRunTurnId": null,
+                    "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                    "isSyntheticExample": false,
+                    "promptRevisionNumber": 2
+                  }
+                ],
+                "total": 1,
+                "nextCursor": null,
+                "provenance": {
+                  "source": "evaluation_storage",
+                  "generatedAt": "2026-08-23T06:16:28.946Z",
+                  "syntheticExamplesIncluded": true
+                },
+                "appliedFilters": {
+                  "search": "language model",
+                  "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                  "searchField": "input",
+                  "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+                }
+              },
+              "summary": "Found 1 matching evaluation cases and returned 1.",
+              "artifact": {
+                "href": "/evaluations/results?search=language+model&searchField=input&promptId=ce18263f-2eec-4277-9d6b-424f0634f492&promptRevisionId=cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "kind": "evaluation-search"
+              }
+            },
+            "summary": "Searched persisted evaluation cases."
+          },
+          {
+            "type": "reasoning",
+            "summary": "**Summarizing Target Run and Evaluation Evidence**\n\n**Detailing unanimous judgments and run IDs**"
+          },
+          {
+            "text": "## Summary\n\nThe saved prompt **“EXAMPLE — AI Concepts, Clearly”**—prompt `ce18263f-2eec-4277-9d6b-424f0634f492`, revision `cef0bd7f-1439-4737-b7c8-701640c6c415`—was evaluated in two completed runs.\n\n### 1. Reinforcement learning\n\n- **Evaluation run:** `b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e`\n- **Case:** `c58cc8f4-f3e5-4b6e-b1a9-30528d448090`\n- **Input:** “What is reinforcement learning?”\n\nBoth **GPT-5.6 Luna** and **Gemini 3.7 Flash** judged that:\n\n- The answer was clear and understandable for a general reader.\n- It correctly distinguished reinforcement learning from supervised learning.\n- It used no equations.\n\nBoth judges gave **true on both criteria**, citing the dog-training analogy, definitions of agent/environment/action/reward, the trial-and-error explanation, and the supervised-learning comparison.\n\n### 2. Language models versus computer vision\n\n- **Evaluation run:** `9f21237d-3f89-46d2-bdee-ed699895e8b0`\n- **Case:** `9d4047d0-4424-45f7-a500-b96b8249835e`\n- **Input:** “Compare language models with computer vision.”\n\nBoth judges again agreed that:\n\n- The answer was clear for a general reader.\n- It correctly distinguished language models from computer-vision systems.\n- It used no equations.\n\nBoth gave **true on both criteria**, citing the comparison table, accessible examples, and the distinction between sequential language data and spatial visual patterns.\n\n## Overall agreement\n\nThe judges agreed completely across the persisted cases:\n\n- **2 cases**\n- **2 criteria per case**\n- **4 judgments per criterion across the two judges**\n- **All judgments were true**\n- No disagreements were recorded.\n\nThe related Target Run is `1e4812c4-4b0c-40c0-97ec-66a983942d81` ([view Target Run](/target-runs/1e4812c4-4b0c-40c0-97ec-66a983942d81)). The evaluation records identify GPT-5.6 Luna as the target model and GPT-5.6 Luna plus Gemini 3.7 Flash as the judges; their `targetRunId` fields are null, so the evidence summarized above comes from the persisted evaluation outputs and judge scores, not from the Target Run trace.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant"
+      }
+    ]
+  },
+  "targetRuns": [
+    {
+      "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+      "createdAt": "2026-08-23T06:15:30.524Z",
+      "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d",
+      "id": "1e4812c4-4b0c-40c0-97ec-66a983942d81",
+      "latestStatus": "completed",
+      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+      "promptRevisionNumber": 2,
+      "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+      "reasoningEffort": "medium",
+      "source": "ai",
+      "startedByName": "Example Builder",
+      "targetConfiguration": {},
+      "targetModelId": "gpt-5.6-luna",
+      "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
+      "targetProfileName": "AI SDK agent",
+      "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
+      "turnCount": 2,
+      "updatedAt": "2026-08-23T06:15:59.571Z",
+      "turns": [
+        {
+          "activity": [
+            {
+              "type": "reasoning",
+              "summary": "**Planning concise agent explanation**"
+            }
+          ],
+          "completedAt": "2026-08-23T06:15:42.211Z",
+          "createdAt": "2026-08-23T06:15:30.524Z",
+          "errorMessage": null,
+          "id": "a1884e48-0c65-4736-a3fb-aec6e767f5ef",
+          "input": "What is reinforcement learning, and when would you use it instead of supervised learning?",
+          "output": "**Reinforcement learning (RL)** is a way for an AI system to learn by **trying actions, receiving feedback, and improving over time**.\n\n### How it works\n\nAn RL system has:\n\n- **Agent:** the learner or decision-maker\n- **Environment:** the world it operates in\n- **Actions:** choices the agent can make\n- **Rewards:** feedback indicating whether an action was helpful or harmful\n\nFor example, in a game, the agent might move a character, the game is the environment, and winning or losing provides rewards. The agent learns through **trial and error**, discovering which sequences of actions tend to produce better long-term results.\n\n### How it differs from supervised learning\n\n**Supervised learning** learns from examples that already include the correct answer.\n\n- Input: a picture\n- Correct label: “cat”\n- Goal: learn to predict the label for new pictures\n\n**Reinforcement learning** usually does not receive the correct action directly. Instead, it receives feedback after acting.\n\n- Situation: a robot is near an obstacle\n- Action: move left or right\n- Feedback: avoid the obstacle and make progress, or collide and receive a negative reward\n\n| | Supervised learning | Reinforcement learning |\n|---|---|---|\n| Main feedback | Correct answers or labels | Rewards and penalties |\n| Learning style | Learn from examples | Learn through interaction and trial and error |\n| Main goal | Make accurate predictions | Choose actions that maximize long-term rewards |\n| Typical tasks | Image classification, spam detection, forecasting | Robotics, game playing, resource allocation, control |\n\n### When to use reinforcement learning\n\nRL is a good fit when:\n\n1. **The system must make a sequence of decisions**, not just one prediction.\n2. **Actions affect what happens next.**\n3. **Success can be measured with a reward**, even if the ideal action is unknown.\n4. **The system can safely or affordably experiment**, either in the real world or in a simulation.\n\nExamples include:\n\n- Teaching robots to walk or grasp objects\n- Training game-playing systems\n- Managing traffic signals\n- Optimizing warehouse operations\n- Adjusting recommendations over a series of user interactions\n- Controlling energy use in buildings\n\nUse **supervised learning instead** when you have many reliable examples of the correct answers and the task is mainly to predict or classify something.\n\nA practical rule: **supervised learning learns from answer keys; reinforcement learning learns from consequences.**",
+          "position": 0,
+          "status": "completed",
+          "usage": {
+            "inputTokens": 541,
+            "totalTokens": 1088,
+            "outputTokens": 547
+          }
+        },
+        {
+          "activity": [
+            {
+              "type": "reasoning",
+              "summary": "**Defining smartphone vision and language models**"
+            }
+          ],
+          "completedAt": "2026-08-23T06:15:59.571Z",
+          "createdAt": "2026-08-23T06:15:52.638Z",
+          "errorMessage": null,
+          "id": "1e1e746e-703b-41db-b57a-4c132777095e",
+          "input": "Compare a language model with a computer-vision model using one everyday product example.",
+          "output": "Consider a **smartphone**:\n\n- A **language model** works mainly with language, such as text or transcribed speech. In a voice assistant, it interprets “Remind me to call Mom at six” and generates a reply or turns the request into an action.\n- A **computer-vision model** works mainly with images or video. In the phone’s camera app, it can recognize faces, detect objects, improve focus, or identify text in a photograph.\n\n| | Language model | Computer-vision model |\n|---|---|---|\n| Main input | Text or speech converted to text | Photos or video frames |\n| Main purpose | Understand and generate language | Interpret visual content |\n| Smartphone example | Answering a question or drafting a message | Recognizing a document or taking a better portrait |\n\nThey learn different patterns during **training**: language models learn from text-like sequences, while vision models learn from images or video. During **inference**, they use those learned patterns to respond to a request or analyze new content.\n\nModern phones can combine both. For example, you could photograph a restaurant menu, have a vision model read it, and then ask a language model, “Which dishes are vegetarian?”",
+          "position": 1,
+          "status": "completed",
+          "usage": {
+            "inputTokens": 1070,
+            "totalTokens": 1397,
+            "outputTokens": 327
+          }
+        }
+      ]
+    }
+  ],
+  "evaluations": [
+    {
+      "id": "9f21237d-3f89-46d2-bdee-ed699895e8b0",
+      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+      "promptRevisionNumber": 2,
+      "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+      "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
+      "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
+      "targetProfileName": "AI SDK agent",
+      "targetModelId": "gpt-5.6-luna",
+      "targetRunId": null,
+      "targetRunTurnId": null,
+      "judgeModelIds": [
+        "gpt-5.6-luna",
+        "gemini-3.7-flash"
+      ],
+      "caseCount": 1,
+      "configurationFingerprint": "6a726c0277401c9cf2aae836fe360d180659456bf593c82dc00f7a45a28a3585",
+      "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d",
+      "source": "ai",
+      "startedByName": "Example Builder",
+      "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+      "isSyntheticExample": false,
+      "status": "completed",
+      "errorMessage": null,
+      "createdAt": "2026-08-23T06:15:52.648Z",
+      "completedAt": "2026-08-23T06:16:06.903Z",
+      "promptMarkdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
+      "targetConfiguration": {},
+      "cases": [
+        {
+          "id": "9d4047d0-4424-45f7-a500-b96b8249835e",
+          "position": 0,
+          "input": "Compare language models with computer vision.",
+          "criteria": [
+            {
+              "type": "boolean",
+              "instruction": "The answer is clear and understandable for a general reader."
+            },
+            {
+              "type": "boolean",
+              "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
+            }
+          ],
+          "output": "**Language models** and **computer vision systems** are both AI systems, but they work with different kinds of information.\n\n| Aspect | Language models | Computer vision |\n|---|---|---|\n| **Primary input** | Text, speech converted to text, code, and other sequential data | Images, video, and visual sensor data |\n| **Main purpose** | Understand, generate, or transform language | Recognize, locate, or interpret visual content |\n| **Typical outputs** | Answers, summaries, translations, stories, code | Labels, detected objects, image descriptions, segmentations, or alerts |\n| **Example question** | “Summarize this report.” | “Is there a person in this security-camera frame?” |\n| **Common applications** | Chatbots, translation, writing assistance, search, coding tools | Face or object recognition, medical-image analysis, self-driving systems, quality inspection |\n\n### How they learn\n\nDuring **training**, a model studies many examples and learns patterns.\n\n- A language model might learn by predicting missing or next words in text. It develops patterns about grammar, meaning, facts, and how ideas relate.\n- A computer vision model might learn from images labeled “cat,” “car,” or “tumor,” or learn to identify visual patterns directly from large collections of images and videos.\n\nDuring **inference**, the trained model uses what it learned to handle a new input—for example, answering a question or identifying an object in an unfamiliar image.\n\n### Key difference\n\nA language model mainly processes information as a **sequence of symbols**, such as words or code. Computer vision processes **spatial patterns**, such as shapes, colors, edges, and the arrangement of objects in an image.\n\nModern AI systems can combine both. A multimodal model might examine a photograph and answer, “What is happening in this picture?” It uses vision to interpret the image and language capabilities to explain it.",
+          "scores": [
+            {
+              "id": "590f3e9d-31d8-4605-a1bf-cbc0bdfdd9d1",
+              "criterionPosition": 0,
+              "criterion": {
+                "type": "boolean",
+                "instruction": "The answer is clear and understandable for a general reader."
+              },
+              "dataType": "BOOLEAN",
+              "judgeModelId": "gemini-3.7-flash",
+              "value": true,
+              "comment": "The response is structured clearly with a comparison table and plain-language explanations suitable for a general reader.",
+              "evidence": [
+                "**Language models** and **computer vision systems** are both AI systems, but they work with different kinds of information."
+              ]
+            },
+            {
+              "id": "d1d9f8d7-1511-4245-8cb8-52634b8b97b2",
+              "criterionPosition": 0,
+              "criterion": {
+                "type": "boolean",
+                "instruction": "The answer is clear and understandable for a general reader."
+              },
+              "dataType": "BOOLEAN",
+              "judgeModelId": "gpt-5.6-luna",
+              "value": true,
+              "comment": "The answer is clearly organized with a comparison table, headings, examples, and concise explanations that are understandable to a general reader.",
+              "evidence": [
+                "The response directly compares inputs, purposes, outputs, example questions, and applications in a table.",
+                "The sections “How they learn” and “Key difference” explain the distinction in accessible language."
+              ]
+            },
+            {
+              "id": "e18976b6-656b-4783-af5d-ea45d5099b6a",
+              "criterionPosition": 1,
+              "criterion": {
+                "type": "boolean",
+                "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
+              },
+              "dataType": "BOOLEAN",
+              "judgeModelId": "gemini-3.7-flash",
+              "value": true,
+              "comment": "The answer accurately distinguishes between language models and computer-vision systems without including any mathematical equations.",
+              "evidence": [
+                "A language model mainly processes information as a **sequence of symbols**, such as words or code. Computer vision processes **spatial patterns**, such as shapes, colors, edges, and the arrangement of objects in an image."
+              ]
+            },
+            {
+              "id": "605cf079-dd8c-447e-b484-261b7c7f5ddf",
+              "criterionPosition": 1,
+              "criterion": {
+                "type": "boolean",
+                "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
+              },
+              "dataType": "BOOLEAN",
+              "judgeModelId": "gpt-5.6-luna",
+              "value": true,
+              "comment": "The answer correctly distinguishes language models as primarily handling sequential symbolic information such as text and code from computer-vision systems handling images, video, and spatial visual patterns. It contains no equations.",
+              "evidence": [
+                "It states that language models process text, speech converted to text, code, and other sequential data.",
+                "It states that computer vision systems process images, video, and visual sensor data and interpret spatial patterns.",
+                "The response includes no equations."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e",
+      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+      "promptRevisionNumber": 2,
+      "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+      "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
+      "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
+      "targetProfileName": "AI SDK agent",
+      "targetModelId": "gpt-5.6-luna",
+      "targetRunId": null,
+      "targetRunTurnId": null,
+      "judgeModelIds": [
+        "gpt-5.6-luna",
+        "gemini-3.7-flash"
+      ],
+      "caseCount": 1,
+      "configurationFingerprint": "d4f77a308a3e734b3fce86f4bc2851bb8571077cc15700a7b3fa7bfec697d62e",
+      "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d",
+      "source": "ai",
+      "startedByName": "Example Builder",
+      "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
+      "isSyntheticExample": false,
+      "status": "completed",
+      "errorMessage": null,
+      "createdAt": "2026-08-23T06:15:52.641Z",
+      "completedAt": "2026-08-23T06:16:06.609Z",
+      "promptMarkdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
+      "targetConfiguration": {},
+      "cases": [
+        {
+          "id": "c58cc8f4-f3e5-4b6e-b1a9-30528d448090",
+          "position": 0,
+          "input": "What is reinforcement learning?",
+          "criteria": [
+            {
+              "type": "boolean",
+              "instruction": "The answer is clear and understandable for a general reader."
+            },
+            {
+              "type": "boolean",
+              "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
+            }
+          ],
+          "output": "**Reinforcement learning** is a way for an AI system to learn by trying actions and receiving feedback about how good those actions were.\n\nImagine training a dog:\n\n- The **agent** is the learner, such as a robot or game-playing program.\n- The **environment** is the world it interacts with, such as a maze or video game.\n- An **action** is something it chooses to do, such as moving left or picking up an object.\n- A **reward** is feedback: positive for helpful behavior and negative—or no reward—for poor behavior.\n\nThe agent learns through **trial and error**. Over many attempts, it discovers which actions tend to produce better long-term results. For example, a game-playing AI may learn that sacrificing a piece early can lead to winning later.\n\n### Reinforcement learning versus supervised learning\n\nIn **supervised learning**, the AI is shown examples with correct answers—for instance, many labeled pictures of cats and dogs. It learns to imitate those answers.\n\nIn **reinforcement learning**, the AI usually is not given the correct action directly. It must explore, make choices, and learn from rewards over time.\n\n- **Supervised learning** is useful when correct examples are available.\n- **Reinforcement learning** is useful for decisions that unfold over time, especially when success depends on a sequence of actions, such as robotics, games, navigation, or resource management.\n\nDuring **training**, the agent experiments and adjusts its behavior. During **inference**, it uses what it learned to choose actions in a new situation.",
+          "scores": [
+            {
+              "id": "05d639e2-a972-487c-940c-42bf0c1e632a",
+              "criterionPosition": 0,
+              "criterion": {
+                "type": "boolean",
+                "instruction": "The answer is clear and understandable for a general reader."
+              },
+              "dataType": "BOOLEAN",
+              "judgeModelId": "gemini-3.7-flash",
+              "value": true,
+              "comment": "The explanation uses intuitive analogies (training a dog) and straightforward language that makes the concept easy to understand for a general audience.",
+              "evidence": [
+                "Imagine training a dog:",
+                "The agent learns through trial and error.",
+                "Over many attempts, it discovers which actions tend to produce better long-term results."
+              ]
+            },
+            {
+              "id": "217aafe7-9211-4ba8-9bc6-32f34c2f06df",
+              "criterionPosition": 0,
+              "criterion": {
+                "type": "boolean",
+                "instruction": "The answer is clear and understandable for a general reader."
+              },
+              "dataType": "BOOLEAN",
+              "judgeModelId": "gpt-5.6-luna",
+              "value": true,
+              "comment": "The answer is clear and understandable for a general reader, using plain language, concrete examples, and organized comparisons.",
+              "evidence": [
+                "It explains reinforcement learning as learning by trying actions and receiving feedback.",
+                "The dog-training analogy and examples such as mazes, video games, and robotics make the concepts accessible.",
+                "The bullet points clearly define agent, environment, action, and reward."
+              ]
+            },
+            {
+              "id": "dbe5438b-eb74-4643-862f-34867fba90f0",
+              "criterionPosition": 1,
+              "criterion": {
+                "type": "boolean",
+                "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
+              },
+              "dataType": "BOOLEAN",
+              "judgeModelId": "gemini-3.7-flash",
+              "value": true,
+              "comment": "The response clearly contrasts reinforcement learning with supervised learning without using any mathematical equations.",
+              "evidence": [
+                "In supervised learning, the AI is shown examples with correct answers—for instance, many labeled pictures of cats and dogs.",
+                "In reinforcement learning, the AI usually is not given the correct action directly. It must explore, make choices, and learn from rewards over time."
+              ]
+            },
+            {
+              "id": "8fd96fe8-668f-4ed6-88fc-c84f73b5d9a2",
+              "criterionPosition": 1,
+              "criterion": {
+                "type": "boolean",
+                "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
+              },
+              "dataType": "BOOLEAN",
+              "judgeModelId": "gpt-5.6-luna",
+              "value": true,
+              "comment": "The answer correctly distinguishes reinforcement learning from supervised learning and contains no equations.",
+              "evidence": [
+                "It states that supervised learning uses examples with correct answers, while reinforcement learning learns through choices, exploration, and rewards.",
+                "It accurately notes that reinforcement learning involves decisions unfolding over time and sequences of actions.",
+                "The response contains no equations."
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 "use client";
 
-import { Check, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/components/ui/utils";
@@ -52,7 +52,8 @@ export function ModelSelector({
         </div>
         {models.map((model) => (
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-accent"
+            aria-pressed={model.id === value}
+            className="touch-target flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-accent"
             key={model.id}
             onClick={() => {
               onChange(model.id);
@@ -62,9 +63,6 @@ export function ModelSelector({
           >
             <ModelIcon model={model} />
             <span className="min-w-0 truncate">{model.label}</span>
-            <span className="ml-auto grid size-4 place-items-center">
-              {model.id === value ? <Check aria-label="Selected" className="size-3.5" /> : null}
-            </span>
           </button>
         ))}
       </ComposerMenu>

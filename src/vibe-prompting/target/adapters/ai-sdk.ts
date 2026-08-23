@@ -272,6 +272,7 @@ export function createAiSdkTargetRuntime(input: {
     maxOutputTokens: input.configuration.maxOutputTokens,
     maxSteps: input.configuration.maxSteps,
     model: input.model,
+    prepareStep: ({ messages }) => ({ messages: sanitizeAiSdkHistory(messages) }),
     providerOptions: input.providerOptions,
     tools: input.tools,
   });

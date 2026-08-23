@@ -199,8 +199,8 @@ function EvidenceGroup({
 
 function ScoreEvidence({ score }: { score: EvaluationScore }) {
   return (
-    <details className="group px-4 py-3">
-      <summary className="flex cursor-pointer list-none items-baseline justify-between gap-4 marker:content-none">
+    <details className="group px-4">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 marker:content-none">
         <ModelIdentityLabel
           className="min-w-0"
           labelClassName="font-mono text-[11px] font-medium"
@@ -216,7 +216,7 @@ function ScoreEvidence({ score }: { score: EvaluationScore }) {
           {scoreLabel(score)}
         </span>
       </summary>
-      <div className="mt-3 max-w-3xl border-l pl-3 text-xs leading-5 text-muted-foreground">
+      <div className="mb-3 max-w-3xl border-l pl-3 text-xs leading-5 text-muted-foreground">
         <p>{score.comment || "No rationale was returned."}</p>
         {score.evidence.length ? (
           <ol className="mt-2 space-y-1 font-mono text-[11px]">

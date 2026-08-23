@@ -161,6 +161,12 @@
   .page-gutter {
     padding-inline: var(--page-gutter);
   }
+
+  @media (pointer: coarse) {
+    .touch-target {
+      min-height: 44px;
+    }
+  }
 }
 
 ::-webkit-scrollbar {

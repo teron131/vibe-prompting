@@ -11,6 +11,7 @@ import {
   ChevronUp,
   Copy,
   LoaderCircle,
+  Pencil,
   Plus,
   Save,
   Trash2,
@@ -79,7 +80,7 @@ export function CriteriaProfileWorkspace() {
       .json<CriteriaProfilesResponse>("/api/evaluations/criteria-profiles")
       .then(({ profiles: loaded }) => {
         setProfiles(loaded);
-        if (loaded[0]) setDraft(toDraft(loaded[0]));
+        setDraft(loaded[0] ? toDraft(loaded[0]) : newDraft());
       })
       .catch((error) => toast.error(readError(error)))
       .finally(() => setLoading(false));
@@ -376,13 +377,19 @@ export function CriteriaProfileWorkspace() {
               <label className="sr-only" htmlFor="criteria-profile-name">
                 Criteria set name
               </label>
-              <Input
-                className="h-8 min-w-0 max-w-lg flex-1 border-0 bg-transparent px-2 text-base font-semibold shadow-none"
-                id="criteria-profile-name"
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                placeholder="Criteria set name"
-                value={draft.name}
-              />
+              <div className="group/title relative min-w-0 max-w-lg flex-1">
+                <Pencil
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-1/2 left-2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground opacity-40 transition-opacity group-hover/title:opacity-70 group-focus-within/title:opacity-90"
+                />
+                <Input
+                  className="h-8 cursor-text rounded-sm border-0 bg-transparent pr-2 pl-7 text-base font-semibold shadow-none transition-colors hover:bg-accent/35 focus-visible:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                  id="criteria-profile-name"
+                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                  placeholder="Criteria set name"
+                  value={draft.name}
+                />
+              </div>
               <div className="flex shrink-0 gap-2">
                 {draft.id ? (
                   <Button

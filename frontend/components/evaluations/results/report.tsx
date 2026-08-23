@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
+import { DefaultExampleBadge } from "@/components/evaluations/shared/default-example-badge";
 import { MarkdownPreview } from "@/components/prompts/markdown-preview";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
@@ -151,9 +152,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
                 v{run.promptRevisionNumber}
               </span>
               {run.isSyntheticExample ? (
-                <span className="rounded-sm border bg-secondary/50 px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Synthetic example
-                </span>
+                <DefaultExampleBadge className="text-[11px] tracking-wide" />
               ) : null}
             </div>
             <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">

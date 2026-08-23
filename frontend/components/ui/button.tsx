@@ -1,6 +1,7 @@
-/** Provides the small shared button surface used by workspace navigation and feature controls. */
+/** Provides the shared button and button-link surfaces used by workspace navigation and feature controls. */
 
-import type { ButtonHTMLAttributes } from "react";
+import Link, { type LinkProps } from "next/link";
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes } from "react";
 
 import { cn } from "./utils";
 
@@ -11,6 +12,12 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: ButtonSize;
   variant?: ButtonVariant;
 };
+
+export type ButtonLinkProps = LinkProps &
+  Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
+    size?: ButtonSize;
+    variant?: ButtonVariant;
+  };
 
 const variantClasses: Record<ButtonVariant, string> = {
   default: "bg-primary text-primary-foreground hover:bg-primary/90",
@@ -34,15 +41,32 @@ export function Button({
   ...props
 }: ButtonProps) {
   return (
-    <button
-      className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
-        variantClasses[variant],
-        sizeClasses[size],
-        className,
-      )}
-      type={type}
-      {...props}
-    />
+    <button className={buttonClassName({ className, size, variant })} type={type} {...props} />
+  );
+}
+
+export function ButtonLink({
+  className,
+  size = "default",
+  variant = "default",
+  ...props
+}: ButtonLinkProps) {
+  return <Link className={buttonClassName({ className, size, variant })} {...props} />;
+}
+
+function buttonClassName({
+  className,
+  size,
+  variant,
+}: {
+  className?: string;
+  size: ButtonSize;
+  variant: ButtonVariant;
+}) {
+  return cn(
+    "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
+    variantClasses[variant],
+    sizeClasses[size],
+    className,
   );
 }

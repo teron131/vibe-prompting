@@ -9,6 +9,7 @@ export type AiSdkAgentOptions = {
   maxOutputTokens?: number;
   maxSteps?: number;
   model: LanguageModel;
+  prepareStep?: ToolLoopAgentSettings["prepareStep"];
   providerOptions?: ToolLoopAgentSettings["providerOptions"];
   tools?: ToolSet;
 };
@@ -19,6 +20,7 @@ export function createAiSdkAgent(options: AiSdkAgentOptions) {
     instructions: options.instructions,
     maxOutputTokens: options.maxOutputTokens,
     model: options.model,
+    prepareStep: options.prepareStep,
     providerOptions: options.providerOptions,
     stopWhen: options.maxSteps ? stepCountIs(options.maxSteps) : undefined,
     tools: options.tools,

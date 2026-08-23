@@ -36,7 +36,12 @@ export function PromptViewModeControl({
   return (
     <div
       aria-label="Prompt view mode"
-      className={cn("grid h-8 shrink-0", showChanges ? "grid-cols-4" : "grid-cols-3", className)}
+      className={cn(
+        "grid shrink-0 gap-1",
+        compact ? "h-7" : "h-8",
+        showChanges ? "grid-cols-4" : "grid-cols-3",
+        className,
+      )}
       role="group"
     >
       {visibleModes.map((option) => {
@@ -47,15 +52,15 @@ export function PromptViewModeControl({
           <button
             aria-pressed={active}
             className={cn(
-              "inline-flex h-8 min-w-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+              "inline-flex min-w-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
               variant === "editor"
-                ? "gap-1.5 px-2 text-xs"
+                ? "h-8 gap-1.5 px-2 text-xs"
                 : compact
-                  ? "gap-1 px-1.5 text-[11px]"
-                  : "gap-2 px-3 text-xs",
+                  ? "h-7 gap-1 px-1.5 text-[11px]"
+                  : "h-8 gap-2 px-3 text-xs",
               active
-                ? "bg-primary font-semibold text-primary-foreground"
-                : "font-medium text-muted-foreground hover:text-foreground",
+                ? "bg-secondary font-semibold text-secondary-foreground ring-1 ring-inset ring-border"
+                : "font-medium text-muted-foreground hover:bg-accent/40 hover:text-foreground",
             )}
             disabled={disabled}
             key={option.value}

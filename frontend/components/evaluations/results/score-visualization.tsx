@@ -26,7 +26,7 @@ export function RunScoreOverview({ run }: { run: EvaluationRun }) {
         <p className="font-mono text-[11px] text-muted-foreground">
           {run.caseCount} {run.caseCount === 1 ? "CASE" : "CASES"} · {run.judgeModelIds.length}{" "}
           {run.judgeModelIds.length === 1 ? "JUDGE" : "JUDGES"}
-          {run.isSyntheticExample ? " · SYNTHETIC EXAMPLE" : ""}
+          {run.isSyntheticExample ? " · DEFAULT EXAMPLE" : ""}
         </p>
       </header>
       <div className="overflow-x-auto">

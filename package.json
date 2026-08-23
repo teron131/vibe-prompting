@@ -1,6 +1,6 @@
 {
   "name": "vibe-prompting",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -8,6 +8,7 @@
     "./server": "./src/vibe-prompting/server.ts"
   },
   "scripts": {
+    "db:seed-examples": "node --env-file-if-exists=.env src/vibe-prompting/default-examples/seed.ts",
     "db:setup": "node src/vibe-prompting/app/setup-db.ts",
     "dev": "concurrently --kill-others-on-fail --names frontend,api,mcp \"pnpm run frontend:dev\" \"pnpm run server:dev\" \"pnpm run mcp:dev\"",
     "frontend:build": "pnpm --dir frontend build",

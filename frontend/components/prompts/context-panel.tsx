@@ -31,7 +31,7 @@ import { promptRevisionAuthorLabel } from "@/components/prompts/revision-author"
 import { PromptStats } from "@/components/prompts/stats";
 import { usePromptSearch } from "@/components/prompts/use-search";
 import { type PromptViewMode, PromptViewModeControl } from "@/components/prompts/view-mode-control";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { PromptQuote } from "@/contracts/chat";
@@ -563,7 +563,7 @@ export function PromptContextPanel({
   return (
     <aside
       aria-labelledby={titleId}
-      className="@container relative z-auto hidden min-h-0 w-[var(--prompt-panel-width)] max-w-none shrink-0 flex-col overflow-hidden border-l bg-background shadow-none xl:flex"
+      className="@container relative z-auto hidden min-h-0 w-[var(--prompt-panel-width)] max-w-none shrink-0 flex-col overflow-hidden border-l bg-background shadow-none min-[800px]:flex"
       onKeyDown={savePromptWithKeyboard}
       ref={panelRef}
       style={{ "--prompt-panel-width": `${panelWidth}px` } as CSSProperties}
@@ -589,7 +589,7 @@ export function PromptContextPanel({
         {panelView === "prompt" && activePrompt ? (
           <Button
             aria-label="Back to prompts"
-            className="size-8"
+            className="size-8 rounded-full"
             onClick={leavePrompt}
             size="icon"
             variant="ghost"
@@ -630,7 +630,7 @@ export function PromptContextPanel({
         {panelView === "prompt" && activePrompt ? (
           <Link
             aria-label={`Open ${activePrompt.title} in the full prompt workspace`}
-            className="grid size-8 shrink-0 place-items-center rounded-md hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="grid size-8 shrink-0 place-items-center rounded-full hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             href={`/prompts/${activePrompt.id}`}
             title="Open full workspace"
           >
@@ -639,7 +639,7 @@ export function PromptContextPanel({
         ) : null}
         <Button
           aria-label="Close prompts"
-          className="size-8"
+          className="size-8 rounded-full"
           onClick={closePanel}
           size="icon"
           variant="ghost"
@@ -731,7 +731,7 @@ export function PromptContextPanel({
         </div>
       ) : activePrompt ? (
         <>
-          <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b p-2 @min-[560px]:h-10 @min-[560px]:flex-nowrap @min-[560px]:py-0">
+          <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 border-b p-1.5 @min-[560px]:h-10 @min-[560px]:flex-nowrap @min-[560px]:px-2 @min-[560px]:py-0">
             <PromptViewModeControl
               className={
                 compactToolbar ? "w-full" : changesAvailable ? "w-[22rem]" : "w-[17.25rem]"
@@ -918,7 +918,7 @@ export function PromptContextPanel({
             )}
           </div>
 
-          <footer className="shrink-0 border-t p-3">
+          <footer className="shrink-0 border-t p-2.5">
             <div className="mb-1 flex min-h-7 items-center gap-2 px-1 text-xs">
               <MessageCircleMore
                 aria-hidden="true"
@@ -968,28 +968,33 @@ export function PromptContextPanel({
                 <span className="text-muted-foreground">No evaluations yet</span>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            <div className="grid grid-cols-2 gap-1.5">
+              <ButtonLink
+                className="gap-1.5 rounded-lg px-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 href={`/prompts/${activePrompt.id}`}
+                size="sm"
+                variant="outline"
               >
-                <FileText aria-hidden="true" className="size-4" />
+                <FileText aria-hidden="true" className="size-3.5" />
                 Full workspace
-              </Link>
-              <Link
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              </ButtonLink>
+              <ButtonLink
+                className="gap-1.5 rounded-lg px-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 href={`/?mode=target&prompt=${activePrompt.id}`}
+                size="sm"
               >
-                <MessageCircleMore aria-hidden="true" className="size-4" />
+                <MessageCircleMore aria-hidden="true" className="size-3.5" />
                 Target Test
-              </Link>
-              <Link
-                className="col-span-2 inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              </ButtonLink>
+              <ButtonLink
+                className="col-span-2 gap-1.5 rounded-lg px-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 href={`/evaluations?prompt=${activePrompt.id}`}
+                size="sm"
+                variant="outline"
               >
-                <FlaskConical aria-hidden="true" className="size-4" />
+                <FlaskConical aria-hidden="true" className="size-3.5" />
                 Evaluate active
-              </Link>
+              </ButtonLink>
             </div>
           </footer>
         </>
