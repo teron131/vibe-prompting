@@ -131,7 +131,7 @@ export function ChatHistory() {
       <div className="flex items-center justify-between px-1.5 py-2">
         <div className="flex min-w-0 items-baseline gap-1.5">
           <span className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Your chats
+            Your Chats
           </span>
           <span className="shrink-0 text-[10px] text-muted-foreground/75">Private</span>
         </div>
@@ -274,8 +274,8 @@ function groupChats(chats: ChatSummary[]) {
   const groups = [
     { label: "Today", chats: [] as ChatSummary[], test: (date: Date) => date >= today },
     { label: "Yesterday", chats: [] as ChatSummary[], test: (date: Date) => date >= yesterday },
-    { label: "Last 7 days", chats: [] as ChatSummary[], test: (date: Date) => date >= sevenDays },
-    { label: "Last 30 days", chats: [] as ChatSummary[], test: (date: Date) => date >= thirtyDays },
+    { label: "Last 7 Days", chats: [] as ChatSummary[], test: (date: Date) => date >= sevenDays },
+    { label: "Last 30 Days", chats: [] as ChatSummary[], test: (date: Date) => date >= thirtyDays },
     { label: "Older", chats: [] as ChatSummary[], test: () => true },
   ];
   for (const chat of chats) {

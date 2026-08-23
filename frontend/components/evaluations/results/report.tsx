@@ -195,7 +195,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
           <ProvenanceDatum label="Target">
             <ModelIdentityLabel labelClassName="font-mono" modelId={run.targetModelId} />
           </ProvenanceDatum>
-          <ProvenanceDatum label="Prompt revision">
+          <ProvenanceDatum label="Prompt Revision">
             <span className="font-mono" title={run.promptRevisionId}>
               v{run.promptRevisionNumber} · {run.promptRevisionId.slice(0, 8)}
             </span>
@@ -205,7 +205,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
               {run.cases.filter(({ output }) => output !== null).length}/{run.caseCount} completed
             </span>
           </ProvenanceDatum>
-          <ProvenanceDatum label="Score facts">
+          <ProvenanceDatum label="Score Facts">
             <span className="font-mono">
               {scoreCounts.length
                 ? scoreCounts.map(([type, count]) => `${type.toLowerCase()} ${count}`).join(" · ")
@@ -219,7 +219,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
             </span>
           </ProvenanceDatum>
           {run.targetRunId ? (
-            <ProvenanceDatum label="Recorded trace">
+            <ProvenanceDatum label="Recorded Trace">
               <Link
                 className="font-mono font-medium hover:underline"
                 href={`/target-runs/${run.targetRunId}`}
@@ -242,7 +242,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
         </div>
         <details className="group border-b text-xs">
           <summary className="flex cursor-pointer list-none items-center justify-between py-2.5 text-muted-foreground hover:text-foreground">
-            <span>Exact provenance</span>
+            <span>Exact Provenance</span>
             <span className="font-mono group-open:hidden">Run {run.id.slice(0, 8)}</span>
             <span className="hidden font-mono group-open:inline">Close</span>
           </summary>
@@ -254,19 +254,19 @@ export function EvaluationReport({ runId }: { runId: string }) {
             />
             <ExactDatum label="Started by" value={memberDisplayName(run.startedByName)} />
             <ExactDatum label="Prompt ID" value={run.promptId} />
-            <ExactDatum label="Configuration fingerprint" value={run.configurationFingerprint} />
+            <ExactDatum label="Configuration Fingerprint" value={run.configurationFingerprint} />
             <ExactDatum
-              label="Effective instructions hash"
+              label="Effective Instructions Hash"
               value={run.effectiveInstructionsHash ?? "Not recorded"}
             />
-            <ExactDatum label="Target profile ID" value={run.targetProfileId ?? "Legacy runtime"} />
+            <ExactDatum label="Target Profile ID" value={run.targetProfileId ?? "Legacy runtime"} />
             <ExactDatum label="Target Run ID" value={run.targetRunId ?? "Live target execution"} />
             <ExactDatum
-              label="Target Run turn ID"
+              label="Target Run Turn ID"
               value={run.targetRunTurnId ?? "Live target execution"}
             />
             <ExactDatum
-              label="Target configuration"
+              label="Target Configuration"
               value={
                 run.targetConfiguration ? JSON.stringify(run.targetConfiguration) : "Not recorded"
               }
@@ -300,7 +300,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
           type="button"
         >
           <FileText aria-hidden="true" className="mr-2 inline size-4" />
-          Prompt artifact
+          Prompt Artifact
         </button>
       </nav>
       <div className="pt-6">
@@ -308,7 +308,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
           <section>
             <div className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <div className="text-sm font-semibold">Exact evaluated revision</div>
+                <div className="text-sm font-semibold">Exact Evaluated Revision</div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   This immutable artifact, not the active prompt revision, produced the results.
                 </p>
@@ -318,7 +318,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
                   className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs hover:bg-accent"
                   href={`/prompts/${run.promptId}`}
                 >
-                  Prompt detail
+                  Prompt Detail
                   <ExternalLink aria-hidden="true" className="size-3" />
                 </Link>
                 <Button onClick={() => setSource((value) => !value)} size="sm" variant="ghost">
@@ -379,7 +379,7 @@ function Results({ run, trend }: { run: EvaluationRun; trend: BooleanTrendPoint[
             className="text-xs font-semibold uppercase tracking-wide"
             id="criterion-overview-heading"
           >
-            Criterion overview
+            Criterion Overview
           </h2>
           <span className="font-mono text-[11px] text-muted-foreground">
             {run.caseCount} {run.caseCount === 1 ? "case" : "cases"} · {run.judgeModelIds.length}{" "}
@@ -396,7 +396,7 @@ function Results({ run, trend }: { run: EvaluationRun; trend: BooleanTrendPoint[
       <section className="mt-8 border-t" aria-labelledby="case-evidence-heading">
         <div className="flex items-baseline justify-between gap-4 py-4">
           <h2 className="text-xs font-semibold uppercase tracking-wide" id="case-evidence-heading">
-            Case evidence
+            Case Evidence
           </h2>
           <span className="font-mono text-[11px] text-muted-foreground">
             {run.cases.length} persisted
@@ -415,13 +415,13 @@ function Results({ run, trend }: { run: EvaluationRun; trend: BooleanTrendPoint[
               <EvaluationMarkdownValue className="lg:pr-6" label="Input" value={testCase.input} />
               <EvaluationMarkdownValue
                 className="border-t lg:border-t-0 lg:border-l lg:pl-6"
-                label="Target output"
+                label="Target Output"
                 value={testCase.output}
               />
             </div>
             <div className="border-t py-5">
               <div className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Attributed score evidence
+                Attributed Score Evidence
               </div>
               <ScoreGrid judges={run.judgeModelIds} testCase={testCase} />
             </div>

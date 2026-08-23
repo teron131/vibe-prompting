@@ -665,7 +665,7 @@ export function PromptContextPanel({
             />
           </label>
           <div className="mt-3 flex items-center justify-between px-1 text-[11px] text-muted-foreground">
-            <span>{hasSearchQuery ? "Matches" : "Saved prompts"}</span>
+            <span>{hasSearchQuery ? "Matches" : "Saved Prompts"}</span>
             <span>{explorerPrompts.length}</span>
           </div>
           <div aria-label="Saved prompt explorer" className="mt-1 min-h-0 flex-1 overflow-y-auto">
@@ -799,7 +799,7 @@ export function PromptContextPanel({
             {showingHistorical ? (
               <div className="flex h-9 shrink-0 items-center justify-between gap-3 border-b px-3">
                 <span className="text-xs text-muted-foreground">
-                  {historicalState === "loading" ? "Loading pinned revision…" : "Pinned revision"}
+                  {historicalState === "loading" ? "Loading pinned revision…" : "Pinned Revision"}
                 </span>
                 <button
                   className="text-[11px] font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

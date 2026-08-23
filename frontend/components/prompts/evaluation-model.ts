@@ -5,6 +5,7 @@ import type { Criterion, EvaluationRun, EvaluationScore } from "../../contracts/
 export type PromptCriterionOutcome = {
   evidence: string[];
   instruction: string;
+  name: string;
   result: "fail" | "neutral" | "pass";
   summary: string;
   type: Criterion["type"];
@@ -14,7 +15,7 @@ export function buildPromptCriterionOutcomes(run: EvaluationRun): PromptCriterio
   const groups = new Map<string, { criterion: Criterion; scores: EvaluationScore[] }>();
   for (const testCase of run.cases) {
     for (const [position, criterion] of testCase.criteria.entries()) {
-      const key = `${criterion.type}\u0000${criterion.instruction}`;
+      const key = `${criterion.type}\u0000${criterion.name}`;
       const group = groups.get(key) ?? { criterion, scores: [] };
       group.scores.push(...testCase.scores.filter((score) => score.criterionPosition === position));
       groups.set(key, group);
@@ -23,6 +24,7 @@ export function buildPromptCriterionOutcomes(run: EvaluationRun): PromptCriterio
   return [...groups.values()].map(({ criterion, scores }) => ({
     evidence: collectEvidence(scores),
     instruction: criterion.instruction,
+    name: criterion.name,
     result: outcomeResult(criterion, scores),
     summary: outcomeSummary(criterion, scores),
     type: criterion.type,

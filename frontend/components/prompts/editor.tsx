@@ -459,7 +459,7 @@ export function PromptEditor({
         <section className="grid gap-5 lg:grid-cols-[18rem_1fr]">
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold">Revision history</h3>
+              <h3 className="text-sm font-semibold">Revision History</h3>
               <span className="text-xs text-muted-foreground">
                 {detail.revisions.length} versions
               </span>
@@ -483,7 +483,7 @@ export function PromptEditor({
           <div>
             <div className="mb-2 flex items-center gap-2">
               <GitCompareArrows aria-hidden="true" className="size-4" />
-              <h3 className="text-sm font-semibold">Adjacent revision diff</h3>
+              <h3 className="text-sm font-semibold">Adjacent Revision Diff</h3>
             </div>
             {revisionLoading ? (
               <div className="grid min-h-48 place-items-center rounded-xl border bg-card">
@@ -630,7 +630,7 @@ function RevisionButton({
         </span>
       </div>
       <div className="mt-1.5 truncate text-foreground">
-        {revision.changeRequest ?? "Initial prompt"}
+        {revision.changeRequest ?? "Initial Prompt"}
       </div>
       <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <span>{promptRevisionAuthorLabel(revision)}</span>

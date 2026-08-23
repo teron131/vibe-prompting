@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import type { Criterion } from "../../evaluation/api.ts";
+import { criteriaSchema } from "../../evaluation/api.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
 import { type AgentTool, defineAgentTool } from "./api.ts";
 
@@ -11,11 +11,11 @@ export type ConfiguredModelReference = { id: string; label: string };
 
 const evaluationCaseSchema = z.object({
   input: z.string().trim().min(1),
-  criteria: z.array(z.string().trim().min(1)).min(1).max(10),
+  criteria: criteriaSchema,
 });
 const batchConfigurationSchema = z.object({
   name: z.string().trim().min(1),
-  criteria: z.array(z.string().trim().min(1)).min(1).max(10),
+  criteria: criteriaSchema,
 });
 const evaluationSchema = z.object({
   promptId: z.uuid(),
@@ -82,7 +82,7 @@ export function createEvaluationTool(
           ).map((configuration, index) => ({
             id: `configuration-${index + 1}`,
             name: configuration.name,
-            criteria: toBooleanCriteria(configuration.criteria),
+            criteria: configuration.criteria,
           })),
           cases: cases.map(({ input }) => ({ input })),
           repetitions: repetitions ?? 1,
@@ -109,7 +109,7 @@ export function createEvaluationTool(
           judges: judges.map((judge) => resolveConfiguredModelId(judge, models)),
           cases: cases.map((testCase) => ({
             input: testCase.input,
-            criteria: toBooleanCriteria(testCase.criteria),
+            criteria: testCase.criteria,
           })),
         },
         chatId,
@@ -121,11 +121,6 @@ export function createEvaluationTool(
       };
     },
   });
-}
-
-/** Expands the tool shorthand into the public criterion shape used by evaluation persistence. */
-function toBooleanCriteria(instructions: readonly string[]): Criterion[] {
-  return instructions.map((instruction) => ({ type: "boolean", instruction }));
 }
 
 /** Resolves a model ID or unique display label and rejects unknown or ambiguous references. */

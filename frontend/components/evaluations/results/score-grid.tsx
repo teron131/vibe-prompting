@@ -38,12 +38,17 @@ export function ScoreGrid({ judges, testCase }: { judges: string[]; testCase: Ev
           </thead>
           <tbody className="divide-y">
             {testCase.criteria.map((criterion, position) => (
-              <tr key={`${position}-${criterion.instruction}`}>
+              <tr key={`${position}-${criterion.name}`}>
                 <th className="border-r px-4 py-3 text-left align-top font-normal sm:px-5">
                   <span className="font-mono text-[11px] uppercase text-muted-foreground">
                     C{position + 1} · {criterion.type}
                   </span>
-                  <span className="mt-1 block max-w-sm leading-5">{criterion.instruction}</span>
+                  <span className="mt-1 block max-w-sm font-medium leading-5">
+                    {criterion.name}
+                  </span>
+                  <span className="mt-1 block max-w-sm leading-5 text-muted-foreground">
+                    {criterion.instruction}
+                  </span>
                   <CriterionScale
                     criterion={criterion}
                     scores={scoresByPosition.get(position) ?? []}
@@ -65,7 +70,7 @@ export function ScoreGrid({ judges, testCase }: { judges: string[]; testCase: Ev
       </div>
       <section className="border-t">
         <header className="flex items-center justify-between gap-3 border-b bg-muted/20 px-4 py-2.5 sm:px-5">
-          <h4 className="text-xs font-semibold">Judge rationale and evidence</h4>
+          <h4 className="text-xs font-semibold">Judge Rationale and Evidence</h4>
           <span className="font-mono text-[11px] text-muted-foreground">
             {testCase.scores.length} SCORE FACTS
           </span>
@@ -76,7 +81,7 @@ export function ScoreGrid({ judges, testCase }: { judges: string[]; testCase: Ev
               criterion={criterion}
               position={position}
               scores={scoresByPosition.get(position) ?? []}
-              key={`${position}-${criterion.instruction}`}
+              key={`${position}-${criterion.name}`}
             />
           ))}
         </div>
@@ -184,7 +189,10 @@ function EvidenceGroup({
         <span className="font-mono text-[11px] uppercase text-muted-foreground">
           Criterion {position + 1}
         </span>
-        <p className="mt-1 line-clamp-3 text-xs leading-5">{criterion.instruction}</p>
+        <p className="mt-1 text-xs font-medium leading-5">{criterion.name}</p>
+        <p className="mt-1 line-clamp-3 text-xs leading-5 text-muted-foreground">
+          {criterion.instruction}
+        </p>
       </div>
       <div className="divide-y">
         {scores.length ? (

@@ -48,7 +48,7 @@ export function ModelSelector({
       </summary>
       <ComposerMenu className="overflow-hidden p-1">
         <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          Configured models
+          Configured Models
         </div>
         {models.map((model) => (
           <button

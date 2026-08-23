@@ -165,7 +165,7 @@ export function EvaluationAnalyticsDashboard() {
       <header className="page-gutter bg-background py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Criterion analytics</h1>
+            <h1 className="text-xl font-semibold tracking-tight">Criterion Analytics</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
               Compare quality by criterion, check whether the evidence is reliable, then inspect the
               cases behind it.
@@ -284,7 +284,7 @@ function AnalyticsFilters({
     <section aria-labelledby="analytics-scope-heading" className="mt-3 pt-2">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-xs font-semibold" id="analytics-scope-heading">
-          Analysis scope
+          Analysis Scope
         </h2>
         <div className="flex items-center gap-1">
           <ClearFilters count={activeCount} onClear={clearScope} />
@@ -309,7 +309,7 @@ function AnalyticsFilters({
         </FilterSelect>
         <FilterSelect
           className="w-auto max-w-[14rem] flex-1 basis-40 font-mono"
-          label="Prompt revision"
+          label="Prompt Revision"
           onValueChange={(value) => updateFilter("promptRevisionId", value || undefined)}
           value={filters.promptRevisionId ?? ""}
         >
@@ -321,9 +321,9 @@ function AnalyticsFilters({
           ))}
         </FilterSelect>
         <MultiFilterSelect
-          allLabel="All target models"
+          allLabel="All Target Models"
           className="min-w-0 flex-1 basis-40"
-          label="Target model"
+          label="Target Model"
           onValuesChange={(values) =>
             updateFilter("targetModelIds", values.length ? values : undefined)
           }
@@ -336,7 +336,7 @@ function AnalyticsFilters({
           ))}
         </MultiFilterSelect>
         <MultiFilterSelect
-          allLabel="All judges"
+          allLabel="All Judges"
           className="min-w-0 flex-1 basis-40"
           label="Judge"
           onValuesChange={(values) =>
@@ -357,7 +357,7 @@ function AnalyticsFilters({
         >
           <FilterSelect
             className="w-full"
-            label="Run status"
+            label="Run Status"
             onValueChange={(value) =>
               updateFilter("status", (value || undefined) as EvaluationRunStatus | undefined)
             }
@@ -372,7 +372,7 @@ function AnalyticsFilters({
           </FilterSelect>
           <FilterSelect
             className="w-full"
-            label="Score type"
+            label="Score Type"
             onValueChange={(value) =>
               updateFilter("dataType", (value || undefined) as EvaluationDataType | undefined)
             }
@@ -504,7 +504,7 @@ function DecisionStrip({
       aria-label="Decision summary"
       className="grid rounded-xl bg-muted/20 sm:grid-cols-2 xl:grid-cols-4"
     >
-      <SummaryDatum icon={BarChart3} label="Criteria in view" value={String(criteriaCount)} />
+      <SummaryDatum icon={BarChart3} label="Criterion in View" value={String(criteriaCount)} />
       <SummaryDatum
         detail={
           data.reliability.comparableJudgeGroups
@@ -512,19 +512,19 @@ function DecisionStrip({
             : "Needs two judges on the same criterion"
         }
         icon={Scale}
-        label="Exact judge agreement"
+        label="Exact Judge Agreement"
         value={formatPercent(data.reliability.judgeAgreementRate)}
       />
       <SummaryDatum
         detail={`${data.execution.completedRuns} of ${data.execution.totalRuns} runs`}
         icon={ShieldCheck}
-        label="Run completion"
+        label="Run Completion"
         value={formatPercent(completionRate)}
       />
       <SummaryDatum
         detail={`${data.execution.durationMeasuredRuns} completed runs measured`}
         icon={Clock3}
-        label="Median run duration"
+        label="Median Run Duration"
         value={formatDuration(data.execution.medianDurationMs)}
       />
     </section>
@@ -572,7 +572,7 @@ function CriterionPerformance({
     <section className="py-7">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-sm font-semibold">Criterion performance</h2>
+          <h2 className="text-sm font-semibold">Criterion Performance</h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
             Each row keeps its native score type instead of collapsing unlike criteria into one
             quality number.
@@ -711,17 +711,17 @@ function Diagnostics({ data }: { data: EvaluationAnalyticsResponse }) {
         <dl className="mt-4 divide-y text-xs">
           <DiagnosticRow
             detail="Exact matches across Boolean and categorical scores with more than one judge."
-            label="Judge agreement"
+            label="Judge Agreement"
             value={formatPercent(data.reliability.judgeAgreementRate)}
           />
           <DiagnosticRow
             detail="Failed and interrupted runs in the selected scope."
-            label="Execution failures"
+            label="Execution Failures"
             value={`${failed} / ${data.execution.totalRuns}`}
           />
           <DiagnosticRow
             detail="Running evaluations remain visible instead of being treated as completed evidence."
-            label="Still running"
+            label="Still Running"
             value={String(data.execution.runningRuns)}
           />
         </dl>
@@ -735,7 +735,7 @@ function Diagnostics({ data }: { data: EvaluationAnalyticsResponse }) {
         <dl className="mt-4 divide-y text-xs">
           <DiagnosticRow
             detail="Whole evaluation run, not individual target or judge calls."
-            label="Median duration"
+            label="Median Duration"
             value={formatDuration(data.execution.medianDurationMs)}
           />
           <DiagnosticRow
@@ -745,7 +745,7 @@ function Diagnostics({ data }: { data: EvaluationAnalyticsResponse }) {
           />
           <DiagnosticRow
             detail="Deployment-wide spend events cannot be safely assigned to evaluation calls."
-            label="Estimated cost"
+            label="Estimated Cost"
             value="Not attributed"
           />
         </dl>

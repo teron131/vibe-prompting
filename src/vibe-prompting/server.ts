@@ -7,7 +7,7 @@ import { loadModelSpendLimits, loadRuntimeConfig } from "./config/index.ts";
 import { ConversationRunRegistry } from "./conversations/runs.ts";
 import { ConversationStore } from "./conversations/store.ts";
 import { Database } from "./database/index.ts";
-import { CriteriaProfiles } from "./evaluation/criteria-profiles.ts";
+import { CriterionLibrary } from "./evaluation/criteria.ts";
 import { EvaluationResults } from "./evaluation/results/index.ts";
 import { EvaluationRuns } from "./evaluation/runs/index.ts";
 import { PromptSystem } from "./prompt-system/index.ts";
@@ -30,7 +30,7 @@ export type ApplicationServices = {
   targetRuns: TargetRuns;
   evaluations: EvaluationRuns;
   evaluationResults: EvaluationResults;
-  criteriaProfiles: CriteriaProfiles;
+  criterion: CriterionLibrary;
   conversations: ConversationStore;
   runs: ConversationRunRegistry;
   settings: ApplicationSettingsStore;
@@ -41,7 +41,7 @@ const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 30;
+const APPLICATION_SERVICES_VERSION = 32;
 
 /** Resolves configured model identities after the shared services and database are ready. */
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
@@ -77,7 +77,7 @@ export async function createApplicationServices(
   const targets = new TargetSystem(database, prompts);
   const targetRuns = new TargetRuns(database, prompts, targets);
   const evaluations = new EvaluationRuns(database, prompts, targets, targetRuns);
-  const criteriaProfiles = new CriteriaProfiles(database);
+  const criterion = new CriterionLibrary(database);
   return {
     auth: new AuthService(database),
     prompts,
@@ -85,7 +85,7 @@ export async function createApplicationServices(
     targetRuns,
     evaluations,
     evaluationResults: new EvaluationResults(database, search),
-    criteriaProfiles,
+    criterion,
     conversations: new ConversationStore(database, search),
     runs: new ConversationRunRegistry(),
     settings,
@@ -131,7 +131,7 @@ export { EmbeddingError } from "./clients/embedding.ts";
 export * from "./conversations/index.ts";
 export * from "./evaluation/runs/index.ts";
 export * from "./evaluation/results/index.ts";
-export * from "./evaluation/criteria-profiles.ts";
+export * from "./evaluation/criteria.ts";
 export * from "./prompt-system/index.ts";
 export * from "./settings/index.ts";
 export * from "./target/index.ts";

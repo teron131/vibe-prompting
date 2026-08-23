@@ -1,9 +1,9 @@
-/** Exposes reusable criteria profile listing and creation through the browser evaluation API. */
+/** Exposes ordered Criteria listing and creation through the authenticated browser evaluation API. */
 
 import { getApplicationServices } from "vibe-prompting/server";
 
 import { requireActiveSessionUser } from "@/auth/session";
-import type { CriteriaProfileResponse, CriteriaProfilesResponse } from "@/contracts/evaluations";
+import type { CriteriaListResponse, CriteriaResponse } from "@/contracts/evaluations";
 import { NO_STORE_HEADERS, serverErrorResponse } from "@/server/errors";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function GET() {
     await requireActiveSessionUser();
     const services = await getApplicationServices();
     return Response.json(
-      { profiles: await services.criteriaProfiles.list() } satisfies CriteriaProfilesResponse,
+      { criteria: await services.criterion.listCriteria() } satisfies CriteriaListResponse,
       { headers: NO_STORE_HEADERS },
     );
   } catch (error) {
@@ -28,8 +28,8 @@ export async function POST(request: Request) {
     const services = await getApplicationServices();
     return Response.json(
       {
-        profile: await services.criteriaProfiles.create(user.id, await request.json()),
-      } satisfies CriteriaProfileResponse,
+        criteria: await services.criterion.createCriteria(user.id, await request.json()),
+      } satisfies CriteriaResponse,
       { headers: NO_STORE_HEADERS, status: 201 },
     );
   } catch (error) {

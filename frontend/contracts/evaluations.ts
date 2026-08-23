@@ -1,11 +1,13 @@
 /** Owns browser-safe evaluation attempt, score, report, and trend shapes shared by routes and components. */
 
 export type Criterion =
-  | { type: "boolean"; instruction: string }
-  | { type: "categorical"; instruction: string; categories: string[] }
-  | { type: "numeric"; instruction: string; min: number; max: number }
-  | { type: "text"; instruction: string }
-  | { type: "correction"; instruction: string };
+  | { name: string; type: "boolean"; instruction: string }
+  | { name: string; type: "categorical"; instruction: string; categories: string[] }
+  | { name: string; type: "numeric"; instruction: string; min: number; max: number }
+  | { name: string; type: "text"; instruction: string }
+  | { name: string; type: "correction"; instruction: string };
+
+export type SavedCriterion = Criterion & { id: string; version: number };
 
 export type EvaluationRunStatus =
   | "queued"
@@ -109,18 +111,22 @@ export type EvaluationBatchStart = {
 
 export type EvaluationBatchStatus = { runs: EvaluationRunSummary[] };
 
-export type CriteriaProfile = {
+export type Criteria = {
   id: string;
   name: string;
-  criteria: Criterion[];
+  criterionSequence: SavedCriterion[];
   version: number;
 };
 
-export type CriteriaProfileInput = { name: string; criteria: Criterion[] };
+export type SavedCriterionResponse = { criterion: SavedCriterion };
 
-export type CriteriaProfileResponse = { profile: CriteriaProfile };
+export type CriterionLibraryResponse = { criterion: SavedCriterion[] };
 
-export type CriteriaProfilesResponse = { profiles: CriteriaProfile[] };
+export type CriteriaInput = { name: string; criterionIds: string[] };
+
+export type CriteriaResponse = { criteria: Criteria };
+
+export type CriteriaListResponse = { criteria: Criteria[] };
 
 export type BooleanTrendPoint = {
   runId: string;

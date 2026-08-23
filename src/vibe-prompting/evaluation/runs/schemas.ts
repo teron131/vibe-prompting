@@ -155,7 +155,7 @@ export const evaluationBatchInputSchema = z.object({
   cases: z
     .array(z.object({ input: z.string().trim().min(1) }))
     .min(1)
-    .max(100),
+    .max(10),
   repetitions: z.number().int().min(1).max(5),
   isSyntheticExample: z.boolean().default(false),
 });

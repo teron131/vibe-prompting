@@ -94,7 +94,7 @@ export function selectResultRows(
       AND (${filters.criterion}::text IS NULL OR EXISTS (
         SELECT 1 FROM evaluation_scores
         WHERE evaluation_scores.case_id = evaluation_cases.id
-          AND evaluation_scores.criterion_json->>'instruction' = ${filters.criterion}
+          AND evaluation_scores.criterion_json->>'name' = ${filters.criterion}
       ))
       AND ${caseIdsCondition(sql, filters)}
       AND (${cursorDate}::timestamptz IS NULL OR (
@@ -203,7 +203,7 @@ export function countFilteredCases(sql: DatabaseClient, filters: NormalizedFilte
         SELECT 1 FROM evaluation_scores WHERE evaluation_scores.case_id = evaluation_cases.id AND evaluation_scores.data_type = ${filters.dataType}
       ))
       AND (${filters.criterion}::text IS NULL OR EXISTS (
-        SELECT 1 FROM evaluation_scores WHERE evaluation_scores.case_id = evaluation_cases.id AND evaluation_scores.criterion_json->>'instruction' = ${filters.criterion}
+        SELECT 1 FROM evaluation_scores WHERE evaluation_scores.case_id = evaluation_cases.id AND evaluation_scores.criterion_json->>'name' = ${filters.criterion}
       ))
       AND ${caseIdsCondition(sql, filters)}
   `;
@@ -261,7 +261,7 @@ export async function selectSearchDocuments(
       AND (${filters.criterion}::text IS NULL OR EXISTS (
         SELECT 1 FROM evaluation_scores
         WHERE evaluation_scores.case_id = evaluation_cases.id
-          AND evaluation_scores.criterion_json->>'instruction' = ${filters.criterion}
+          AND evaluation_scores.criterion_json->>'name' = ${filters.criterion}
       ))
   `;
   return rows.map((row) => ({
@@ -368,7 +368,7 @@ function filterConditions(sql: DatabaseClient, filters: NormalizedFilters) {
     AND (${filters.to}::timestamptz IS NULL OR evaluation_runs.created_at <= ${filters.to})
     AND ${judgeModelsCondition(sql, filters)}
     AND (${filters.dataType}::text IS NULL OR evaluation_scores.data_type = ${filters.dataType})
-    AND (${filters.criterion}::text IS NULL OR evaluation_scores.criterion_json->>'instruction' = ${filters.criterion})
+    AND (${filters.criterion}::text IS NULL OR evaluation_scores.criterion_json->>'name' = ${filters.criterion})
     AND ${caseIdsCondition(sql, filters)}
   `;
 }
@@ -421,14 +421,14 @@ export function selectBooleanAggregates(sql: DatabaseClient, filters: Normalized
   >`
     SELECT
       evaluation_scores.criterion_position,
-      evaluation_scores.criterion_json->>'instruction' AS criterion,
+      evaluation_scores.criterion_json->>'name' AS criterion,
       count(*) FILTER (WHERE (evaluation_scores.value_json #>> '{}')::boolean)::integer AS passed,
       count(*)::integer AS total
     FROM evaluation_scores
     JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
     WHERE evaluation_scores.data_type = 'BOOLEAN' AND ${filterConditions(sql, filters)}
-    GROUP BY evaluation_scores.criterion_position, evaluation_scores.criterion_json->>'instruction'
+    GROUP BY evaluation_scores.criterion_position, evaluation_scores.criterion_json->>'name'
     ORDER BY evaluation_scores.criterion_position, criterion
   `;
 }
@@ -439,14 +439,14 @@ export function selectCategoricalAggregates(sql: DatabaseClient, filters: Normal
   >`
     SELECT
       evaluation_scores.criterion_position,
-      evaluation_scores.criterion_json->>'instruction' AS criterion,
+      evaluation_scores.criterion_json->>'name' AS criterion,
       evaluation_scores.value_json #>> '{}' AS category,
       count(*)::integer AS count
     FROM evaluation_scores
     JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
     WHERE evaluation_scores.data_type = 'CATEGORICAL' AND ${filterConditions(sql, filters)}
-    GROUP BY evaluation_scores.criterion_position, evaluation_scores.criterion_json->>'instruction', evaluation_scores.value_json
+    GROUP BY evaluation_scores.criterion_position, evaluation_scores.criterion_json->>'name', evaluation_scores.value_json
     ORDER BY evaluation_scores.criterion_position, count DESC, category
   `;
 }
@@ -468,7 +468,7 @@ export function selectNumericAggregates(sql: DatabaseClient, filters: Normalized
   >`
     SELECT
       evaluation_scores.criterion_position,
-      evaluation_scores.criterion_json->>'instruction' AS criterion,
+      evaluation_scores.criterion_json->>'name' AS criterion,
       count(*)::integer AS count,
       avg((evaluation_scores.value_json #>> '{}')::double precision)::double precision AS average,
       min((evaluation_scores.value_json #>> '{}')::double precision)::double precision AS minimum,
@@ -481,7 +481,7 @@ export function selectNumericAggregates(sql: DatabaseClient, filters: Normalized
     JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
     WHERE evaluation_scores.data_type = 'NUMERIC' AND jsonb_typeof(evaluation_scores.value_json) = 'number' AND ${filterConditions(sql, filters)}
-    GROUP BY evaluation_scores.criterion_position, evaluation_scores.criterion_json->>'instruction'
+    GROUP BY evaluation_scores.criterion_position, evaluation_scores.criterion_json->>'name'
     ORDER BY evaluation_scores.criterion_position, criterion
   `;
 }
@@ -611,7 +611,7 @@ export function selectNumericQueryRows(
     `;
   const label =
     groupBy === "criterion"
-      ? sql`evaluation_scores.criterion_json->>'instruction'`
+      ? sql`evaluation_scores.criterion_json->>'name'`
       : groupBy === "judge"
         ? sql`evaluation_scores.judge_model_id`
         : groupBy === "prompt"

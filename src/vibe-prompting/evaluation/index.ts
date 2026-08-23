@@ -9,6 +9,6 @@ export {
   type EvaluationRequest,
   type EvaluationRun,
 } from "./api.ts";
-export * from "./criteria-profiles.ts";
+export * from "./criteria.ts";
 export * from "./runs/index.ts";
 export * from "./results/index.ts";

@@ -345,7 +345,7 @@ export class EvaluationRunStore {
           SELECT
             evaluation_cases.run_id,
             evaluation_scores.criterion_position,
-            evaluation_scores.criterion_json->>'instruction' AS criterion,
+            evaluation_scores.criterion_json->>'name' AS criterion,
             count(*)::integer AS total,
             count(*) FILTER (WHERE evaluation_scores.value_json #>> '{}' = 'true')::integer AS passed
           FROM evaluation_scores
@@ -356,7 +356,7 @@ export class EvaluationRunStore {
           GROUP BY
             evaluation_cases.run_id,
             evaluation_scores.criterion_position,
-            evaluation_scores.criterion_json->>'instruction'
+            evaluation_scores.criterion_json->>'name'
         )
         SELECT
           compatible_runs.id,

@@ -30,7 +30,7 @@ export default async function LoginPage({
 
   return (
     <AuthShell>
-      <h1 className="text-base font-medium">Sign in</h1>
+      <h1 className="text-base font-medium">Sign In</h1>
 
       {error ? (
         <div className="mt-6 flex gap-2 border-y py-3 text-sm text-destructive" role="alert">

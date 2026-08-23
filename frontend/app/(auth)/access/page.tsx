@@ -29,7 +29,7 @@ export default async function AccessPage({
 
   return (
     <AuthShell>
-      <h1 className="text-base font-medium">Enter invitation code</h1>
+      <h1 className="text-base font-medium">Enter Invitation Code</h1>
       <p className="mt-3 text-sm text-muted-foreground">
         Signed in as <span className="font-medium text-foreground">{user.email}</span>
       </p>
@@ -44,7 +44,7 @@ export default async function AccessPage({
       <form action={redeemInvitation} className="mt-7 space-y-4">
         <div>
           <label className="mb-2 block text-sm font-medium" htmlFor="invitation-code">
-            Invitation code
+            Invitation Code
           </label>
           <Input
             autoComplete="one-time-code"

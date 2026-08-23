@@ -29,3 +29,10 @@ export function requireUuid(value: unknown, label: string): string {
   if (!UUID_PATTERN.test(text)) throw new RequestValidationError(`${label} must be a UUID.`);
   return text;
 }
+
+export function requirePositiveInteger(value: unknown, label: string): number {
+  if (!Number.isInteger(value) || (value as number) < 1) {
+    throw new RequestValidationError(`${label} must be a positive integer.`);
+  }
+  return value as number;
+}

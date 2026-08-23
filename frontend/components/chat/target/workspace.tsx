@@ -344,7 +344,7 @@ export function TargetWorkspace({
         <div className="grid flex-1 place-items-center px-6 text-center">
           <div className="max-w-sm">
             <FlaskConical aria-hidden="true" className="mx-auto size-7 text-muted-foreground" />
-            <h2 className="mt-4 text-lg font-semibold">Select a prompt to test</h2>
+            <h2 className="mt-4 text-lg font-semibold">Select a Prompt to Test</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Target Runs always pin an exact saved prompt revision before the AI SDK agent
               executes.
@@ -401,7 +401,7 @@ function TargetEmptyState() {
     <div className="grid min-h-[46vh] place-items-center text-center">
       <div className="max-w-xl">
         <FlaskConical aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
-        <h2 className="mt-4 text-xl font-semibold">Test the selected target</h2>
+        <h2 className="mt-4 text-xl font-semibold">Test the Selected Target</h2>
         <p className="mt-2 text-balance text-sm leading-6 text-muted-foreground">
           Start a multi-turn trace against the exact prompt revision inserted above. The run is
           logged with the prompt, not with Agent chat history.

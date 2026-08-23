@@ -18,7 +18,7 @@ export function RevisionTrend({ points }: { points: BooleanTrendPoint[] }) {
     <section className="border-y">
       <header className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5">
         <div>
-          <h3 className="text-sm font-semibold">Compatible revision trend</h3>
+          <h3 className="text-sm font-semibold">Compatible Revision Trend</h3>
           <p className="mt-1 text-xs text-muted-foreground">{TREND_SCOPE}</p>
         </div>
         <span className="font-mono text-[11px] text-muted-foreground">
@@ -77,7 +77,7 @@ export function RevisionTrend({ points }: { points: BooleanTrendPoint[] }) {
       <div className="overflow-x-auto border-t bg-muted/20">
         <div className="grid min-w-[50rem] grid-cols-[16rem_minmax(0,1fr)_7rem]">
           <span className="border-r px-4 py-2 font-mono text-[11px] uppercase text-muted-foreground sm:px-5">
-            Run chronology
+            Run Chronology
           </span>
           <div className="flex justify-between gap-2 px-3 py-2">
             {points.map((point) => (

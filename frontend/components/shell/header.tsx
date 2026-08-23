@@ -21,7 +21,7 @@ export function FeaturePageHeader({
 }) {
   return (
     <header className="flex h-(--header-height) min-w-0 items-center justify-between gap-2 border-b px-3 sm:px-5">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <SidebarToggle />
         {href ? (
           <Link className="flex min-w-0 items-center gap-2 hover:text-muted-foreground" href={href}>

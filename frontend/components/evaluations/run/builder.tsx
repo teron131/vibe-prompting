@@ -17,10 +17,7 @@ import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
-import {
-  CriteriaProfilePicker,
-  EvaluationModelPicker,
-} from "@/components/evaluations/run/selectors";
+import { CriteriaPicker, EvaluationModelPicker } from "@/components/evaluations/run/selectors";
 import { EvaluationPageBar } from "@/components/evaluations/shared/evaluation-page-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,8 +27,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
 import type { ConfiguredModel, ConfiguredModelsResponse } from "@/contracts/chat";
 import type {
-  CriteriaProfile,
-  CriteriaProfilesResponse,
+  Criteria,
+  CriteriaListResponse,
   EvaluationBatchConfiguration,
   EvaluationBatchPreview,
   EvaluationBatchRequest,
@@ -76,6 +73,7 @@ const readError = createErrorReader("The evaluation request failed.");
 const MANIFEST_MIN_WIDTH = 256;
 const MANIFEST_MAX_WIDTH = 560;
 const RUN_FORM_MIN_WIDTH = 440;
+const MAX_CASES = 10;
 
 export function EvaluationRunBuilder({
   targetRunId,
@@ -95,7 +93,7 @@ export function EvaluationRunBuilder({
 function EvaluationBatchRunBuilder() {
   const [prompts, setPrompts] = useState<PromptSummary[]>([]);
   const [models, setModels] = useState<ConfiguredModel[]>([]);
-  const [profiles, setProfiles] = useState<CriteriaProfile[]>([]);
+  const [criteria, setCriteria] = useState<Criteria[]>([]);
   const [promptId, setPromptId] = useState("");
   const [targetProfile, setTargetProfile] = useState<TargetProfile | null>();
   const [targetModelIds, setTargetModelIds] = useState<string[]>([]);
@@ -125,26 +123,26 @@ function EvaluationBatchRunBuilder() {
             cases,
             configurationIds,
             judges,
-            profiles,
+            criteria,
             prompt: selectedPrompt,
             repetitions,
             targetModelIds,
           })
         : null,
-    [cases, configurationIds, judges, profiles, repetitions, selectedPrompt, targetModelIds],
+    [cases, configurationIds, criteria, judges, repetitions, selectedPrompt, targetModelIds],
   );
 
   useEffect(() => {
     Promise.all([
       evaluationApi.json<ConfiguredModelsResponse>("/api/config"),
       evaluationApi.json<PromptsResponse>("/api/prompts"),
-      evaluationApi.json<CriteriaProfilesResponse>("/api/evaluations/criteria-profiles"),
+      evaluationApi.json<CriteriaListResponse>("/api/evaluations/criteria"),
     ])
-      .then(([config, promptData, profileData]) => {
+      .then(([config, promptData, criteriaData]) => {
         const lastRun = readLastRunConfiguration();
         const lastBatch = readTrackedBatch();
         setModels(config.models);
-        setProfiles(profileData.profiles);
+        setCriteria(criteriaData.criteria);
         setPrompts(promptData.prompts);
         setPromptId(
           lastRun && promptData.prompts.some(({ id }) => id === lastRun.promptId)
@@ -153,9 +151,9 @@ function EvaluationBatchRunBuilder() {
         );
         setTargetModelIds(restoreSelection(lastRun?.targetModelIds, config.models, []));
         setJudges(restoreSelection(lastRun?.judges, config.models, []));
-        setConfigurationIds(restoreSelection(lastRun?.configurationIds, profileData.profiles, []));
+        setConfigurationIds(restoreSelection(lastRun?.configurationIds, criteriaData.criteria, []));
         if (lastRun) {
-          setCases(lastRun.cases);
+          setCases(normalizeCases(lastRun.cases));
           setRepetitions(lastRun.repetitions);
         }
         if (lastBatch) setTrackedBatch(lastBatch);
@@ -168,7 +166,7 @@ function EvaluationBatchRunBuilder() {
   useEffect(() => {
     if (!runStateReady) return;
     const lastRun: LastRunConfiguration = {
-      cases,
+      cases: cases.filter((value) => value.trim()).slice(0, MAX_CASES),
       configurationIds,
       judges,
       promptId,
@@ -300,13 +298,16 @@ function EvaluationBatchRunBuilder() {
   function saveConfiguration() {
     const name = savedName.trim();
     if (!name) return toast.error("Name this setup before saving it.");
+    const completeCases = cases.filter((value) => value.trim()).slice(0, MAX_CASES);
+    if (completeCases.length === 0) return toast.error("Add at least one case before saving it.");
     const replaced = savedConfigurations.some((configuration) => configuration.name === name);
     const next = [
       ...savedConfigurations.filter((configuration) => configuration.name !== name),
-      { cases, configurationIds, judges, name, repetitions, targetModelIds },
+      { cases: completeCases, configurationIds, judges, name, repetitions, targetModelIds },
     ];
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     setSavedConfigurations(next);
+    setCases(completeCases);
     setSavedName("");
     toast.success(
       replaced ? `Replaced “${name}” in this browser.` : `Saved “${name}” in this browser.`,
@@ -316,9 +317,9 @@ function EvaluationBatchRunBuilder() {
   function loadConfiguration(value: string) {
     const saved = savedConfigurations.find(({ name }) => name === value);
     if (!saved) return;
-    setCases(saved.cases);
+    setCases(normalizeCases(saved.cases));
     setConfigurationIds(
-      saved.configurationIds.filter((id) => profiles.some((profile) => profile.id === id)),
+      saved.configurationIds.filter((id) => criteria.some((value) => value.id === id)),
     );
     setJudges(saved.judges.filter((id) => models.some((model) => model.id === id)));
     setRepetitions(saved.repetitions);
@@ -350,9 +351,10 @@ function EvaluationBatchRunBuilder() {
     targetModelIds,
   });
   const completeCaseCount = cases.filter((value) => value.trim()).length;
-  const selectedCriteriaSets = profiles.filter(({ id }) => configurationIds.includes(id));
+  const canAddCase = cases.length < MAX_CASES;
+  const selectedCriteria = criteria.filter(({ id }) => configurationIds.includes(id));
   const executionCount =
-    preview?.executionCount ?? selectedCriteriaSets.length * targetModelIds.length * repetitions;
+    preview?.executionCount ?? selectedCriteria.length * targetModelIds.length * repetitions;
   const targetOutputCount = preview?.targetCaseInvocations ?? executionCount * completeCaseCount;
   const judgeDecisionCount =
     preview?.judgeScoreDecisions ??
@@ -360,7 +362,7 @@ function EvaluationBatchRunBuilder() {
       repetitions *
       completeCaseCount *
       judges.length *
-      selectedCriteriaSets.reduce((total, profile) => total + profile.criteria.length, 0);
+      selectedCriteria.reduce((total, value) => total + value.criterionSequence.length, 0);
   const maximumManifestWidth = () => {
     return maximumResizablePanelWidth({
       contentMinWidth: RUN_FORM_MIN_WIDTH,
@@ -382,22 +384,22 @@ function EvaluationBatchRunBuilder() {
     >
       <section className="min-w-0 bg-background">
         <EvaluationPageBar sticky>
-          <h1 className="shrink-0 text-base font-semibold tracking-tight">Evaluation run</h1>
+          <h1 className="shrink-0 text-base font-semibold tracking-tight">Evaluation Run</h1>
           <p className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground @min-[920px]:block">
             Configure prompt, models, criteria, cases, and repetitions.
           </p>
           <p className="ml-auto shrink-0 font-mono text-[11px] uppercase text-muted-foreground">
-            {count(cases.length, "case")} · {repetitions}×
+            {count(completeCaseCount, "case")} · {repetitions}×
           </p>
         </EvaluationPageBar>
 
         <div className="px-4 pb-12 sm:px-6 min-[840px]:px-7 xl:px-10">
           <RunSection
             description="Choose the prompt revision, target models that answer, and judge models that score."
-            title="Prompt and models"
+            title="Prompt and Models"
           >
             <div className="grid gap-4 @min-[980px]:grid-cols-[minmax(18rem,1fr)_minmax(16rem,0.8fr)]">
-              <Field label="Prompt revision">
+              <Field label="Prompt Revision">
                 <Select onValueChange={setPromptId} value={promptId}>
                   <option value="">Choose a prompt revision</option>
                   {prompts.map((prompt) => (
@@ -409,7 +411,7 @@ function EvaluationBatchRunBuilder() {
               </Field>
               <dl className="grid grid-cols-2 divide-x border-y text-xs">
                 <Definition
-                  label="Agent setup"
+                  label="Agent Setup"
                   value={
                     !promptId
                       ? "Choose a prompt"
@@ -432,14 +434,14 @@ function EvaluationBatchRunBuilder() {
             </div>
             <EvaluationModelPicker
               className="mt-4"
-              label="Target models"
+              label="Target Models"
               models={models}
               onChange={setTargetModelIds}
               selected={targetModelIds}
             />
             <EvaluationModelPicker
               className="mt-4"
-              label="Judge models"
+              label="Judge Models"
               models={models}
               onChange={setJudges}
               selected={judges}
@@ -447,15 +449,15 @@ function EvaluationBatchRunBuilder() {
           </RunSection>
 
           <RunSection
-            description="Choose reusable criteria sets; every judge applies every criterion in each selected set."
+            description="Choose reusable Criteria; each evaluation preserves its Criterion order."
             title="Criteria"
           >
-            <CriteriaProfilePicker
+            <CriteriaPicker
               actions={
                 <div className="flex items-center gap-3 text-xs">
                   <button
                     className="text-muted-foreground hover:text-foreground"
-                    onClick={() => setConfigurationIds(profiles.map(({ id }) => id))}
+                    onClick={() => setConfigurationIds(criteria.map(({ id }) => id))}
                     type="button"
                   >
                     Select all
@@ -469,25 +471,32 @@ function EvaluationBatchRunBuilder() {
                   </button>
                   <Link
                     className="inline-flex items-center gap-1.5 font-medium hover:underline"
-                    href="/evaluations/criteria"
+                    href="/evaluations/criterion"
                   >
                     <SlidersHorizontal className="size-3.5" /> Manage
                   </Link>
                 </div>
               }
               onChange={setConfigurationIds}
-              profiles={profiles}
+              criteria={criteria}
               selected={configurationIds}
             />
           </RunSection>
 
           <RunSection
             action={
-              <Button onClick={() => setCases([...cases, ""])} size="sm" variant="outline">
+              <Button
+                disabled={!canAddCase}
+                onClick={() => {
+                  if (canAddCase) setCases([...cases, ""]);
+                }}
+                size="sm"
+                variant="outline"
+              >
                 <Plus className="size-3.5" /> Add case
               </Button>
             }
-            description="Each input runs through every selected criteria set, target model, and repetition."
+            description="Each input runs through every selected Criteria permutation, target model, and repetition."
             title="Cases"
           >
             <div className="overflow-hidden border-y">
@@ -536,7 +545,7 @@ function EvaluationBatchRunBuilder() {
 
           <RunSection
             description="Set repetitions and save or reuse this browser's setup."
-            title="Run options"
+            title="Run Options"
           >
             <div className="grid gap-4 @min-[560px]:grid-cols-[8rem_minmax(12rem,1fr)] @min-[1040px]:grid-cols-[8rem_minmax(12rem,0.8fr)_minmax(14rem,1fr)]">
               <Field label="Repetitions">
@@ -550,7 +559,7 @@ function EvaluationBatchRunBuilder() {
                   value={repetitions}
                 />
               </Field>
-              <Field label="Load setup">
+              <Field label="Load Setup">
                 <Select defaultValue="" onValueChange={loadConfiguration}>
                   <option disabled value="">
                     Saved setups…
@@ -563,7 +572,7 @@ function EvaluationBatchRunBuilder() {
                 </Select>
               </Field>
               <div className="@min-[560px]:col-span-2 @min-[1040px]:col-span-1">
-                <Field label="Save current setup">
+                <Field label="Save Current Setup">
                   <div className="flex gap-2">
                     <Input
                       onChange={(event) => setSavedName(event.target.value)}
@@ -596,7 +605,7 @@ function EvaluationBatchRunBuilder() {
       <aside className="border-t bg-muted/15 @min-[720px]:border-t-0" ref={manifestRef}>
         <div className="flex min-h-[calc(100dvh-var(--header-height))] flex-col @min-[720px]:sticky @min-[720px]:top-0 @min-[720px]:max-h-[calc(100dvh-var(--header-height))] @min-[720px]:overflow-y-auto">
           <EvaluationPageBar className="shrink-0" inset="panel">
-            <h2 className="text-sm font-semibold">Execution manifest</h2>
+            <h2 className="text-sm font-semibold">Execution Manifest</h2>
             {previewing ? (
               <LoaderCircle
                 aria-label="Refreshing manifest"
@@ -624,7 +633,7 @@ function EvaluationBatchRunBuilder() {
               />
             ) : null}
             <div>
-              <p className="pb-3 text-xs font-medium">Setup readiness</p>
+              <p className="pb-3 text-xs font-medium">Setup Readiness</p>
               <div className="border-y">
                 <div className="grid grid-cols-[6.75rem_minmax(0,1fr)] gap-3 bg-muted/40 px-2 py-2 font-mono text-[10px] uppercase text-muted-foreground">
                   <span>Requirement</span>
@@ -671,7 +680,7 @@ function EvaluationBatchRunBuilder() {
             </div>
             <WorkloadCalculation
               cases={completeCaseCount}
-              criteriaSets={selectedCriteriaSets.length}
+              criteriaCount={selectedCriteria.length}
               executions={executionCount}
               outputs={targetOutputCount}
               repetitions={repetitions}
@@ -682,7 +691,7 @@ function EvaluationBatchRunBuilder() {
                 <div className="border-y">
                   <div className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2 bg-muted/40 px-2 py-2 font-mono text-[10px] uppercase text-muted-foreground">
                     <span>No.</span>
-                    <span>Execution lane</span>
+                    <span>Execution Lane</span>
                   </div>
                   <div className="divide-y">
                     {preview.jobs.slice(0, 200).map((job) => (
@@ -786,7 +795,7 @@ function BatchMonitor({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-xs font-semibold">
-            {error ? "Batch status unavailable" : finished ? "Batch finished" : "Batch running"}
+            {error ? "Batch Status Unavailable" : finished ? "Batch Finished" : "Batch Running"}
           </h2>
           <p aria-live="polite" className="mt-1 text-[11px] text-muted-foreground">
             {finishedRuns} of {totalRuns} finished
@@ -825,26 +834,29 @@ function BatchMonitor({
           style={{ width: `${progress}%` }}
         />
       </div>
-      <div className="mt-3 grid grid-cols-5 gap-2 text-[11px] text-muted-foreground">
+      <div className="mt-3 grid grid-cols-3 gap-x-2 gap-y-3 text-center text-[11px] text-muted-foreground @min-[1200px]:grid-cols-5">
         <span>
-          <strong className="font-mono text-foreground">{completedRuns}</strong> completed
+          <strong className="block font-mono text-foreground">{completedRuns}</strong> completed
         </span>
-        <span className="text-center">
-          <strong className="font-mono text-foreground">{queuedRuns}</strong> queued
+        <span>
+          <strong className="block font-mono text-foreground">{queuedRuns}</strong> queued
         </span>
-        <span className="text-center">
-          <strong className="font-mono text-foreground">{runningRuns}</strong> running
+        <span>
+          <strong className="block font-mono text-foreground">{runningRuns}</strong> running
         </span>
-        <span className="text-center">
+        <span>
           <strong
-            className={cn("font-mono", failedRuns > 0 ? "text-destructive" : "text-foreground")}
+            className={cn(
+              "block font-mono",
+              failedRuns > 0 ? "text-destructive" : "text-foreground",
+            )}
           >
             {failedRuns}
-          </strong>{" "}
+          </strong>
           failed
         </span>
-        <span className="text-right">
-          <strong className="font-mono text-foreground">{cancelledRuns}</strong> cancelled
+        <span>
+          <strong className="block font-mono text-foreground">{cancelledRuns}</strong> cancelled
         </span>
       </div>
       {error ? (
@@ -950,20 +962,20 @@ function getSetupRequirements(input: {
   const completeCases = input.cases.filter((value) => value.trim()).length;
   return [
     {
-      label: "Prompt revision",
+      label: "Prompt Revision",
       ready: Boolean(input.promptId),
       value: input.selectedPrompt
         ? `${input.selectedPrompt.title} · v${input.selectedPrompt.revisionNumber}`
         : "Choose a revision",
     },
     {
-      label: "Target models",
+      label: "Target Models",
       modelIds: input.targetModelIds,
       ready: input.targetModelIds.length > 0,
       value: input.targetModelIds.length ? count(input.targetModelIds.length, "model") : "Required",
     },
     {
-      label: "Judge models",
+      label: "Judge Models",
       modelIds: input.judges,
       ready: input.judges.length > 0,
       value: input.judges.length ? count(input.judges.length, "model") : "Required",
@@ -1015,14 +1027,14 @@ function ManifestFact({ label, value }: { label: string; value: number }) {
 
 function WorkloadCalculation({
   cases,
-  criteriaSets,
+  criteriaCount,
   executions,
   outputs,
   repetitions,
   targets,
 }: {
   cases: number;
-  criteriaSets: number;
+  criteriaCount: number;
   executions: number;
   outputs: number;
   repetitions: number;
@@ -1031,7 +1043,7 @@ function WorkloadCalculation({
   return (
     <div className="py-3 text-[11px] leading-4">
       <p className="font-mono text-foreground">
-        {count(criteriaSets, "criteria set")} × {count(targets, "target model")} ×{" "}
+        {criteriaCount} Criteria × {count(targets, "target model")} ×{" "}
         {count(repetitions, "repetition")} × {count(cases, "complete case")} ={" "}
         {count(outputs, "target output")}
       </p>
@@ -1050,16 +1062,22 @@ function buildRequest(input: {
   cases: string[];
   configurationIds: string[];
   judges: string[];
-  profiles: CriteriaProfile[];
+  criteria: Criteria[];
   prompt: PromptSummary;
   repetitions: number;
   targetModelIds: string[];
 }): EvaluationBatchRequest {
   return {
     cases: input.cases.map((caseInput) => ({ input: caseInput })),
-    configurations: input.profiles
+    configurations: input.criteria
       .filter(({ id }) => input.configurationIds.includes(id))
-      .map(({ criteria, id, name }): EvaluationBatchConfiguration => ({ criteria, id, name })),
+      .map(({ criterionSequence, id, name }): EvaluationBatchConfiguration => ({
+        criteria: criterionSequence.map(
+          ({ id: _criterionId, version: _criterionVersion, ...criterion }) => criterion,
+        ),
+        id,
+        name,
+      })),
     isSyntheticExample: false,
     judges: input.judges,
     promptId: input.prompt.id,
@@ -1104,6 +1122,11 @@ function readTrackedBatch(): TrackedBatch | undefined {
   } catch {
     return undefined;
   }
+}
+
+function normalizeCases(cases: string[]): string[] {
+  const complete = cases.filter((value) => value.trim()).slice(0, MAX_CASES);
+  return complete.length ? complete : [""];
 }
 
 function sameBatchRequest(left: EvaluationBatchRequest, right: EvaluationBatchRequest): boolean {

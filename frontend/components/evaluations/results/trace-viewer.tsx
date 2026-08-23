@@ -54,7 +54,7 @@ export function EvaluationTraceViewer({ item }: { item: EvaluationResultItem }) 
           <div className="flex items-center gap-2">
             <MessagesSquare aria-hidden="true" className="size-4 text-muted-foreground" />
             <h3 className="text-sm font-semibold" id={`trace-heading-${item.caseId}`}>
-              Evaluated conversation
+              Evaluated Conversation
             </h3>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -124,13 +124,30 @@ function CompactTraceMessage({ message }: { message: TraceMessage }) {
 }
 
 function compactTracePreview(content: string): string {
-  return content
+  return stripMarkdownTables(content)
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^>\s?/gm, "")
     .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
     .replace(/^\s*[-*+]\s+/gm, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+const markdownTableDelimiterPattern =
+  /^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$/;
+
+function stripMarkdownTables(content: string): string {
+  const lines = content.split("\n");
+  const prose: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].includes("|") && markdownTableDelimiterPattern.test(lines[index + 1] ?? "")) {
+      index += 1;
+      while (index + 1 < lines.length && lines[index + 1].includes("|")) index += 1;
+      continue;
+    }
+    prose.push(lines[index]);
+  }
+  return prose.join("\n");
 }
 
 function EvaluationTraceDialog({ item, onClose }: { item: EvaluationResultItem; onClose(): void }) {
@@ -229,7 +246,7 @@ function EvaluationTraceDialog({ item, onClose }: { item: EvaluationResultItem; 
                 className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium hover:bg-accent"
                 href={`/evaluations/${item.runId}`}
               >
-                <span className="hidden sm:inline">Run provenance</span>
+                <span className="hidden sm:inline">Run Provenance</span>
                 <ExternalLink aria-hidden="true" className="size-3.5" />
               </Link>
               <Button
@@ -305,7 +322,7 @@ function EvaluationTraceDialog({ item, onClose }: { item: EvaluationResultItem; 
             className="min-h-0 border-t bg-muted/10 lg:overflow-y-auto lg:border-t-0 lg:border-l"
           >
             <div className="sticky top-0 border-b bg-background/95 px-4 py-3 backdrop-blur-sm">
-              <h3 className="text-sm font-semibold">Score evidence</h3>
+              <h3 className="text-sm font-semibold">Score Evidence</h3>
               <p className="mt-1 text-xs text-muted-foreground">
                 Judge facts stay beside the conversation they assess.
               </p>
@@ -371,7 +388,8 @@ function TraceScore({ score }: { score: EvaluationResultScore }) {
         </div>
         <span className={cn("font-mono text-xs font-semibold", scoreColor(value))}>{value}</span>
       </div>
-      <h4 className="mt-1.5 text-sm font-medium leading-5">{score.criterion.instruction}</h4>
+      <h4 className="mt-1.5 text-sm font-medium leading-5">{score.criterion.name}</h4>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{score.criterion.instruction}</p>
       <ModelIdentityLabel
         className="mt-3 text-muted-foreground"
         labelClassName="font-mono text-[11px]"

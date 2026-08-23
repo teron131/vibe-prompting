@@ -4,7 +4,6 @@
 
 import {
   Bot,
-  FileText,
   FlaskConical,
   LoaderCircle,
   PanelRightClose,
@@ -386,7 +385,7 @@ export function Chat({
                     ? `Open prompt editor for ${activePrompt.title}`
                     : "Open prompt editor"
               }
-              className={`hidden max-w-[min(20rem,45vw)] shrink-0 rounded-full border-border/80 px-3 min-[800px]:inline-flex ${panelOpen ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              className={`max-w-[min(20rem,45vw)] shrink-0 rounded-full border-border/80 px-2 min-[640px]:px-3 ${panelOpen ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               href={activePrompt ? `/prompts/${activePrompt.id}` : "/prompts"}
               onClick={(event) => {
                 if (!window.matchMedia(PROMPT_PANEL_MEDIA_QUERY).matches) return;
@@ -396,24 +395,17 @@ export function Chat({
               size="sm"
               variant="outline"
             >
-              <FileText aria-hidden="true" className="size-3.5 shrink-0" />
-              <span className="shrink-0">Prompt Editor</span>
+              {panelOpen ? (
+                <PanelRightClose aria-hidden="true" className="size-3.5 shrink-0" />
+              ) : (
+                <PanelRightOpen aria-hidden="true" className="size-3.5 shrink-0" />
+              )}
+              <span className="hidden shrink-0 min-[640px]:inline">Prompt Editor</span>
               {activePrompt ? (
                 <span className="hidden truncate text-muted-foreground min-[1120px]:inline">
                   {activePrompt.title}
                 </span>
               ) : null}
-              {panelOpen ? (
-                <PanelRightClose
-                  aria-hidden="true"
-                  className="size-3.5 shrink-0 text-muted-foreground"
-                />
-              ) : (
-                <PanelRightOpen
-                  aria-hidden="true"
-                  className="size-3.5 shrink-0 text-muted-foreground"
-                />
-              )}
             </ButtonLink>
           </div>
         }
@@ -838,7 +830,7 @@ function EmptyState({ onSelect }: { onSelect(value: string): void }) {
         <div className="mx-auto mb-4 grid size-12 place-items-center">
           <AppIcon className="size-7" />
         </div>
-        <h2 className="text-xl font-semibold">How can I help?</h2>
+        <h2 className="text-xl font-semibold">How Can I Help?</h2>
         <p className="mt-2 text-balance text-sm leading-6 text-muted-foreground">{description}</p>
         <div className="mt-5 flex flex-wrap justify-center gap-2">
           {suggestions.map((suggestion) => (

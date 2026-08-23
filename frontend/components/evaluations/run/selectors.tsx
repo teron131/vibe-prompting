@@ -1,4 +1,4 @@
-/** Owns reusable criteria-set and model selection controls shared by both evaluation run workflows. */
+/** Owns reusable Criteria and model selection controls shared by both evaluation run workflows. */
 
 "use client";
 
@@ -8,61 +8,61 @@ import { ModelIdentityLabel } from "@/components/chat/model-selector";
 import { CriterionTypeIcon } from "@/components/evaluations/shared/criterion-type-icon";
 import { cn } from "@/components/ui/utils";
 import type { ConfiguredModel } from "@/contracts/chat";
-import type { CriteriaProfile } from "@/contracts/evaluations";
+import type { Criteria } from "@/contracts/evaluations";
 
-export function CriteriaProfilePicker({
+export function CriteriaPicker({
   actions,
   className,
+  criteria,
   onChange,
-  profiles,
   selected,
 }: {
   actions?: ReactNode;
   className?: string;
+  criteria: Criteria[];
   onChange(value: string[]): void;
-  profiles: CriteriaProfile[];
   selected: string[];
 }) {
   return (
     <fieldset className={className}>
-      <legend className="sr-only">Criteria sets</legend>
+      <legend className="sr-only">Criteria</legend>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <span className="font-medium">Criteria sets</span>
+        <span className="font-medium">Criteria</span>
         <div className="flex items-center gap-3">
           <span className="text-muted-foreground">{selected.length} selected</span>
           {actions}
         </div>
       </div>
       <div className="mt-2 max-h-64 divide-y overflow-y-auto border">
-        {profiles.map((profile) => {
-          const active = selected.includes(profile.id);
+        {criteria.map((value) => {
+          const active = selected.includes(value.id);
           return (
             <label
               className={cn(
                 "flex cursor-pointer items-start gap-3 px-3 py-2.5 transition-colors hover:bg-accent",
                 active && "bg-accent",
               )}
-              key={profile.id}
+              key={value.id}
             >
               <input
-                aria-label={`Use ${profile.name}`}
+                aria-label={`Use ${value.name}`}
                 checked={active}
                 className="mt-0.5 size-4 shrink-0 accent-foreground"
-                onChange={() => onChange(toggleSelection(selected, profile.id))}
+                onChange={() => onChange(toggleSelection(selected, value.id))}
                 type="checkbox"
               />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center justify-between gap-3 text-xs font-medium">
-                  <span className="truncate">{profile.name}</span>
+                  <span className="truncate">{value.name}</span>
                   <span className="font-mono text-[10px] text-muted-foreground">
-                    {profile.criteria.length}
+                    {value.criterionSequence.length}
                   </span>
                 </span>
                 <span className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
-                  {profile.criteria.map((criterion, index) => (
-                    <span className="inline-flex items-center gap-1" key={index}>
+                  {value.criterionSequence.map((criterion) => (
+                    <span className="inline-flex items-center gap-1" key={criterion.id}>
                       <CriterionTypeIcon className="size-3" type={criterion.type} />
-                      {criterion.instruction.split(" — ")[0]}
+                      {criterion.name}
                     </span>
                   ))}
                 </span>

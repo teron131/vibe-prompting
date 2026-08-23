@@ -46,7 +46,7 @@ export function PromptEvaluationView({
     <section>
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="font-semibold">Evaluation results</h3>
+          <h3 className="font-semibold">Evaluation Results</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             See whether this prompt met each criterion and what evidence supported the result.
           </p>
@@ -69,7 +69,7 @@ export function PromptEvaluationView({
       ) : !latestSummary ? (
         <div className="rounded-xl border border-dashed p-8 text-center">
           <FlaskConical aria-hidden="true" className="mx-auto size-5 text-muted-foreground" />
-          <h4 className="mt-3 font-medium">No evaluation results yet</h4>
+          <h4 className="mt-3 font-medium">No Evaluation Results Yet</h4>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
             Start a run to test the active revision against examples and clear success criteria.
           </p>
@@ -91,7 +91,7 @@ export function PromptEvaluationView({
       ) : null}
       {runs.length > 1 ? (
         <div className="mt-6">
-          <h4 className="mb-2 text-sm font-semibold">Earlier runs</h4>
+          <h4 className="mb-2 text-sm font-semibold">Earlier Runs</h4>
           <div className="divide-y overflow-hidden rounded-xl border bg-card">
             {runs.slice(1).map((run) => (
               <Link
@@ -130,7 +130,7 @@ function LatestResult({
       <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="font-semibold">Latest result</h4>
+            <h4 className="font-semibold">Latest Result</h4>
             <Status status={run.status} />
           </div>
           <p className="mt-1 truncate text-sm">
@@ -173,12 +173,17 @@ function LatestResult({
       ) : outcomes.length ? (
         <div className="divide-y">
           {outcomes.map((outcome) => (
-            <div className="p-4" key={`${outcome.type}-${outcome.instruction}`}>
+            <div className="p-4" key={`${outcome.type}-${outcome.name}`}>
               <div className="flex items-start gap-3">
                 <OutcomeIcon result={outcome.result} />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                    <p className="text-sm font-medium">{outcome.instruction}</p>
+                    <div>
+                      <p className="text-sm font-medium">{outcome.name}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {outcome.instruction}
+                      </p>
+                    </div>
                     <p className="shrink-0 text-xs font-medium text-muted-foreground">
                       {outcome.summary}
                     </p>

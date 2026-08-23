@@ -211,7 +211,7 @@ export function EvaluationResultsExplorer() {
               onClick={() => setMobilePane("detail")}
               type="button"
             >
-              Selected case
+              Selected Case
             </button>
           </div>
         </div>
@@ -350,7 +350,7 @@ export function EvaluationResultsExplorer() {
                 className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-xs font-medium hover:bg-accent"
                 href={`/evaluations/${selected.runId}`}
               >
-                <span className="hidden @min-[760px]:inline">Run provenance</span>
+                <span className="hidden @min-[760px]:inline">Run Provenance</span>
                 <ExternalLink aria-hidden="true" className="size-3.5" />
               </Link>
             ) : null}
@@ -427,7 +427,7 @@ function ResultExplorerControls({
     <div className="contents">
       <EvaluationPageBar inset="panel">
         <h2 className="shrink-0 whitespace-nowrap text-sm font-semibold tracking-tight">
-          Result explorer
+          Result Explorer
         </h2>
         <div className="flex min-w-0 items-center gap-1">
           <div
@@ -465,7 +465,7 @@ function ResultExplorerControls({
         >
           <section aria-labelledby="result-search-heading" className="border-b px-4 py-3">
             <h3 className="mb-2 text-xs font-semibold" id="result-search-heading">
-              Search cases
+              Search Cases
             </h3>
             <form
               className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
@@ -576,9 +576,9 @@ function ResultFiltersPanel({
           ))}
         </FilterSelect>
         <MultiFilterSelect
-          allLabel="All target models"
+          allLabel="All Target Models"
           className="w-full"
-          label="Target model"
+          label="Target Model"
           onValuesChange={(values) =>
             updateFilter("targetModelIds", values.length ? values : undefined)
           }
@@ -591,7 +591,7 @@ function ResultFiltersPanel({
           ))}
         </MultiFilterSelect>
         <MultiFilterSelect
-          allLabel="All judges"
+          allLabel="All Judges"
           className="w-full"
           label="Judge"
           onValuesChange={(values) =>
@@ -608,7 +608,7 @@ function ResultFiltersPanel({
         <div className="space-y-2">
           <FilterSelect
             className="w-full"
-            label="Run status"
+            label="Run Status"
             onValueChange={(value) =>
               updateFilter("status", (value || undefined) as EvaluationRunStatus | undefined)
             }
@@ -623,7 +623,7 @@ function ResultFiltersPanel({
           </FilterSelect>
           <FilterSelect
             className="w-full"
-            label="Score type"
+            label="Score Type"
             onValueChange={(value) =>
               updateFilter("dataType", (value || undefined) as EvaluationDataType | undefined)
             }
@@ -882,7 +882,7 @@ function ResultDetailPane({
 
       <section className="pt-4">
         <div className="flex items-center justify-between gap-4 pb-2">
-          <h3 className="text-sm font-semibold">Attributed score evidence</h3>
+          <h3 className="text-sm font-semibold">Attributed Score Evidence</h3>
           <div className="flex shrink-0 items-center gap-2">
             <span className="font-mono text-[11px] text-muted-foreground">
               {item.scores.length} score facts
@@ -951,7 +951,7 @@ function ResultDetailPane({
                     Judge
                   </th>
                   <th className="px-4 py-2 text-left font-medium" scope="col">
-                    Rationale and evidence
+                    Rationale and Evidence
                   </th>
                 </tr>
               </thead>
@@ -963,6 +963,9 @@ function ResultDetailPane({
                         C{score.criterionPosition + 1} · {score.dataType}
                       </span>
                       <span className="mt-1 block max-w-sm text-xs font-medium leading-5">
+                        {score.criterion.name}
+                      </span>
+                      <span className="mt-1 block max-w-sm text-xs leading-5 text-muted-foreground">
                         {score.criterion.instruction}
                       </span>
                     </th>

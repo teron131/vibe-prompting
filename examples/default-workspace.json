@@ -1,40 +1,24 @@
--- Materializes one removable example from a captured Luna workflow for the most recently active workspace member.
-
-DO $migration$
-DECLARE
-  actor_id uuid;
-  fixture constant jsonb := $fixture$
 {
   "prompt": {
     "id": "ce18263f-2eec-4277-9d6b-424f0634f492",
     "title": "EXAMPLE — AI Concepts, Clearly",
     "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
     "revisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-    "revisionNumber": 2,
+    "revisionNumber": 1,
     "activeRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-    "activeRevisionNumber": 2,
-    "revisionCount": 2,
+    "activeRevisionNumber": 1,
+    "revisionCount": 1,
     "updatedAt": "2026-08-23T06:15:26.191Z"
   },
   "promptRows": [
     {
-      "id": "b88672e6-a20c-44bd-9983-3451273da17f",
+      "id": "cef0bd7f-1439-4737-b7c8-701640c6c415",
       "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
       "parentRevisionId": null,
       "revisionNumber": 1,
-      "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers.\n\n## Response style\n\n- Start with a direct answer.\n- Use a familiar example when it helps.\n- Define technical terms.\n- Keep the answer concise.",
+      "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
       "changeRequest": null,
       "author": "human",
-      "createdAt": "2026-08-23T06:15:12.383Z"
-    },
-    {
-      "id": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
-      "parentRevisionId": "b88672e6-a20c-44bd-9983-3451273da17f",
-      "revisionNumber": 2,
-      "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
-      "changeRequest": "Improve the saved prompt for clear, concise explanations of reinforcement learning, language models versus computer vision, and training versus inference. Keep explanations equation-free and preserve the title.",
-      "author": "ai",
       "createdAt": "2026-08-23T06:15:26.191Z"
     }
   ],
@@ -92,10 +76,7 @@ DECLARE
     },
     "context": {
       "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
-      "enabledTools": [
-        "prompt-library",
-        "evaluations"
-      ],
+      "enabledTools": ["prompt-library", "evaluations"],
       "panelOpen": true,
       "reasoningEffort": "medium"
     },
@@ -107,7 +88,7 @@ DECLARE
         "metadata": {},
         "parts": [
           {
-            "text": "Read this saved prompt, improve it for clear explanations of reinforcement learning, language models versus computer vision, and training versus inference, and keep it free of equations. After saving the edit, start one Target Run on the new revision asking: What is reinforcement learning, and when would you use it instead of supervised learning? Use GPT-5.6 Luna for the Target Run.",
+            "text": "Use this saved prompt to start one Target Run asking: What is reinforcement learning, and when would you use it instead of supervised learning? Use GPT-5.6 Luna for the Target Run.",
             "type": "text"
           }
         ],
@@ -120,96 +101,15 @@ DECLARE
         "metadata": {
           "modelId": "gpt-5.6-luna",
           "completedAt": "2026-08-23T06:15:34.343Z",
-          "enabledTools": [
-            "prompt-library",
-            "evaluations"
-          ],
+          "enabledTools": ["prompt-library", "evaluations"],
           "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
           "reasoningEffort": "medium",
-          "activePromptRevisionId": "b88672e6-a20c-44bd-9983-3451273da17f"
+          "activePromptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
         },
         "parts": [
           {
             "type": "reasoning",
-            "summary": "**Planning to read and edit content**"
-          },
-          {
-            "name": "read_prompt",
-            "type": "tool",
-            "input": {
-              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492"
-            },
-            "state": "completed",
-            "callId": "call_pKdC2oONpy1JxDYvkHopnqf1",
-            "output": {
-              "id": "ce18263f-2eec-4277-9d6b-424f0634f492",
-              "title": "EXAMPLE — AI Concepts, Clearly",
-              "content": "1#34e742:# AI Concepts, Clearly\n2#e3b0c4:\n3#4a3d43:Explain artificial intelligence concepts for curious general readers.\n4#e3b0c4:\n5#9d5109:## Response style\n6#e3b0c4:\n7#b37e98:- Start with a direct answer.\n8#140906:- Use a familiar example when it helps.\n9#81e8d4:- Define technical terms.\n10#43fd44:- Keep the answer concise.",
-              "updatedAt": "2026-08-23T06:15:12.383Z",
-              "revisionId": "b88672e6-a20c-44bd-9983-3451273da17f",
-              "revisionCount": 1
-            },
-            "summary": "Read the current prompt."
-          },
-          {
-            "type": "reasoning",
-            "summary": "**Planning content revision for lines 3-10**"
-          },
-          {
-            "name": "edit_prompt",
-            "type": "tool",
-            "input": {
-              "edits": [
-                {
-                  "lines": [
-                    "Explain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.",
-                    "",
-                    "## Response style",
-                    "",
-                    "- Start with a direct, plain-language answer.",
-                    "- Define technical terms when first introduced.",
-                    "- Use familiar examples or analogies when they clarify the idea.",
-                    "- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.",
-                    "- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.",
-                    "- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.",
-                    "- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.",
-                    "- Use no equations, formulas, or symbolic mathematical notation.",
-                    "- Keep the answer concise but include enough context for a beginner to understand it."
-                  ],
-                  "endRef": "10#43fd44",
-                  "startRef": "3#4a3d43",
-                  "operation": "replace_range"
-                }
-              ],
-              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
-              "changeRequest": "Improve the saved prompt for clear, concise explanations of reinforcement learning, language models versus computer vision, and training versus inference. Keep explanations equation-free and preserve the title.",
-              "expectedRevisionId": "b88672e6-a20c-44bd-9983-3451273da17f"
-            },
-            "state": "completed",
-            "callId": "call_lD41EsPDXMM0hU3qK6IFB1wK",
-            "output": {
-              "prompt": {
-                "id": "ce18263f-2eec-4277-9d6b-424f0634f492",
-                "title": "EXAMPLE — AI Concepts, Clearly",
-                "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
-                "updatedAt": "2026-08-23T06:15:26.191Z",
-                "revisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-                "revisionCount": 2
-              },
-              "summary": "Updated prompt.",
-              "artifact": {
-                "id": "ce18263f-2eec-4277-9d6b-424f0634f492",
-                "href": "/prompts/ce18263f-2eec-4277-9d6b-424f0634f492",
-                "kind": "prompt",
-                "title": "EXAMPLE — AI Concepts, Clearly",
-                "revisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
-              }
-            },
-            "summary": "Updated the working prompt."
-          },
-          {
-            "type": "reasoning",
-            "summary": "**Starting target run with new revision**"
+            "summary": "**Starting target run from the saved prompt**"
           },
           {
             "name": "start_target_run",
@@ -254,7 +154,7 @@ DECLARE
                 "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                 "targetProfileName": "AI SDK agent",
                 "targetConfiguration": {},
-                "promptRevisionNumber": 2,
+                "promptRevisionNumber": 1,
                 "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
                 "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
               },
@@ -268,7 +168,7 @@ DECLARE
             "summary": "Completed."
           },
           {
-            "text": "Updated the saved prompt with clearer guidance on:\n\n- Reinforcement learning versus supervised learning\n- Language models versus computer vision\n- Training versus inference\n- Equation-free explanations for beginners\n\nNew revision: `cef0bd7f-1439-4737-b7c8-701640c6c415`\n\nStarted the Target Run with **GPT-5.6 Luna**. It is currently running: [View Target Run]( /target-runs/1e4812c4-4b0c-40c0-97ec-66a983942d81 ).",
+            "text": "Started the Target Run with **GPT-5.6 Luna** from the canonical v1 prompt. It is currently running: [View Target Run](/target-runs/1e4812c4-4b0c-40c0-97ec-66a983942d81).",
             "type": "text"
           },
           {
@@ -299,10 +199,7 @@ DECLARE
         "metadata": {
           "modelId": "gpt-5.6-luna",
           "completedAt": "2026-08-23T06:15:58.246Z",
-          "enabledTools": [
-            "prompt-library",
-            "evaluations"
-          ],
+          "enabledTools": ["prompt-library", "evaluations"],
           "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
           "reasoningEffort": "medium",
           "activePromptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
@@ -374,7 +271,7 @@ DECLARE
                 "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                 "targetProfileName": "AI SDK agent",
                 "targetConfiguration": {},
-                "promptRevisionNumber": 2,
+                "promptRevisionNumber": 1,
                 "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
                 "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
               },
@@ -395,15 +292,20 @@ DECLARE
                 {
                   "input": "What is reinforcement learning?",
                   "criteria": [
-                    "The answer is clear and understandable for a general reader.",
-                    "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
+                    {
+                      "name": "Clarity",
+                      "type": "boolean",
+                      "instruction": "The answer is clear and understandable for a general reader."
+                    },
+                    {
+                      "name": "Reinforcement learning distinction",
+                      "type": "boolean",
+                      "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
+                    }
                   ]
                 }
               ],
-              "judges": [
-                "GPT-5.6 Luna",
-                "Gemini 3.7 Flash"
-              ],
+              "judges": ["GPT-5.6 Luna", "Gemini 3.7 Flash"],
               "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
               "repetitions": null,
               "targetModelId": "GPT-5.6 Luna",
@@ -426,10 +328,7 @@ DECLARE
                 "promptTitle": "EXAMPLE — AI Concepts, Clearly",
                 "targetRunId": null,
                 "errorMessage": null,
-                "judgeModelIds": [
-                  "gpt-5.6-luna",
-                  "gemini-3.7-flash"
-                ],
+                "judgeModelIds": ["gpt-5.6-luna", "gemini-3.7-flash"],
                 "startedByName": "Example Builder",
                 "targetModelId": "gpt-5.6-luna",
                 "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
@@ -437,7 +336,7 @@ DECLARE
                 "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                 "targetProfileName": "AI SDK agent",
                 "isSyntheticExample": false,
-                "promptRevisionNumber": 2,
+                "promptRevisionNumber": 1,
                 "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
                 "configurationFingerprint": "d4f77a308a3e734b3fce86f4bc2851bb8571077cc15700a7b3fa7bfec697d62e",
                 "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
@@ -459,15 +358,20 @@ DECLARE
                 {
                   "input": "Compare language models with computer vision.",
                   "criteria": [
-                    "The answer is clear and understandable for a general reader.",
-                    "The answer correctly distinguishes language models from computer-vision models and uses no equations."
+                    {
+                      "name": "Clarity",
+                      "type": "boolean",
+                      "instruction": "The answer is clear and understandable for a general reader."
+                    },
+                    {
+                      "name": "Language and vision distinction",
+                      "type": "boolean",
+                      "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
+                    }
                   ]
                 }
               ],
-              "judges": [
-                "GPT-5.6 Luna",
-                "Gemini 3.7 Flash"
-              ],
+              "judges": ["GPT-5.6 Luna", "Gemini 3.7 Flash"],
               "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
               "repetitions": null,
               "targetModelId": "GPT-5.6 Luna",
@@ -490,10 +394,7 @@ DECLARE
                 "promptTitle": "EXAMPLE — AI Concepts, Clearly",
                 "targetRunId": null,
                 "errorMessage": null,
-                "judgeModelIds": [
-                  "gpt-5.6-luna",
-                  "gemini-3.7-flash"
-                ],
+                "judgeModelIds": ["gpt-5.6-luna", "gemini-3.7-flash"],
                 "startedByName": "Example Builder",
                 "targetModelId": "gpt-5.6-luna",
                 "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
@@ -501,7 +402,7 @@ DECLARE
                 "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                 "targetProfileName": "AI SDK agent",
                 "isSyntheticExample": false,
-                "promptRevisionNumber": 2,
+                "promptRevisionNumber": 1,
                 "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
                 "configurationFingerprint": "6a726c0277401c9cf2aae836fe360d180659456bf593c82dc00f7a45a28a3585",
                 "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
@@ -542,10 +443,7 @@ DECLARE
         "metadata": {
           "modelId": "gpt-5.6-luna",
           "completedAt": "2026-08-23T06:16:43.938Z",
-          "enabledTools": [
-            "prompt-library",
-            "evaluations"
-          ],
+          "enabledTools": ["prompt-library", "evaluations"],
           "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
           "reasoningEffort": "medium",
           "activePromptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
@@ -680,6 +578,7 @@ DECLARE
                           "Over many attempts, it discovers which actions tend to produce better long-term results."
                         ],
                         "criterion": {
+                          "name": "Clarity",
                           "type": "boolean",
                           "instruction": "The answer is clear and understandable for a general reader."
                         },
@@ -697,6 +596,7 @@ DECLARE
                           "The bullet points clearly define agent, environment, action, and reward."
                         ],
                         "criterion": {
+                          "name": "Clarity",
                           "type": "boolean",
                           "instruction": "The answer is clear and understandable for a general reader."
                         },
@@ -713,6 +613,7 @@ DECLARE
                           "In reinforcement learning, the AI usually is not given the correct action directly. It must explore, make choices, and learn from rewards over time."
                         ],
                         "criterion": {
+                          "name": "Reinforcement learning distinction",
                           "type": "boolean",
                           "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
                         },
@@ -730,6 +631,7 @@ DECLARE
                           "The response contains no equations."
                         ],
                         "criterion": {
+                          "name": "Reinforcement learning distinction",
                           "type": "boolean",
                           "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
                         },
@@ -744,15 +646,12 @@ DECLARE
                     "promptTitle": "EXAMPLE — AI Concepts, Clearly",
                     "targetRunId": null,
                     "errorMessage": null,
-                    "judgeModelIds": [
-                      "gpt-5.6-luna",
-                      "gemini-3.7-flash"
-                    ],
+                    "judgeModelIds": ["gpt-5.6-luna", "gemini-3.7-flash"],
                     "targetModelId": "gpt-5.6-luna",
                     "targetRunTurnId": null,
                     "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                     "isSyntheticExample": false,
-                    "promptRevisionNumber": 2
+                    "promptRevisionNumber": 1
                   }
                 ],
                 "total": 1,
@@ -821,6 +720,7 @@ DECLARE
                           "**Language models** and **computer vision systems** are both AI systems, but they work with different kinds of information."
                         ],
                         "criterion": {
+                          "name": "Clarity",
                           "type": "boolean",
                           "instruction": "The answer is clear and understandable for a general reader."
                         },
@@ -837,6 +737,7 @@ DECLARE
                           "The sections “How they learn” and “Key difference” explain the distinction in accessible language."
                         ],
                         "criterion": {
+                          "name": "Clarity",
                           "type": "boolean",
                           "instruction": "The answer is clear and understandable for a general reader."
                         },
@@ -852,6 +753,7 @@ DECLARE
                           "A language model mainly processes information as a **sequence of symbols**, such as words or code. Computer vision processes **spatial patterns**, such as shapes, colors, edges, and the arrangement of objects in an image."
                         ],
                         "criterion": {
+                          "name": "Language and vision distinction",
                           "type": "boolean",
                           "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
                         },
@@ -869,6 +771,7 @@ DECLARE
                           "The response includes no equations."
                         ],
                         "criterion": {
+                          "name": "Language and vision distinction",
                           "type": "boolean",
                           "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
                         },
@@ -883,15 +786,12 @@ DECLARE
                     "promptTitle": "EXAMPLE — AI Concepts, Clearly",
                     "targetRunId": null,
                     "errorMessage": null,
-                    "judgeModelIds": [
-                      "gpt-5.6-luna",
-                      "gemini-3.7-flash"
-                    ],
+                    "judgeModelIds": ["gpt-5.6-luna", "gemini-3.7-flash"],
                     "targetModelId": "gpt-5.6-luna",
                     "targetRunTurnId": null,
                     "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                     "isSyntheticExample": false,
-                    "promptRevisionNumber": 2
+                    "promptRevisionNumber": 1
                   }
                 ],
                 "total": 1,
@@ -938,7 +838,7 @@ DECLARE
       "latestStatus": "completed",
       "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
       "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-      "promptRevisionNumber": 2,
+      "promptRevisionNumber": 1,
       "promptTitle": "EXAMPLE — AI Concepts, Clearly",
       "reasoningEffort": "medium",
       "source": "ai",
@@ -996,12 +896,60 @@ DECLARE
       ]
     }
   ],
+  "criteria": {
+    "id": "50000000-0000-4000-8000-000000000003",
+    "name": "DEFAULT — Quality Gate",
+    "criterionSequence": [
+      {
+        "id": "50000000-0000-4000-8000-000000000010",
+        "name": "Language Gate",
+        "definition": {
+          "type": "boolean",
+          "instruction": "Pass when the response uses the requester’s language and an appropriate register; for Cantonese, use natural written Cantonese in Traditional Chinese with normal Hong Kong code-switching where suitable—for example, 「點樣」 and 「佢哋」—unless another language, script, or translation was requested."
+        }
+      },
+      {
+        "id": "50000000-0000-4000-8000-000000000011",
+        "name": "Intention Gate",
+        "definition": {
+          "type": "boolean",
+          "instruction": "Pass when the response completes every supported part without unnecessary scope expansion, preserves valid parts of mixed requests, declines only unsupported parts, and asks for clarification only when required to proceed."
+        }
+      },
+      {
+        "id": "50000000-0000-4000-8000-000000000014",
+        "name": "Generalization Check",
+        "definition": {
+          "type": "boolean",
+          "instruction": "Pass when the response handles the task at the right level of specificity: its reasoning and constraints should transfer to semantically similar inputs without depending on this case’s exact wording or incidental details, while still addressing distinctions necessary for the current input."
+        }
+      },
+      {
+        "id": "50000000-0000-4000-8000-000000000012",
+        "name": "Tool Usage Check",
+        "definition": {
+          "type": "categorical",
+          "instruction": "Choose pass when no tools are needed or the record shows appropriate tool use and supported action claims; partial when useful work lacks required verification; fail when required tools are omitted or the response invents evidence or success.",
+          "categories": ["fail", "partial", "pass"]
+        }
+      },
+      {
+        "id": "50000000-0000-4000-8000-000000000013",
+        "name": "Response Quality",
+        "definition": {
+          "type": "categorical",
+          "instruction": "Choose good for a correct, relevant, clear, concise, and actionable answer; decent for a useful answer with material gaps or avoidable confusion; bad for an incorrect, unsupported, or non-responsive answer.",
+          "categories": ["bad", "decent", "good"]
+        }
+      }
+    ]
+  },
   "evaluations": [
     {
       "id": "9f21237d-3f89-46d2-bdee-ed699895e8b0",
       "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
       "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-      "promptRevisionNumber": 2,
+      "promptRevisionNumber": 1,
       "promptTitle": "EXAMPLE — AI Concepts, Clearly",
       "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
       "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
@@ -1009,10 +957,7 @@ DECLARE
       "targetModelId": "gpt-5.6-luna",
       "targetRunId": null,
       "targetRunTurnId": null,
-      "judgeModelIds": [
-        "gpt-5.6-luna",
-        "gemini-3.7-flash"
-      ],
+      "judgeModelIds": ["gpt-5.6-luna", "gemini-3.7-flash"],
       "caseCount": 1,
       "configurationFingerprint": "6a726c0277401c9cf2aae836fe360d180659456bf593c82dc00f7a45a28a3585",
       "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d",
@@ -1033,10 +978,12 @@ DECLARE
           "input": "Compare language models with computer vision.",
           "criteria": [
             {
+              "name": "Clarity",
               "type": "boolean",
               "instruction": "The answer is clear and understandable for a general reader."
             },
             {
+              "name": "Language and vision distinction",
               "type": "boolean",
               "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
             }
@@ -1047,6 +994,7 @@ DECLARE
               "id": "590f3e9d-31d8-4605-a1bf-cbc0bdfdd9d1",
               "criterionPosition": 0,
               "criterion": {
+                "name": "Clarity",
                 "type": "boolean",
                 "instruction": "The answer is clear and understandable for a general reader."
               },
@@ -1062,6 +1010,7 @@ DECLARE
               "id": "d1d9f8d7-1511-4245-8cb8-52634b8b97b2",
               "criterionPosition": 0,
               "criterion": {
+                "name": "Clarity",
                 "type": "boolean",
                 "instruction": "The answer is clear and understandable for a general reader."
               },
@@ -1078,6 +1027,7 @@ DECLARE
               "id": "e18976b6-656b-4783-af5d-ea45d5099b6a",
               "criterionPosition": 1,
               "criterion": {
+                "name": "Language and vision distinction",
                 "type": "boolean",
                 "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
               },
@@ -1093,6 +1043,7 @@ DECLARE
               "id": "605cf079-dd8c-447e-b484-261b7c7f5ddf",
               "criterionPosition": 1,
               "criterion": {
+                "name": "Language and vision distinction",
                 "type": "boolean",
                 "instruction": "The answer correctly distinguishes language models from computer-vision models and uses no equations."
               },
@@ -1114,7 +1065,7 @@ DECLARE
       "id": "b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e",
       "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
       "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-      "promptRevisionNumber": 2,
+      "promptRevisionNumber": 1,
       "promptTitle": "EXAMPLE — AI Concepts, Clearly",
       "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
       "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
@@ -1122,10 +1073,7 @@ DECLARE
       "targetModelId": "gpt-5.6-luna",
       "targetRunId": null,
       "targetRunTurnId": null,
-      "judgeModelIds": [
-        "gpt-5.6-luna",
-        "gemini-3.7-flash"
-      ],
+      "judgeModelIds": ["gpt-5.6-luna", "gemini-3.7-flash"],
       "caseCount": 1,
       "configurationFingerprint": "d4f77a308a3e734b3fce86f4bc2851bb8571077cc15700a7b3fa7bfec697d62e",
       "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d",
@@ -1146,10 +1094,12 @@ DECLARE
           "input": "What is reinforcement learning?",
           "criteria": [
             {
+              "name": "Clarity",
               "type": "boolean",
               "instruction": "The answer is clear and understandable for a general reader."
             },
             {
+              "name": "Reinforcement learning distinction",
               "type": "boolean",
               "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
             }
@@ -1160,6 +1110,7 @@ DECLARE
               "id": "05d639e2-a972-487c-940c-42bf0c1e632a",
               "criterionPosition": 0,
               "criterion": {
+                "name": "Clarity",
                 "type": "boolean",
                 "instruction": "The answer is clear and understandable for a general reader."
               },
@@ -1177,6 +1128,7 @@ DECLARE
               "id": "217aafe7-9211-4ba8-9bc6-32f34c2f06df",
               "criterionPosition": 0,
               "criterion": {
+                "name": "Clarity",
                 "type": "boolean",
                 "instruction": "The answer is clear and understandable for a general reader."
               },
@@ -1194,6 +1146,7 @@ DECLARE
               "id": "dbe5438b-eb74-4643-862f-34867fba90f0",
               "criterionPosition": 1,
               "criterion": {
+                "name": "Reinforcement learning distinction",
                 "type": "boolean",
                 "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
               },
@@ -1210,6 +1163,7 @@ DECLARE
               "id": "8fd96fe8-668f-4ed6-88fc-c84f73b5d9a2",
               "criterionPosition": 1,
               "criterion": {
+                "name": "Reinforcement learning distinction",
                 "type": "boolean",
                 "instruction": "The answer correctly distinguishes reinforcement learning from related concepts, especially supervised learning, and uses no equations."
               },
@@ -1229,258 +1183,3 @@ DECLARE
     }
   ]
 }
-$fixture$::jsonb;
-  case_data jsonb;
-  message_data jsonb;
-  profile_data jsonb;
-  revision_data jsonb;
-  run_data jsonb;
-  score_data jsonb;
-  turn_data jsonb;
-BEGIN
-  SELECT id
-  INTO actor_id
-  FROM auth_users
-  WHERE membership_status = 'active'
-  ORDER BY last_signed_in_at DESC, activated_at DESC NULLS LAST, created_at DESC, id
-  LIMIT 1;
-
-  IF actor_id IS NULL THEN
-    RAISE NOTICE 'Skipping default examples because no active workspace member exists.';
-    RETURN;
-  END IF;
-
-  INSERT INTO evaluation_criteria_profiles (id, name, criteria_json, created_by_user_id, updated_by_user_id)
-  VALUES (
-    '50000000-0000-4000-8000-000000000003'::uuid,
-    'DEFAULT — Quality gate',
-    $criteria$
-    [
-      {"instruction": "Language gate — Respond clearly in the same language used by the requester.", "type": "boolean"},
-      {"instruction": "Intention gate — Complete supported work, decline only unsupported parts, and avoid unnecessary scope expansion.", "type": "boolean"},
-      {"categories": ["fail", "partial", "pass"], "instruction": "Tool usage check — Use relevant tools and persisted evidence when the request requires them; never invent a successful action.", "type": "categorical"},
-      {"categories": ["bad", "decent", "good"], "instruction": "Response quality — Produce a correct, grounded, concise, practical, and directly useful final answer.", "type": "categorical"}
-    ]
-    $criteria$::jsonb,
-    actor_id,
-    actor_id
-  )
-  ON CONFLICT (id) DO NOTHING;
-
-  INSERT INTO prompts (id, title, active_revision_id, created_at, updated_at)
-  VALUES (
-    (fixture #>> '{prompt,id}')::uuid,
-    fixture #>> '{prompt,title}',
-    (fixture #>> '{prompt,activeRevisionId}')::uuid,
-    (fixture #>> '{promptRows,0,createdAt}')::timestamptz,
-    (fixture #>> '{prompt,updatedAt}')::timestamptz
-  )
-  ON CONFLICT (id) DO NOTHING;
-
-  FOR revision_data IN SELECT value FROM jsonb_array_elements(fixture->'promptRows')
-  LOOP
-    INSERT INTO prompt_revisions (
-      id, prompt_id, parent_revision_id, revision_number, markdown, change_request, author, created_at, created_by_user_id
-    )
-    VALUES (
-      (revision_data->>'id')::uuid,
-      (revision_data->>'promptId')::uuid,
-      (revision_data->>'parentRevisionId')::uuid,
-      (revision_data->>'revisionNumber')::integer,
-      revision_data->>'markdown',
-      revision_data->>'changeRequest',
-      revision_data->>'author',
-      (revision_data->>'createdAt')::timestamptz,
-      actor_id
-    )
-    ON CONFLICT (id) DO NOTHING;
-  END LOOP;
-
-  profile_data := fixture #> '{targetProfileRows,0}';
-  INSERT INTO target_profiles (id, name, prompt_id, current_revision_id)
-  VALUES (
-    (profile_data->>'id')::uuid,
-    profile_data->>'name',
-    (profile_data->>'promptId')::uuid,
-    (profile_data->>'currentRevisionId')::uuid
-  )
-  ON CONFLICT (id) DO NOTHING;
-
-  FOR revision_data IN SELECT value FROM jsonb_array_elements(fixture->'targetProfileRows')
-  LOOP
-    INSERT INTO target_profile_revisions (
-      id, target_profile_id, parent_revision_id, revision_number, instructions, configuration, created_by_user_id
-    )
-    VALUES (
-      (revision_data->>'revisionId')::uuid,
-      (revision_data->>'id')::uuid,
-      (revision_data->>'parentRevisionId')::uuid,
-      (revision_data->>'revisionNumber')::integer,
-      revision_data->>'instructions',
-      revision_data->'configuration',
-      actor_id
-    )
-    ON CONFLICT (id) DO NOTHING;
-  END LOOP;
-
-  INSERT INTO chats (
-    id, owner_user_id, title, icon, model_id, workspace_context_json, created_at, updated_at
-  )
-  VALUES (
-    (fixture #>> '{chat,chat,id}')::uuid,
-    actor_id,
-    fixture #>> '{chat,chat,title}',
-    fixture #>> '{chat,chat,icon}',
-    fixture #>> '{chat,chat,modelId}',
-    fixture #> '{chat,context}',
-    (fixture #>> '{chat,chat,createdAt}')::timestamptz,
-    (fixture #>> '{chat,chat,updatedAt}')::timestamptz
-  )
-  ON CONFLICT (id) DO NOTHING;
-
-  FOR message_data IN SELECT value FROM jsonb_array_elements(fixture #> '{chat,messages}')
-  LOOP
-    INSERT INTO chat_messages (
-      id, chat_id, role, parts_json, metadata_json, text_content, created_at
-    )
-    VALUES (
-      (message_data->>'id')::uuid,
-      (message_data->>'chatId')::uuid,
-      message_data->>'role',
-      message_data->'parts',
-      message_data->'metadata',
-      COALESCE(
-        (
-          SELECT string_agg(part->>'text', E'\n' ORDER BY position)
-          FROM jsonb_array_elements(message_data->'parts') WITH ORDINALITY AS parts(part, position)
-          WHERE part->>'type' = 'text'
-        ),
-        ''
-      ),
-      (message_data->>'createdAt')::timestamptz
-    )
-    ON CONFLICT (id) DO NOTHING;
-  END LOOP;
-
-  FOR run_data IN SELECT value FROM jsonb_array_elements(fixture->'targetRuns')
-  LOOP
-    INSERT INTO target_runs (
-      id, prompt_id, prompt_revision_id, target_profile_id, target_profile_revision_id, target_model_id,
-      reasoning_effort, effective_instructions_hash, source, chat_id, started_by_user_id, created_at, updated_at
-    )
-    VALUES (
-      (run_data->>'id')::uuid,
-      (run_data->>'promptId')::uuid,
-      (run_data->>'promptRevisionId')::uuid,
-      (run_data->>'targetProfileId')::uuid,
-      (run_data->>'targetProfileRevisionId')::uuid,
-      run_data->>'targetModelId',
-      run_data->>'reasoningEffort',
-      run_data->>'effectiveInstructionsHash',
-      run_data->>'source',
-      (run_data->>'chatId')::uuid,
-      actor_id,
-      (run_data->>'createdAt')::timestamptz,
-      (run_data->>'updatedAt')::timestamptz
-    )
-    ON CONFLICT (id) DO NOTHING;
-
-    FOR turn_data IN SELECT value FROM jsonb_array_elements(run_data->'turns')
-    LOOP
-      INSERT INTO target_run_turns (
-        id, run_id, position, input_text, output_text, response_messages_json, usage_json,
-        activity_json, status, error_message, created_by_user_id, created_at, completed_at
-      )
-      VALUES (
-        (turn_data->>'id')::uuid,
-        (run_data->>'id')::uuid,
-        (turn_data->>'position')::integer,
-        turn_data->>'input',
-        turn_data->>'output',
-        COALESCE(
-          (
-            SELECT item->'responseMessages'
-            FROM jsonb_array_elements(fixture->'targetTurnRows') AS rows(item)
-            WHERE item->>'id' = turn_data->>'id'
-          ),
-          '[]'::jsonb
-        ),
-        turn_data->'usage',
-        turn_data->'activity',
-        turn_data->>'status',
-        turn_data->>'errorMessage',
-        actor_id,
-        (turn_data->>'createdAt')::timestamptz,
-        (turn_data->>'completedAt')::timestamptz
-      )
-      ON CONFLICT (id) DO NOTHING;
-    END LOOP;
-  END LOOP;
-
-  FOR run_data IN SELECT value FROM jsonb_array_elements(fixture->'evaluations')
-  LOOP
-    INSERT INTO evaluation_runs (
-      id, prompt_id, prompt_revision_id, chat_id, source, target_model_id, judge_model_ids,
-      status, configuration_fingerprint, error_message, created_at, completed_at,
-      is_synthetic_example, started_by_user_id, target_profile_id, target_profile_revision_id,
-      effective_instructions_hash, target_run_id, target_run_turn_id
-    )
-    VALUES (
-      (run_data->>'id')::uuid,
-      (run_data->>'promptId')::uuid,
-      (run_data->>'promptRevisionId')::uuid,
-      (run_data->>'chatId')::uuid,
-      run_data->>'source',
-      run_data->>'targetModelId',
-      ARRAY(SELECT jsonb_array_elements_text(run_data->'judgeModelIds')),
-      run_data->>'status',
-      run_data->>'configurationFingerprint',
-      run_data->>'errorMessage',
-      (run_data->>'createdAt')::timestamptz,
-      (run_data->>'completedAt')::timestamptz,
-      true,
-      actor_id,
-      (run_data->>'targetProfileId')::uuid,
-      (run_data->>'targetProfileRevisionId')::uuid,
-      run_data->>'effectiveInstructionsHash',
-      (run_data->>'targetRunId')::uuid,
-      (run_data->>'targetRunTurnId')::uuid
-    )
-    ON CONFLICT (id) DO NOTHING;
-
-    FOR case_data IN SELECT value FROM jsonb_array_elements(run_data->'cases')
-    LOOP
-      INSERT INTO evaluation_cases (id, run_id, position, input_json, criteria_json, output_json)
-      VALUES (
-        (case_data->>'id')::uuid,
-        (run_data->>'id')::uuid,
-        (case_data->>'position')::integer,
-        case_data->'input',
-        case_data->'criteria',
-        case_data->'output'
-      )
-      ON CONFLICT (id) DO NOTHING;
-
-      FOR score_data IN SELECT value FROM jsonb_array_elements(case_data->'scores')
-      LOOP
-        INSERT INTO evaluation_scores (
-          id, case_id, criterion_position, data_type, criterion_json, judge_model_id,
-          value_json, comment, evidence_json
-        )
-        VALUES (
-          (score_data->>'id')::uuid,
-          (case_data->>'id')::uuid,
-          (score_data->>'criterionPosition')::integer,
-          score_data->>'dataType',
-          score_data->'criterion',
-          score_data->>'judgeModelId',
-          score_data->'value',
-          score_data->>'comment',
-          score_data->'evidence'
-        )
-        ON CONFLICT (id) DO NOTHING;
-      END LOOP;
-    END LOOP;
-  END LOOP;
-END
-$migration$;

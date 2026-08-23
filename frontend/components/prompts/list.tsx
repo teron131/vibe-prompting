@@ -217,7 +217,7 @@ export function PromptList({
         ) : prompts.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <FilePlus2 aria-hidden="true" className="mx-auto size-5 text-muted-foreground" />
-            <h3 className="mt-3 text-sm font-medium">No prompt files yet</h3>
+            <h3 className="mt-3 text-sm font-medium">No Prompt Files Yet</h3>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               Create one to start a versioned workspace.
             </p>
@@ -240,7 +240,7 @@ export function PromptList({
         ) : (
           <div className="px-4 py-10 text-center">
             <Search aria-hidden="true" className="mx-auto size-5 text-muted-foreground" />
-            <h3 className="mt-3 text-sm font-medium">No matching prompts</h3>
+            <h3 className="mt-3 text-sm font-medium">No Matching Prompts</h3>
             <p className="mt-1 text-xs text-muted-foreground">Try a different name or phrase.</p>
           </div>
         )}

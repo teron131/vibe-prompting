@@ -62,7 +62,7 @@ const criterionSchema = z.discriminatedUnion("dataType", [
     instruction: criterionInstructionSchema,
   }),
   z.object({
-    name: z.literal("output"),
+    name: criterionNameSchema,
     dataType: z.literal("CORRECTION"),
     instruction: criterionInstructionSchema,
   }),
@@ -124,7 +124,7 @@ const evaluationResultSchema = z.discriminatedUnion("dataType", [
     ...resultDetails,
   }),
   z.object({
-    name: z.literal("output"),
+    name: resultNameSchema,
     dataType: z.literal("CORRECTION"),
     value: z.string().trim().min(1).describe("The complete replacement Target output."),
     ...resultDetails,
@@ -175,11 +175,13 @@ export function createEvaluationResponseSchema(
   const resultShape = Object.fromEntries(
     configuredCriteria.map((criterion) => [
       criterion.name,
-      z.object({
-        value: criterionValueSchema(criterion),
-        comment: commentSchema,
-        evidence: evidenceSchema,
-      }),
+      z
+        .object({
+          value: criterionValueSchema(criterion),
+          comment: commentSchema,
+          evidence: evidenceSchema,
+        })
+        .describe(`${criterion.name}: ${criterion.instruction}`),
     ]),
   );
   return z.object({ results: z.object(resultShape) }) as z.ZodType<EvaluationResponse>;

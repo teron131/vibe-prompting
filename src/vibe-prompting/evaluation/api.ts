@@ -10,6 +10,7 @@ import type {
 } from "./engine/schemas.ts";
 
 const instructionSchema = z.string().trim().min(1);
+const criterionNameSchema = z.string().trim().min(1).max(120);
 const categoriesSchema = z
   .array(z.string().trim().min(1))
   .min(2)
@@ -19,25 +20,30 @@ const categoriesSchema = z
 
 export const criterionSchema = z.discriminatedUnion("type", [
   z.object({
+    name: criterionNameSchema,
     type: z.literal("boolean"),
     instruction: instructionSchema,
   }),
   z.object({
+    name: criterionNameSchema,
     type: z.literal("categorical"),
     instruction: instructionSchema,
     categories: categoriesSchema,
   }),
   z.object({
+    name: criterionNameSchema,
     type: z.literal("numeric"),
     instruction: instructionSchema,
     min: z.number(),
     max: z.number(),
   }),
   z.object({
+    name: criterionNameSchema,
     type: z.literal("text"),
     instruction: instructionSchema,
   }),
   z.object({
+    name: criterionNameSchema,
     type: z.literal("correction"),
     instruction: instructionSchema,
   }),
@@ -48,6 +54,13 @@ export const criteriaSchema = z
   .min(1)
   .max(10)
   .superRefine((criteria, context) => {
+    if (new Set(criteria.map(({ name }) => name.toLocaleLowerCase())).size !== criteria.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Criterion names must be unique within a case.",
+      });
+    }
+
     criteria.forEach((criterion, index) => {
       if (criterion.type === "numeric" && criterion.min >= criterion.max) {
         context.addIssue({
@@ -214,9 +227,9 @@ async function runEvaluation<INPUT, OUTPUT>(input: {
   return { cases };
 }
 
-/** Maps the public correction criterion to the engine's reserved output criterion name. */
-function toInternalCriterion(criterion: Criterion, index: number): InternalCriterion {
-  const name = criterion.type === "correction" ? "output" : `criterion_${index + 1}`;
+/** Projects the public Criterion into the engine contract while preserving its human name. */
+function toInternalCriterion(criterion: Criterion): InternalCriterion {
+  const { name } = criterion;
   switch (criterion.type) {
     case "boolean":
       return { name, dataType: "BOOLEAN", instruction: criterion.instruction };
@@ -238,7 +251,7 @@ function toInternalCriterion(criterion: Criterion, index: number): InternalCrite
     case "text":
       return { name, dataType: "TEXT", instruction: criterion.instruction };
     case "correction":
-      return { name: "output", dataType: "CORRECTION", instruction: criterion.instruction };
+      return { name, dataType: "CORRECTION", instruction: criterion.instruction };
   }
 }
 

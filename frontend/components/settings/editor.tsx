@@ -153,7 +153,7 @@ export function SettingsEditor() {
   return (
     <div className="page-gutter mx-auto w-full max-w-5xl py-7 sm:py-9">
       <div className="max-w-2xl">
-        <h1 className="text-xl font-semibold tracking-tight">Workspace settings</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Workspace Settings</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {
             "Choose which models appear across chat and evaluations for everyone. Saved workspace API keys stay on the server and are never shown again."
@@ -176,7 +176,7 @@ export function SettingsEditor() {
             <div className="flex items-end justify-between gap-4 border-b pb-3">
               <div>
                 <h3 className="text-sm font-semibold" id="model-catalog-title">
-                  Model catalogue
+                  Model Catalogue
                 </h3>
               </div>
               <Button
@@ -209,7 +209,7 @@ export function SettingsEditor() {
           <section className="mt-10" aria-labelledby="helper-model-title">
             <div className="border-b pb-3">
               <h3 className="text-sm font-semibold" id="helper-model-title">
-                Helper model
+                Helper Model
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">
                 Handles small background tasks across the app at low reasoning effort.
@@ -221,7 +221,7 @@ export function SettingsEditor() {
           <section className="mt-10" aria-labelledby="provider-access-title">
             <div className="border-b pb-3">
               <h3 className="text-sm font-semibold" id="provider-access-title">
-                Provider access
+                Provider Access
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">
                 Workspace credentials override deployment credentials until removed.
@@ -276,8 +276,8 @@ function HelperModelRow({
   return (
     <div className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_13rem] sm:items-center">
       <ModelFields
-        connectionLabel="Helper model connection"
-        idLabel="Helper model ID"
+        connectionLabel="Helper Model Connection"
+        idLabel="Helper Model ID"
         model={model}
         onChange={onChange}
       />
@@ -458,7 +458,7 @@ function ProviderRow({
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1.5">
-          <span className="text-xs font-medium text-muted-foreground">API key</span>
+          <span className="text-xs font-medium text-muted-foreground">API Key</span>
           <Input
             autoComplete="off"
             disabled={draft.clearApiKey}

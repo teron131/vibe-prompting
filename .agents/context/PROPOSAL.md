@@ -18,7 +18,8 @@ The product is an 80/20 prompt-engineering runtime for practical iteration, not 
 - A Pinned Target combines one Target Profile revision, one exact Prompt Revision, and one configured model into a repeatable runtime for an application run.
 - A Target Run is a durable multi-turn trace over one Pinned Target, separate from general chat history and available to human and AI clients.
 - An Evaluation Request contains cases, criteria, judges, and a Target without requiring a Prompt or Target Profile.
-- An Evaluation Criteria Profile is a reusable ordered set of typed criteria; each Evaluation Run still stores its exact criteria snapshot so later profile edits cannot change historical meaning.
+- A Criterion is a named reusable typed judge contract with one shared workspace identity and mutable content for future evaluations.
+- Criteria is a named ordered permutation of shared Criterion references; each Evaluation Run still stores its exact resolved Criterion snapshots so later Criterion or Criteria edits cannot change historical meaning.
 - An Evaluation Run records one execution and its outputs, per-criterion scores, judge attribution, evidence, status, and configuration.
 - An Evaluation Run may reference an exact Prompt Revision when the evaluated Target was constructed from that revision, but Evaluation does not belong to Prompt and a Prompt does not require Evaluation.
 
@@ -33,7 +34,7 @@ The product currently has one implicit shared workspace rather than separate org
 - An active User may create and use workspace resources until the membership or application session is revoked.
 - An Application Session is an opaque revocable browser credential whose hash and expiry are stored in PostgreSQL; it is distinct from Google identity tokens and OAuth state.
 - A Chat and its messages belong to one User and are never shared through workspace reads.
-- Prompts, Prompt Revisions, Target Profiles, Target Runs, Evaluation Criteria Profiles, Evaluation Runs, and Settings are shared workspace resources with user attribution on writes.
+- Prompts, Prompt Revisions, Target Profiles, Target Runs, Criterion, Criteria, Evaluation Runs, and Settings are shared workspace resources with user attribution on writes.
 - Rebuild-owned examples are ordinary removable database records rather than runtime fallbacks or generated seed data. The example chat is assigned once to the most recently active member because chats remain private, and deleting any example does not recreate it.
 
 Google OpenID Connect owns identity verification, while the application owns membership, invitations, sessions, authorization, and data access.
@@ -77,7 +78,7 @@ The Evaluation System owns one transport-neutral evaluation capability shared by
 - Evaluate opaque Targets against case-local criteria with one or more judges.
 - Evaluate a selected completed Target Run turn through the same judge pipeline without invoking the Target again.
 - Support Boolean, categorical, numeric, text, and correction criteria as configuration rather than hard-coded evaluator classes in the product workflow.
-- Manage reusable ordered criteria profiles while keeping exact criteria snapshots on every durable run.
+- Manage reusable named Criterion and ordered Criteria while keeping exact resolved Criterion snapshots on every durable run.
 - Persist runs, cases, outputs, scores, evidence, status, and exact configuration when durable tracking is requested.
 - Expand batch configuration into an exact manifest before execution, then start each run asynchronously and expose progress through durable run status.
 - Search paginated case results by exact identifier, hybrid text retrieval, and shared filters, then compute compatible analytics over the same filtered result set.
@@ -121,7 +122,7 @@ Hashline is only an addressing technique in this product. It does not justify a 
 ## Public Surfaces
 
 - The TypeScript API is the direct in-process contract for application composition and external library use.
-- Fastify exposes trusted loopback HTTP and OpenAPI operations for prompt editing, configured models, durable Target Runs, durable evaluation runs and batches, criteria profiles, paginated results, analytics, structured queries, and result exploration over the same systems.
+- Fastify exposes trusted loopback HTTP and OpenAPI operations for prompt editing, configured models, durable Target Runs, durable evaluation runs and batches, Criterion, Criteria, paginated results, analytics, structured queries, and result exploration over the same systems.
 - MCP is a trusted loopback application adapter and may expose Prompt System, Target System, and Evaluation System operations without inventing separate semantics or hosting an independent editing implementation.
 - The built-in agent composes the same operations into natural-language workflows.
 - The Next.js browser authenticates through Google and application sessions, then provides a simple non-technical interface over those operations without becoming their owner.
@@ -136,7 +137,7 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 - `evaluation/api.ts` and `evaluation/engine/` own the transport-neutral evaluator contract, typed criteria, judge orchestration, and optional Langfuse tracing.
 - `evaluation/runs/` owns durable run schemas, target preparation and detached lifecycle orchestration, PostgreSQL state transitions, report projection, and compatible revision trends.
 - `evaluation/results/` owns result filters, per-domain search projection, paginated PostgreSQL queries, aggregate analytics, and the helper-model translation into allowlisted read operations.
-- `evaluation/criteria-profiles.ts` owns reusable ordered criteria profiles without becoming the source of truth for historical run criteria.
+- `evaluation/criteria.ts` owns reusable named Criterion and ordered Criteria composition without becoming the source of truth for historical run snapshots.
 - `agents/tools/` owns framework-neutral agent tool definitions over direct clients and public system operations, `agents/ai-sdk/` and `agents/openai-agents/` own agent runtime integration, and each runtime usage owns its tool adaptation.
 - `auth/` owns Google-backed identity upsert, pending and active membership, invitation throttling, and opaque application-session lifecycle.
 - `conversations/` owns private durable general-chat history, owner scoping, and detached assistant-run reconciliation rather than prompt or evaluation records.
@@ -169,7 +170,7 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 
 The implemented baseline has distinct Prompt, Target, and Evaluation systems. `PromptSystem` owns immutable full revisions, human/AI authors, optimistic concurrency, an independent editor history cursor, explicit active-revision selection, deletion, and active-revision passage projection. `TargetSystem` owns revisioned prompt-associated profiles, constructs pinned vanilla AI SDK targets, and persists separate multi-turn Target Runs that both human and AI clients can start, continue, and inspect. Public AI SDK and LangChain adapters support externally supplied runtimes. The shared hybrid search capability applies one keyword and semantic policy to prompt passages, chats, and evaluation cases while each owner controls its document projection.
 
-Evaluation exposes the transport-neutral `evaluate(target, request)` boundary plus durable prompt-linked asynchronous runs and batches. It can also score a completed Target Run turn through the same judge graph while skipping target invocation and retaining trace provenance. A batch pins every job and persists all run records atomically before detached execution begins, while completion can only commit outputs and scores for a run that remains active. The backend stores exact prompt, target profile, model, configuration, output, score, evidence, judge attribution, status, synthetic provenance, criteria snapshots, and optional Target Run references. Criteria profiles are reusable CRUD resources, while result browsing, typed aggregates, chronological trends, and allowlisted structured exploration all read the same persisted facts and filters.
+Evaluation exposes the transport-neutral `evaluate(target, request)` boundary plus durable prompt-linked asynchronous runs and batches. It can also score a completed Target Run turn through the same judge graph while skipping target invocation and retaining trace provenance. A batch pins every job and persists all run records atomically before detached execution begins, while completion can only commit outputs and scores for a run that remains active. The backend stores exact prompt, target profile, model, configuration, output, score, evidence, judge attribution, status, synthetic provenance, Criterion snapshots, and optional Target Run references. Criterion and Criteria are reusable CRUD resources, while result browsing, typed aggregates, chronological trends, and allowlisted structured exploration all read the same persisted facts and filters.
 
 Google-backed Users, invitation-gated membership, and opaque revocable sessions now protect the browser workspace. Chats are owner-scoped in PostgreSQL, while prompts, revisions, profiles, settings, Target Runs, and Evaluation Runs remain shared and retain contributor attribution. Shared projections expose contributor names where useful without exposing member email addresses. The trusted Fastify adapter is forced to loopback and validates supplied actor or viewer identifiers as active members, while browser routes always derive identity from the session.
 
@@ -177,11 +178,11 @@ Evaluation queue draining is single-flighted, provider capacity hands off slots 
 
 The built-in agent uses separate structured prompt editing, Target Run, evaluation execution, evaluation search, and evaluation analytics tools, passes revision IDs explicitly, and can operate the same durable Target Runs and evaluation batches as a human client. Prompt editing operates on one isolated in-memory string with hash-addressed structured operations and persists only through Prompt System. The configured helper model only translates plain-language questions into validated read operations at low reasoning effort. The browser reuses the general conversation presentation in an explicit Test Target mode whose traces are not stored in general chat history, and it can launch judge-only evaluation from a selected completed turn. The other run setup, result exploration, aggregate analytics, criteria management, and LLM-assisted exploration surfaces remain clients of backend owners.
 
-Migration 002 materializes one coherent AI-concepts example as literal database rows captured from the Luna workflow: a prompt with a visible revision diff, its related tool-using chat, a two-turn Target Run, and two completed Evaluation Runs judged by two configured models. A database reset preserves real active members, applies the two-item migration baseline once, and never recreates an example after deletion.
+`examples/default-workspace.json` captures one coherent AI-concepts example from the Luna workflow: a canonical v1 prompt, its related tool-using chat, a two-turn Target Run, and two completed Evaluation Runs judged by two configured models. The explicit example seed command imports those ordinary records after schema setup, while a database reset preserves real active members, applies the schema migration once, and does not recreate a deleted example unless that command runs again.
 
 The remaining gaps are narrower:
 
-- MCP currently exposes only stateless evaluation and should reach useful Prompt, Target, durable Evaluation, result, and criteria-profile operations through the same application services.
+- MCP currently exposes only stateless evaluation and should reach useful Prompt, Target, durable Evaluation, result, Criterion, and Criteria operations through the same application services.
 - Asynchronous execution is still owned by the current server process. Durable queue and terminal state are stored in PostgreSQL and startup reconciliation marks abandoned running work as interrupted, but durable resumption or a separate worker process is not yet implemented.
 - Persisted application runs currently construct the built-in prompt-linked AI SDK Target; durable execution of a caller-supplied opaque Target needs an explicit remote or callback boundary before it is warranted.
 - Target Profile revision management remains backend-only even though the active profile and pinned revision are visible in the direct-test workflow.

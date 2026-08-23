@@ -18,7 +18,7 @@ export function RunScoreOverview({ run }: { run: EvaluationRun }) {
     <section className="border-y">
       <header className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5">
         <div>
-          <h3 className="text-sm font-semibold">Criterion register</h3>
+          <h3 className="text-sm font-semibold">Criterion Register</h3>
           <p className="mt-1 text-xs text-muted-foreground">
             All cases and judges are shown without combining unlike score types.
           </p>
@@ -41,15 +41,13 @@ export function RunScoreOverview({ run }: { run: EvaluationRun }) {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {outcomes.map((outcome, index) => (
-              <tr key={`${outcome.position}-${outcome.criterion.instruction}`}>
+            {outcomes.map((outcome) => (
+              <tr key={`${outcome.position}-${outcome.criterion.name}`}>
                 <td className="px-4 py-3 align-top font-mono text-[11px] text-muted-foreground sm:px-5">
-                  {String(index + 1).padStart(2, "0")}
+                  {String(outcome.position + 1).padStart(2, "0")}
                 </td>
                 <th className="px-3 py-3 text-left align-top font-normal">
-                  <span className="block font-medium">
-                    {criterionLabel(outcome.criterion, index)}
-                  </span>
+                  <span className="block font-medium">{outcome.criterion.name}</span>
                   <span className="mt-1 block max-w-2xl leading-5 text-muted-foreground">
                     {outcome.criterion.instruction}
                   </span>
@@ -90,7 +88,7 @@ function buildCriterionOutcomes(run: EvaluationRun): CriterionOutcome[] {
   const groups = new Map<string, CriterionOutcome>();
   for (const testCase of run.cases) {
     for (const [position, criterion] of testCase.criteria.entries()) {
-      const key = `${criterion.type}\u0000${criterion.instruction}`;
+      const key = `${criterion.type}\u0000${criterion.name}`;
       const group = groups.get(key) ?? { criterion, position: groups.size, scores: [] };
       group.scores.push(...testCase.scores.filter((score) => score.criterionPosition === position));
       groups.set(key, group);
@@ -138,21 +136,6 @@ function outcomeSummary({ criterion, scores }: CriterionOutcome): string {
       .join(" · ");
   }
   return `${scores.length} ${scores.length === 1 ? "REVIEW" : "REVIEWS"}`;
-}
-
-function criterionLabel(criterion: Criterion, index: number): string {
-  const named = criterion.instruction.split(/\s+[—–-]\s+|:\s+/, 1)[0]?.trim();
-  if (named && named.length <= 28) return named;
-  const instruction = criterion.instruction.toLowerCase();
-  if (/(language|traditional chinese|english for english)/.test(instruction))
-    return "Language behavior";
-  if (/(intention|supported work|unsupported|mixed request|scope)/.test(instruction))
-    return "Intention gate";
-  if (/(tool usage|tool calls?|web_search|search finds|official evidence)/.test(instruction))
-    return "Tool usage";
-  if (/(response quality|correct|concise|actionable|publishable)/.test(instruction))
-    return "Response quality";
-  return `Criterion ${index + 1}`;
 }
 
 function scoreTone(score: EvaluationScore): SignalTone {

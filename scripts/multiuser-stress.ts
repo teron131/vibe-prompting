@@ -28,7 +28,7 @@ type TestSummary = {
   conflicts: {
     prompts: number;
     targetProfiles: number;
-    criteriaProfiles: number;
+    criteria: number;
     settings: number;
   };
   workflows: {
@@ -515,24 +515,29 @@ async function exerciseSharedConflicts(
   );
   assertSettledCounts("target profile", targetResults, 1, 15, 409);
 
-  const criteriaProfile = await application.criteriaProfiles.create(users[0]!.id, {
+  const criterion = await application.criterion.createCriterion(users[0]!.id, {
+    name: "Determinism",
+    type: "boolean",
+    instruction: "The response is deterministic.",
+  });
+  const criteria = await application.criterion.createCriteria(users[0]!.id, {
     name: "Criteria collision",
-    criteria: [{ type: "boolean", instruction: "The response is deterministic." }],
+    criterionIds: [criterion.id],
   });
   const criteriaResults = await Promise.allSettled(
     Array.from({ length: 16 }, (_, index) =>
-      application.criteriaProfiles.update(
+      application.criterion.updateCriteria(
         users[index % users.length]!.id,
-        criteriaProfile.id,
-        criteriaProfile.version,
+        criteria.id,
+        criteria.version,
         {
           name: "Criteria collision",
-          criteria: [{ type: "boolean", instruction: `Deterministic criterion ${index + 1}.` }],
+          criterionIds: [criterion.id],
         },
       ),
     ),
   );
-  assertSettledCounts("criteria profile", criteriaResults, 1, 15, 409);
+  assertSettledCounts("Criteria", criteriaResults, 1, 15, 409);
 
   const settings = application.settings.get();
   const settingsResults = await Promise.allSettled(
@@ -546,7 +551,7 @@ async function exerciseSharedConflicts(
     ),
   );
   assertSettledCounts("settings", settingsResults, 1, 15, 409);
-  return { prompts: 31, targetProfiles: 15, criteriaProfiles: 15, settings: 15 };
+  return { prompts: 31, targetProfiles: 15, criteria: 15, settings: 15 };
 }
 
 async function exerciseWorkflows(
@@ -579,7 +584,9 @@ async function exerciseWorkflows(
       cases: [
         {
           input: "Evaluate the pinned response.",
-          criteria: [{ type: "boolean", instruction: "The response is deterministic." }],
+          criteria: [
+            { name: "Determinism", type: "boolean", instruction: "The response is deterministic." },
+          ],
         },
       ],
       isSyntheticExample: false,
@@ -618,7 +625,13 @@ async function exerciseWorkflows(
     configurations: Array.from({ length: 6 }, (_, index) => ({
       id: `configuration-${index + 1}`,
       name: `Configuration ${index + 1}`,
-      criteria: [{ type: "boolean" as const, instruction: `Deterministic check ${index + 1}.` }],
+      criteria: [
+        {
+          name: `Deterministic check ${index + 1}`,
+          type: "boolean" as const,
+          instruction: `The response must satisfy deterministic check ${index + 1}.`,
+        },
+      ],
     })),
     cases: [{ input: "Produce one deterministic result." }],
     repetitions: 4,
@@ -719,7 +732,8 @@ async function readInvariants(databaseUrl: string): Promise<Record<string, numbe
         (SELECT count(*)::integer FROM evaluation_runs WHERE started_by_user_id IS NULL) AS actorless_evaluations,
         (SELECT count(*)::integer FROM target_runs WHERE started_by_user_id IS NULL) AS actorless_target_runs,
         (SELECT count(*)::integer FROM target_run_turns WHERE created_by_user_id IS NULL) AS actorless_target_turns,
-        (SELECT count(*)::integer FROM evaluation_criteria_profiles WHERE created_by_user_id IS NULL OR updated_by_user_id IS NULL) AS actorless_criteria_profiles,
+        (SELECT count(*)::integer FROM evaluation_criteria WHERE created_by_user_id IS NULL OR updated_by_user_id IS NULL) AS actorless_criteria,
+        (SELECT count(*)::integer FROM evaluation_criterion WHERE created_by_user_id IS NULL OR updated_by_user_id IS NULL) AS actorless_criterion,
         (SELECT count(*)::integer FROM evaluation_runs WHERE status IN ('queued', 'running')) AS nonterminal_evaluations,
         (SELECT count(*)::integer FROM target_run_turns WHERE status = 'running') AS running_target_turns,
         (SELECT count(*)::integer FROM (SELECT prompt_id, revision_number FROM prompt_revisions GROUP BY prompt_id, revision_number HAVING count(*) > 1) duplicates) AS duplicate_prompt_revisions,

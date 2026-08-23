@@ -40,7 +40,7 @@ const TOOL_OPTIONS: Array<{ description: string; id: ChatToolId; label: string }
   {
     description: "Create, read, and edit saved prompts.",
     id: "prompt-library",
-    label: "Prompt library",
+    label: "Prompt Library",
   },
   {
     description: "Start persisted prompt evaluations and score reports.",
@@ -50,7 +50,7 @@ const TOOL_OPTIONS: Array<{ description: string; id: ChatToolId; label: string }
   {
     description: "Search the web when current information is needed.",
     id: "web-search",
-    label: "Web search",
+    label: "Web Search",
   },
 ];
 
@@ -58,7 +58,7 @@ const REASONING_OPTIONS: Array<{ label: string; value: ChatReasoningEffort }> = 
   { label: "Low", value: "low" },
   { label: "Medium", value: "medium" },
   { label: "High", value: "high" },
-  { label: "Extra high", value: "xhigh" },
+  { label: "Extra High", value: "xhigh" },
 ];
 
 export function ChatComposer({
@@ -424,7 +424,7 @@ export function ChatComposer({
         {variant === "agent" && mentionOpen ? (
           <div className="absolute bottom-[calc(100%+8px)] left-3 z-50 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl">
             <div className="border-b px-3 py-2">
-              <div className="text-xs font-medium">Reference a prompt</div>
+              <div className="text-xs font-medium">Reference a Prompt</div>
               <div className="mt-0.5 text-[11px] text-muted-foreground">
                 {mentionQuery !== null
                   ? "Keep typing after @ to filter the library."

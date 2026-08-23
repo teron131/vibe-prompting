@@ -72,16 +72,33 @@ CREATE TABLE public.evaluation_cases (
     CONSTRAINT evaluation_cases_position_check CHECK (("position" >= 0))
 );
 
-CREATE TABLE public.evaluation_criteria_profiles (
+CREATE TABLE public.evaluation_criterion (
     id uuid NOT NULL,
     name text NOT NULL,
-    criteria_json jsonb NOT NULL,
+    definition_json jsonb NOT NULL,
     version integer DEFAULT 1 NOT NULL,
     created_by_user_id uuid NOT NULL,
     updated_by_user_id uuid NOT NULL,
-    CONSTRAINT evaluation_criteria_profiles_criteria_json_check CHECK (((jsonb_typeof(criteria_json) = 'array'::text) AND (jsonb_array_length(criteria_json) > 0))),
-    CONSTRAINT evaluation_criteria_profiles_name_check CHECK ((btrim(name) <> ''::text)),
-    CONSTRAINT evaluation_criteria_profiles_version_check CHECK ((version > 0))
+    CONSTRAINT evaluation_criterion_definition_json_check CHECK ((jsonb_typeof(definition_json) = 'object'::text)),
+    CONSTRAINT evaluation_criterion_name_check CHECK ((btrim(name) <> ''::text)),
+    CONSTRAINT evaluation_criterion_version_check CHECK ((version > 0))
+);
+
+CREATE TABLE public.evaluation_criteria (
+    id uuid NOT NULL,
+    name text NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    created_by_user_id uuid NOT NULL,
+    updated_by_user_id uuid NOT NULL,
+    CONSTRAINT evaluation_criteria_name_check CHECK ((btrim(name) <> ''::text)),
+    CONSTRAINT evaluation_criteria_version_check CHECK ((version > 0))
+);
+
+CREATE TABLE public.evaluation_criteria_items (
+    criteria_id uuid NOT NULL,
+    criterion_id uuid NOT NULL,
+    "position" integer NOT NULL,
+    CONSTRAINT evaluation_criteria_items_position_check CHECK (("position" >= 0))
 );
 
 CREATE TABLE public.evaluation_runs (
@@ -273,8 +290,17 @@ ALTER TABLE ONLY public.evaluation_cases
 ALTER TABLE ONLY public.evaluation_cases
     ADD CONSTRAINT evaluation_cases_run_id_position_key UNIQUE (run_id, "position");
 
-ALTER TABLE ONLY public.evaluation_criteria_profiles
-    ADD CONSTRAINT evaluation_criteria_profiles_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.evaluation_criterion
+    ADD CONSTRAINT evaluation_criterion_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.evaluation_criteria
+    ADD CONSTRAINT evaluation_criteria_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.evaluation_criteria_items
+    ADD CONSTRAINT evaluation_criteria_items_pkey PRIMARY KEY (criteria_id, "position");
+
+ALTER TABLE ONLY public.evaluation_criteria_items
+    ADD CONSTRAINT evaluation_criteria_items_criterion_key UNIQUE (criteria_id, criterion_id);
 
 ALTER TABLE ONLY public.evaluation_runs
     ADD CONSTRAINT evaluation_runs_pkey PRIMARY KEY (id);
@@ -337,7 +363,9 @@ CREATE INDEX chat_usage_events_accepted_at_idx ON public.chat_usage_events USING
 
 CREATE INDEX chats_owner_updated_at_idx ON public.chats USING btree (owner_user_id, updated_at DESC, id DESC);
 
-CREATE UNIQUE INDEX evaluation_criteria_profiles_name_idx ON public.evaluation_criteria_profiles USING btree (lower(btrim(name)));
+CREATE UNIQUE INDEX evaluation_criterion_name_idx ON public.evaluation_criterion USING btree (lower(btrim(name)));
+
+CREATE UNIQUE INDEX evaluation_criteria_name_idx ON public.evaluation_criteria USING btree (lower(btrim(name)));
 
 CREATE INDEX evaluation_runs_fingerprint_idx ON public.evaluation_runs USING btree (prompt_id, configuration_fingerprint, status, completed_at, id);
 
@@ -382,11 +410,23 @@ ALTER TABLE ONLY public.chats
 ALTER TABLE ONLY public.evaluation_cases
     ADD CONSTRAINT evaluation_cases_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.evaluation_runs(id) ON DELETE CASCADE;
 
-ALTER TABLE ONLY public.evaluation_criteria_profiles
-    ADD CONSTRAINT evaluation_criteria_profiles_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.auth_users(id);
+ALTER TABLE ONLY public.evaluation_criterion
+    ADD CONSTRAINT evaluation_criterion_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.auth_users(id);
 
-ALTER TABLE ONLY public.evaluation_criteria_profiles
-    ADD CONSTRAINT evaluation_criteria_profiles_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.auth_users(id);
+ALTER TABLE ONLY public.evaluation_criterion
+    ADD CONSTRAINT evaluation_criterion_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.auth_users(id);
+
+ALTER TABLE ONLY public.evaluation_criteria
+    ADD CONSTRAINT evaluation_criteria_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.auth_users(id);
+
+ALTER TABLE ONLY public.evaluation_criteria
+    ADD CONSTRAINT evaluation_criteria_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.auth_users(id);
+
+ALTER TABLE ONLY public.evaluation_criteria_items
+    ADD CONSTRAINT evaluation_criteria_items_criteria_id_fkey FOREIGN KEY (criteria_id) REFERENCES public.evaluation_criteria(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.evaluation_criteria_items
+    ADD CONSTRAINT evaluation_criteria_items_criterion_id_fkey FOREIGN KEY (criterion_id) REFERENCES public.evaluation_criterion(id);
 
 ALTER TABLE ONLY public.evaluation_runs
     ADD CONSTRAINT evaluation_runs_cancelled_by_user_id_fkey FOREIGN KEY (cancelled_by_user_id) REFERENCES public.auth_users(id);

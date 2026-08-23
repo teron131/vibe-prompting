@@ -10,7 +10,7 @@ export function DefaultExampleBadge({ className }: { className?: string }) {
         className,
       )}
     >
-      Default example
+      Default Example
     </span>
   );
 }

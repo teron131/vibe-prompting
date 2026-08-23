@@ -11,7 +11,7 @@ import { cn } from "@/components/ui/utils";
 
 const destinations = [
   { href: "/evaluations/run", icon: Play, label: "Run" },
-  { href: "/evaluations/criteria", icon: SlidersHorizontal, label: "Criteria" },
+  { href: "/evaluations/criterion", icon: SlidersHorizontal, label: "Criterion" },
   { href: "/evaluations/results", icon: ListFilter, label: "Results" },
   { href: "/evaluations/analytics", icon: BarChart3, label: "Analytics" },
 ] as const;
