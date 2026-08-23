@@ -34,6 +34,7 @@ The product currently has one implicit shared workspace rather than separate org
 - An Application Session is an opaque revocable browser credential whose hash and expiry are stored in PostgreSQL; it is distinct from Google identity tokens and OAuth state.
 - A Chat and its messages belong to one User and are never shared through workspace reads.
 - Prompts, Prompt Revisions, Target Profiles, Target Runs, Evaluation Criteria Profiles, Evaluation Runs, and Settings are shared workspace resources with user attribution on writes.
+- Rebuild-owned examples are ordinary removable database records rather than runtime fallbacks or generated seed data. The example chat is assigned once to the most recently active member because chats remain private, and deleting any example does not recreate it.
 
 Google OpenID Connect owns identity verification, while the application owns membership, invitations, sessions, authorization, and data access.
 Shared projections may expose a contributor's display name when useful, but must not expose member email addresses or Google subjects to other users.
@@ -176,6 +177,8 @@ Evaluation queue draining is single-flighted, provider capacity hands off slots 
 
 The built-in agent uses separate structured prompt editing, Target Run, evaluation execution, evaluation search, and evaluation analytics tools, passes revision IDs explicitly, and can operate the same durable Target Runs and evaluation batches as a human client. Prompt editing operates on one isolated in-memory string with hash-addressed structured operations and persists only through Prompt System. The configured helper model only translates plain-language questions into validated read operations at low reasoning effort. The browser reuses the general conversation presentation in an explicit Test Target mode whose traces are not stored in general chat history, and it can launch judge-only evaluation from a selected completed turn. The other run setup, result exploration, aggregate analytics, criteria management, and LLM-assisted exploration surfaces remain clients of backend owners.
 
+Migration 002 materializes one coherent AI-concepts example as literal database rows captured from the Luna workflow: a prompt with a visible revision diff, its related tool-using chat, a two-turn Target Run, and two completed Evaluation Runs judged by two configured models. A database reset preserves real active members, applies the two-item migration baseline once, and never recreates an example after deletion.
+
 The remaining gaps are narrower:
 
 - MCP currently exposes only stateless evaluation and should reach useful Prompt, Target, durable Evaluation, result, and criteria-profile operations through the same application services.
@@ -183,7 +186,6 @@ The remaining gaps are narrower:
 - Persisted application runs currently construct the built-in prompt-linked AI SDK Target; durable execution of a caller-supplied opaque Target needs an explicit remote or callback boundary before it is warranted.
 - Target Profile revision management remains backend-only even though the active profile and pinned revision are visible in the direct-test workflow.
 - Membership uses one shared invitation code, and administrative member listing, revocation, or code rotation has no browser workflow yet.
-- Migration 021 intentionally replaces disposable pre-multi-user artifacts before adding mandatory ownership, so a meaningful existing database would require a separate data migration instead of the current replacement rollout.
 - Langfuse export and broader editable presets remain optional follow-up work rather than prerequisites for the core loop.
 
 ## Current Direction
