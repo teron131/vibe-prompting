@@ -37,6 +37,11 @@ type CriteriaRow = {
   version: number;
 };
 
+type CriteriaRemainderRow = {
+  criterionIds: string[];
+  id: string;
+};
+
 export type SavedCriterion = Criterion & {
   id: string;
   version: number;
@@ -52,6 +57,11 @@ export type Criteria = {
 };
 
 export type CriteriaInput = z.infer<typeof criteriaInputSchema>;
+
+export type CriterionDeletion = {
+  affectedCriteriaCount: number;
+  criteria: Criteria[];
+};
 
 /** Reports Criterion and Criteria validation or lifecycle failures with an HTTP-safe status code. */
 export class CriterionError extends Error {
@@ -141,41 +151,93 @@ export class CriterionLibrary {
     });
   }
 
-  async deleteCriterion(id: string, expectedVersion: number): Promise<void> {
-    await this.#database.transaction(async (sql) => {
-      const [usage] = await sql<{ name: string }[]>`
-        SELECT evaluation_criteria.name
-        FROM evaluation_criteria_items
-        JOIN evaluation_criteria
-          ON evaluation_criteria.id = evaluation_criteria_items.criteria_id
-        WHERE evaluation_criteria_items.criterion_id = ${id}
-        ORDER BY lower(evaluation_criteria.name), evaluation_criteria.id
-        LIMIT 1
-      `;
-      if (usage) {
-        throw new CriterionError(
-          `Remove this Criterion from “${usage.name}” and every other Criteria permutation before deleting it.`,
-          409,
-          "criterion-in-use",
-        );
-      }
-      const [deleted] = await sql<{ id: string }[]>`
-        DELETE FROM evaluation_criterion
+  async deleteCriterion(
+    actorUserId: string,
+    id: string,
+    expectedVersion: number,
+  ): Promise<CriterionDeletion> {
+    return this.#database.transaction(async (sql) => {
+      const [criterion] = await sql<{ id: string }[]>`
+        SELECT id
+        FROM evaluation_criterion
         WHERE id = ${id} AND version = ${expectedVersion}
-        RETURNING id
+        FOR UPDATE
       `;
-      if (!deleted) await throwMissingCriterionOrConflict(sql, id);
+      if (!criterion) await throwMissingCriterionOrConflict(sql, id);
+
+      const affectedCriteria = await sql<{ id: string }[]>`
+        SELECT evaluation_criteria.id
+        FROM evaluation_criteria
+        JOIN evaluation_criteria_items
+          ON evaluation_criteria_items.criteria_id = evaluation_criteria.id
+        WHERE evaluation_criteria_items.criterion_id = ${id}
+        ORDER BY evaluation_criteria.id
+        FOR UPDATE OF evaluation_criteria
+      `;
+      const affectedCriteriaIds = affectedCriteria.map(({ id: criteriaId }) => criteriaId);
+      const remainders = affectedCriteriaIds.length
+        ? await sql<CriteriaRemainderRow[]>`
+            SELECT
+              evaluation_criteria.id,
+              COALESCE(
+                array_agg(
+                  evaluation_criteria_items.criterion_id
+                  ORDER BY evaluation_criteria_items.position
+                ) FILTER (WHERE evaluation_criteria_items.criterion_id <> ${id}),
+                ARRAY[]::uuid[]
+              ) AS criterion_ids
+            FROM evaluation_criteria
+            JOIN evaluation_criteria_items
+              ON evaluation_criteria_items.criteria_id = evaluation_criteria.id
+            WHERE evaluation_criteria.id = ANY(${sql.array(affectedCriteriaIds)}::uuid[])
+            GROUP BY evaluation_criteria.id
+            ORDER BY evaluation_criteria.id
+          `
+        : [];
+      const deletedCriteriaIds = remainders
+        .filter(({ criterionIds }) => !criterionIds.length)
+        .map(({ id: criteriaId }) => criteriaId);
+      const survivingCriteria = remainders.filter(({ criterionIds }) => criterionIds.length);
+      const survivingCriteriaIds = survivingCriteria.map(({ id: criteriaId }) => criteriaId);
+
+      if (deletedCriteriaIds.length) {
+        await sql`
+          DELETE FROM evaluation_criteria
+          WHERE id = ANY(${sql.array(deletedCriteriaIds)}::uuid[])
+        `;
+      }
+
+      if (survivingCriteriaIds.length) {
+        await sql`
+          UPDATE evaluation_criteria
+          SET
+            version = version + 1,
+            updated_by_user_id = ${actorUserId}
+          WHERE id = ANY(${sql.array(survivingCriteriaIds)}::uuid[])
+        `;
+        await sql`
+          DELETE FROM evaluation_criteria_items
+          WHERE criteria_id = ANY(${sql.array(survivingCriteriaIds)}::uuid[])
+        `;
+        for (const criteria of survivingCriteria) {
+          await insertCriteriaItems(sql, criteria.id, criteria.criterionIds);
+        }
+      }
+
+      await sql`
+        DELETE FROM evaluation_criterion
+        WHERE id = ${id}
+      `;
+
+      return {
+        affectedCriteriaCount: affectedCriteriaIds.length,
+        criteria: await loadCriteria(sql),
+      };
     });
   }
 
   async listCriteria(): Promise<Criteria[]> {
-    return this.#database.run(async (sql) => {
-      const rows = await sql<CriteriaRow[]>`
-        ${criteriaProjection(sql)}
-        ORDER BY lower(evaluation_criteria.name), evaluation_criteria.id
-      `;
-      return rows.map(parseCriteria);
-    });
+    return this.#database.run(loadCriteria);
   }
 
   async getCriteria(id: string): Promise<Criteria> {
@@ -238,6 +300,14 @@ export class CriterionLibrary {
       if (!deleted) await throwMissingCriteriaOrConflict(sql, id);
     });
   }
+}
+
+async function loadCriteria(sql: DatabaseClient): Promise<Criteria[]> {
+  const rows = await sql<CriteriaRow[]>`
+    ${criteriaProjection(sql)}
+    ORDER BY lower(evaluation_criteria.name), evaluation_criteria.id
+  `;
+  return rows.map(parseCriteria);
 }
 
 function criteriaProjection(sql: DatabaseClient) {

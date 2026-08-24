@@ -410,18 +410,19 @@ export async function createApiServer(): Promise<FastifyInstance> {
     {
       schema: {
         body: deleteCriteriaResourceRequestSchema,
-        description: "Delete one unused Criterion.",
+        description: "Delete one Criterion and remove it from affected Criteria compositions.",
         params: criterionParamsSchema,
         summary: "Delete Criterion",
         tags: ["evaluation"],
       },
     },
     async (request, reply) => {
-      await services.criterion.deleteCriterion(
+      const deletion = await services.criterion.deleteCriterion(
+        request.body.actorUserId,
         request.params.criterionId,
         request.body.expectedVersion,
       );
-      return reply.header("cache-control", "no-store").code(204).send();
+      return reply.header("cache-control", "no-store").send(deletion);
     },
   );
 

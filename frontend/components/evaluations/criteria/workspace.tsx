@@ -24,6 +24,7 @@ import { cn } from "@/components/ui/utils";
 import type {
   Criteria,
   CriteriaListResponse,
+  CriterionDeletionResponse,
   CriterionLibraryResponse,
   SavedCriterion,
 } from "@/contracts/evaluations";
@@ -122,12 +123,18 @@ export function EvaluationCriterionWorkspace() {
     setCreatingCriterion(false);
   }
 
-  function deleteCriterion(id: string) {
+  function deleteCriterion(id: string, deletion: CriterionDeletionResponse) {
     setCriterion((current) => {
       const next = current.filter((criterion) => criterion.id !== id);
       setSelectedCriterionId(next[0]?.id);
       return next;
     });
+    setCriteria(deletion.criteria);
+    setSelectedCriteriaId((selectedId) =>
+      selectedId && deletion.criteria.some(({ id: criteriaId }) => criteriaId === selectedId)
+        ? selectedId
+        : deletion.criteria[0]?.id,
+    );
     setCreatingCriterion(false);
   }
 

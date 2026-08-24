@@ -122,6 +122,11 @@ export type SavedCriterionResponse = { criterion: SavedCriterion };
 
 export type CriterionLibraryResponse = { criterion: SavedCriterion[] };
 
+export type CriterionDeletionResponse = {
+  affectedCriteriaCount: number;
+  criteria: Criteria[];
+};
+
 export type CriteriaInput = { name: string; criterionIds: string[] };
 
 export type CriteriaResponse = { criteria: Criteria };

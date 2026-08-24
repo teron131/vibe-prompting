@@ -26,6 +26,7 @@ import { cn } from "@/components/ui/utils";
 import type {
   Criteria,
   Criterion,
+  CriterionDeletionResponse,
   SavedCriterion,
   SavedCriterionResponse,
 } from "@/contracts/evaluations";
@@ -56,7 +57,7 @@ export function CriterionEditor({
 }: {
   criterion?: SavedCriterion;
   listOpen: boolean | null;
-  onDeleted(id: string): void;
+  onDeleted(id: string, deletion: CriterionDeletionResponse): void;
   onReload(): Promise<LibraryState>;
   onSaved(criterion: SavedCriterion): void;
   onToggleList(): void;
@@ -118,17 +119,24 @@ export function CriterionEditor({
   }
 
   async function remove() {
-    if (!draft.id || !draft.version || usedBy.length) return;
+    if (!draft.id || !draft.version) return;
     const deletingId = draft.id;
     setDeleting(true);
     try {
-      await api.empty(`/api/evaluations/criterion/${encodeURIComponent(deletingId)}`, {
-        body: JSON.stringify({ expectedVersion: draft.version }),
-        headers: { "content-type": "application/json" },
-        method: "DELETE",
-      });
-      onDeleted(deletingId);
-      toast.success("Criterion deleted. Historical runs are unchanged.");
+      const deletion = await api.json<CriterionDeletionResponse>(
+        `/api/evaluations/criterion/${encodeURIComponent(deletingId)}`,
+        {
+          body: JSON.stringify({ expectedVersion: draft.version }),
+          headers: { "content-type": "application/json" },
+          method: "DELETE",
+        },
+      );
+      onDeleted(deletingId, deletion);
+      toast.success(
+        deletion.affectedCriteriaCount
+          ? `Criterion deleted and removed from ${criteriaCompositionCount(deletion.affectedCriteriaCount)}. Historical runs are unchanged.`
+          : "Criterion deleted. Historical runs are unchanged.",
+      );
     } catch (error) {
       toast.error(readError(error));
     } finally {
@@ -289,14 +297,10 @@ export function CriterionEditor({
 
           {draft.id ? (
             <footer className="mt-8 flex flex-wrap items-center justify-end gap-3 border-t pt-5">
-              {usedBy.length ? (
-                <p className="text-xs text-muted-foreground">
-                  Remove this Criterion from every Criteria permutation before deleting it.
-                </p>
-              ) : confirmingDelete ? (
+              {confirmingDelete ? (
                 <>
                   <p className="text-xs text-muted-foreground">
-                    Delete “{draft.name}”? Historical runs keep their snapshots.
+                    {criterionDeletionWarning(draft.name, usedBy)}
                   </p>
                   <Button onClick={() => setConfirmingDelete(false)} size="sm" variant="outline">
                     Cancel
@@ -326,6 +330,25 @@ export function CriterionEditor({
       </div>
     </div>
   );
+}
+
+function criterionDeletionWarning(name: string, usedBy: Criteria[]): string {
+  const warning = [`Delete “${name}”?`];
+  if (usedBy.length)
+    warning.push(`It will be removed from ${criteriaCompositionCount(usedBy.length)}.`);
+  const deletedCount = usedBy.filter(
+    ({ criterionSequence }) => criterionSequence.length === 1,
+  ).length;
+  if (deletedCount === 1)
+    warning.push("That composition will also be deleted because it would be empty.");
+  if (deletedCount > 1)
+    warning.push(`${deletedCount} compositions will also be deleted because they would be empty.`);
+  warning.push("Historical runs keep their snapshots.");
+  return warning.join(" ");
+}
+
+function criteriaCompositionCount(count: number): string {
+  return `${count} Criteria ${count === 1 ? "composition" : "compositions"}`;
 }
 
 function ListToggle({ listOpen, onClick }: { listOpen: boolean; onClick(): void }) {
