@@ -47,6 +47,7 @@ import {
 } from "./assistant-message";
 import { ChatComposer } from "./chat-composer";
 import { ChatHistoryIcon } from "./history-icon";
+import { summarizeResponseTelemetry } from "./response-telemetry";
 import { TargetWorkspace } from "./target/workspace";
 
 const DEFAULT_TOOLS: ChatToolId[] = ["prompt-library", "evaluations", "web-search"];
@@ -172,7 +173,8 @@ export function Chat({
     }
     return sources;
   }, [messages]);
-  const { containerRef, onScroll } = useScrollToBottom(messages);
+  const telemetrySummary = useMemo(() => summarizeResponseTelemetry(messages), [messages]);
+  const { containerRef, isAtBottom, onScroll, scrollToBottom } = useScrollToBottom(messages);
   const activePrompt = prompts.find(({ id }) => id === activePromptId);
 
   useEffect(() => {
@@ -444,7 +446,11 @@ export function Chat({
               className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
               aria-label="Agent conversation"
             >
-              <ConversationView containerRef={containerRef} onScroll={onScroll}>
+              <ConversationView
+                containerRef={containerRef}
+                onScroll={onScroll}
+                onScrollToBottom={isAtBottom ? undefined : scrollToBottom}
+              >
                 {messages.length === 0 ? (
                   <EmptyState onSelect={setInstruction} />
                 ) : (
@@ -466,6 +472,9 @@ export function Chat({
                         onEdit={message.role === "user" ? editUserMessage : undefined}
                         onPromptReference={openPromptReference}
                         onRerun={rerunSource ? () => rerunFromUserMessage(rerunSource) : undefined}
+                        streaming={
+                          running && index === messages.length - 1 && message.role === "assistant"
+                        }
                       />
                     );
                   })
@@ -505,6 +514,7 @@ export function Chat({
                 reasoningEffort={reasoningEffort}
                 running={running}
                 selectedModelId={selectedModelId}
+                telemetrySummary={telemetrySummary}
               />
             </section>
           )}
@@ -568,7 +578,10 @@ function useChatRun({
         setLiveMessage(undefined);
       } else if (ownedRunIdRef.current !== id) {
         setDetached(true);
-        setLiveMessage(replayAssistantMessage(id, data.conversation.chat.modelId, data.events));
+        setLiveMessage((current) => {
+          const replayed = replayAssistantMessage(id, data.conversation.chat.modelId, data.events);
+          return current?.chatId === id ? { ...replayed, createdAt: current.createdAt } : replayed;
+        });
       }
       const revision = findLatestPromptRevision(data.conversation.messages);
       if (revision) onPromptRevision(revision);

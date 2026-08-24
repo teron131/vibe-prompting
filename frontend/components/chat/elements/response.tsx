@@ -2,23 +2,14 @@
 
 "use client";
 
+import { createMathPlugin } from "@streamdown/math";
 import type { ComponentProps } from "react";
-import { defaultRemarkPlugins, Streamdown } from "streamdown";
+import { Streamdown } from "streamdown";
 
 import { cn } from "@/components/ui/utils";
 
-const mathPlugin = defaultRemarkPlugins.math;
-const responseRemarkPlugins: ComponentProps<typeof Streamdown>["remarkPlugins"] = Array.isArray(
-  mathPlugin,
-)
-  ? (Object.values({
-      ...defaultRemarkPlugins,
-      math: [mathPlugin[0], { singleDollarTextMath: false }],
-    }) as NonNullable<ComponentProps<typeof Streamdown>["remarkPlugins"]>)
-  : Object.values(defaultRemarkPlugins);
-const textRemarkPlugins = Object.entries(defaultRemarkPlugins)
-  .filter(([name]) => name !== "math")
-  .map(([, plugin]) => plugin) as NonNullable<ComponentProps<typeof Streamdown>["remarkPlugins"]>;
+const math = createMathPlugin({ singleDollarTextMath: true });
+const mathPlugins: NonNullable<ComponentProps<typeof Streamdown>["plugins"]> = { math };
 const responseComponents: NonNullable<ComponentProps<typeof Streamdown>["components"]> = {
   img: MarkdownImage,
 };
@@ -70,7 +61,7 @@ export function ResponseText({
       )}
       components={renderImages ? responseComponents : textOnlyResponseComponents}
       mode={renderMath && normalizedText.includes("$$") ? "static" : "streaming"}
-      remarkPlugins={renderMath ? responseRemarkPlugins : textRemarkPlugins}
+      plugins={renderMath ? mathPlugins : undefined}
     >
       {normalizedText}
     </Streamdown>

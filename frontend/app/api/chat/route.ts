@@ -181,6 +181,7 @@ export async function POST(request: Request) {
           enabledTools: input.workspace.enabledTools,
           modelId: result.model.id,
           reasoningEffort: input.workspace.reasoningEffort,
+          telemetry: result.telemetry,
         },
         parts: collected.finish(result.message),
       });

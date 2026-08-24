@@ -26,9 +26,14 @@ import { Reasoning } from "@/components/chat/elements/reasoning";
 import { ResponseText } from "@/components/chat/elements/response";
 import { Tool } from "@/components/chat/elements/tool";
 import { cn } from "@/components/ui/utils";
-import type { ChatMessage, MessagePart, RunEvent } from "@/contracts/chat";
+import type { ChatMessage, MessagePart, ResponseTelemetry, RunEvent } from "@/contracts/chat";
 
 import { ModelIcon } from "./model-selector";
+import {
+  readResponseTelemetry,
+  ResponseElapsedTime,
+  ResponseTelemetryLine,
+} from "./response-telemetry";
 
 type PromptReference = {
   promptId: string;
@@ -50,6 +55,18 @@ export function createAssistantMessage(chatId: string, modelId?: string): ChatMe
 }
 
 export function applyAssistantEvent(message: ChatMessage, event: AssistantEvent): ChatMessage {
+  if (event.type === "response-start") {
+    return {
+      ...message,
+      metadata: { ...message.metadata, responseStartedAt: event.startedAt },
+    };
+  }
+  if (event.type === "response-complete") {
+    return {
+      ...message,
+      metadata: { ...message.metadata, responseDurationMs: event.durationMs },
+    };
+  }
   if (event.type === "text-delta") {
     const parts = [...message.parts];
     const last = parts.at(-1);
@@ -140,6 +157,7 @@ export function AssistantMessage({
   onEdit,
   onPromptReference,
   onRerun,
+  streaming = false,
 }: {
   continuedByUser?: boolean;
   disabled: boolean;
@@ -148,21 +166,33 @@ export function AssistantMessage({
   onEdit?(message: ChatMessage, text: string): void;
   onPromptReference(reference: PromptReference): void;
   onRerun?(): void;
+  streaming?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const text = message.parts
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n");
+  const showActions = !continuedByUser && !disabled && !editing && Boolean(text || onRerun);
+  const telemetry =
+    !editing && message.role === "assistant" ? readResponseTelemetry(message.metadata) : undefined;
+  const showElapsedTime = streaming && !editing && message.role === "assistant";
+  const completedDurationMs = readCompletedDuration(message.metadata);
+  const responseStartedAt = readResponseStartedAt(message.metadata);
   return (
     <Message
       actions={
-        !continuedByUser && !disabled && !editing && (text || onRerun) ? (
-          <MessageActions
-            onCopy={text ? () => copyMessage(text) : undefined}
-            onEdit={message.role === "user" && text ? () => setEditing(true) : undefined}
-            onRerun={message.role === "assistant" ? onRerun : undefined}
+        showActions || telemetry || showElapsedTime ? (
+          <MessageFooter
+            onCopy={showActions && text ? () => copyMessage(text) : undefined}
+            onEdit={
+              showActions && message.role === "user" && text ? () => setEditing(true) : undefined
+            }
+            onRerun={showActions && message.role === "assistant" ? onRerun : undefined}
             role={message.role}
+            completedDurationMs={completedDurationMs}
+            startedAt={showElapsedTime ? responseStartedAt : undefined}
+            telemetry={telemetry}
           />
         ) : null
       }
@@ -213,6 +243,55 @@ export function AssistantMessage({
       )}
     </Message>
   );
+}
+
+function MessageFooter({
+  completedDurationMs,
+  onCopy,
+  onEdit,
+  onRerun,
+  role,
+  startedAt,
+  telemetry,
+}: {
+  completedDurationMs?: number;
+  onCopy?(): Promise<boolean>;
+  onEdit?(): void;
+  onRerun?(): void;
+  role: ChatMessage["role"];
+  startedAt?: string;
+  telemetry?: ResponseTelemetry;
+}) {
+  return (
+    <div
+      className={cn(
+        "-mt-1 flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1 md:-mt-2",
+        role === "user" ? "justify-end" : "justify-start",
+      )}
+    >
+      {telemetry ? <ResponseTelemetryLine telemetry={telemetry} /> : null}
+      {!telemetry && startedAt ? (
+        <ResponseElapsedTime completedDurationMs={completedDurationMs} startedAt={startedAt} />
+      ) : null}
+      {onCopy || onEdit || onRerun ? (
+        <MessageActions onCopy={onCopy} onEdit={onEdit} onRerun={onRerun} />
+      ) : null}
+    </div>
+  );
+}
+
+function readCompletedDuration(metadata: Record<string, unknown>): number | undefined {
+  const durationMs = metadata.responseDurationMs;
+  return typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs >= 0
+    ? durationMs
+    : undefined;
+}
+
+function readResponseStartedAt(metadata: Record<string, unknown>): string | undefined {
+  const startedAt = metadata.responseStartedAt;
+  return typeof startedAt === "string" && Number.isFinite(new Date(startedAt).getTime())
+    ? startedAt
+    : undefined;
 }
 
 type ActivityPart = Extract<MessagePart, { type: "reasoning" | "tool" }>;
@@ -460,21 +539,14 @@ function MessageActions({
   onCopy,
   onEdit,
   onRerun,
-  role,
 }: {
   onCopy?(): Promise<boolean>;
   onEdit?(): void;
   onRerun?(): void;
-  role: ChatMessage["role"];
 }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div
-      className={cn(
-        "flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100",
-        role === "user" ? "self-end" : "self-start",
-      )}
-    >
+    <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100">
       {onCopy ? (
         <ActionButton
           label={copied ? "Copied" : "Copy message"}

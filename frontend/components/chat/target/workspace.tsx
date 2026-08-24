@@ -34,6 +34,7 @@ import { memberDisplayName } from "@/shared/member";
 
 import { AssistantMessage } from "../assistant-message";
 import { ChatComposer } from "../chat-composer";
+import { summarizeResponseTelemetry } from "../response-telemetry";
 import { projectTargetRunMessages } from "./messages";
 
 const targetApi = createApiRequester({ cache: "no-store" });
@@ -145,7 +146,8 @@ export function TargetWorkspace({
   }, [loadRun, run?.id, running]);
 
   const messages = useMemo(() => projectTargetRunMessages(run, events), [events, run]);
-  const { containerRef, onScroll } = useScrollToBottom(messages);
+  const telemetrySummary = useMemo(() => summarizeResponseTelemetry(messages), [messages]);
+  const { containerRef, isAtBottom, onScroll, scrollToBottom } = useScrollToBottom(messages);
   const latestCompletedTurn = run?.turns.findLast(({ status }) => status === "completed");
 
   async function submit() {
@@ -286,7 +288,11 @@ export function TargetWorkspace({
               </div>
             </div>
           </div>
-          <ConversationView containerRef={containerRef} onScroll={onScroll}>
+          <ConversationView
+            containerRef={containerRef}
+            onScroll={onScroll}
+            onScrollToBottom={isAtBottom ? undefined : scrollToBottom}
+          >
             <PromptContextMessage
               onOpen={onOpenPrompt}
               revisionNumber={run?.promptRevisionNumber ?? activePrompt.revisionNumber}
@@ -300,6 +306,9 @@ export function TargetWorkspace({
                   message={message}
                   modelId={run?.targetModelId ?? selectedModelId}
                   onPromptReference={() => undefined}
+                  streaming={
+                    running && index === messages.length - 1 && message.role === "assistant"
+                  }
                 />
               ))
             ) : (
@@ -337,6 +346,7 @@ export function TargetWorkspace({
             running={running}
             selectedModelId={run?.targetModelId ?? selectedModelId}
             targetModelLocked={Boolean(run)}
+            telemetrySummary={telemetrySummary}
             variant="target"
           />
         </>

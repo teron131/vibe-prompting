@@ -2,10 +2,9 @@
 
 import { type ModelConfig, type ModelSpendLimits } from "../../config/index.ts";
 import type { Database } from "../../database/index.ts";
-import { resolveModelPrice } from "./pricing.ts";
+import { calculateModelCostUsd, resolveModelPrice } from "./pricing.ts";
 
 const SPEND_LOCK = 1_450_701_649;
-const TOKENS_PER_MILLION = 1_000_000;
 const MAX_CONCURRENT_PROVIDER_CALLS = 10;
 
 type TokenUsage = {
@@ -144,10 +143,7 @@ class SpendLimit {
     const outputTokens = normalizeTokenCount(usage.outputTokens);
     if (inputTokens === 0 && outputTokens === 0) return;
     const price = await resolveModelPrice(model.id);
-    const estimatedCostUsd =
-      (inputTokens * price.inputPricePerMillionTokens +
-        outputTokens * price.outputPricePerMillionTokens) /
-      TOKENS_PER_MILLION;
+    const estimatedCostUsd = calculateModelCostUsd(price, { inputTokens, outputTokens });
     await this.#database.run(
       (sql) => sql`
       INSERT INTO model_cost_events (

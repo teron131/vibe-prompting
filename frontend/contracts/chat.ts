@@ -20,6 +20,15 @@ export type ChatWorkspaceContext = {
   reasoningEffort: ChatReasoningEffort;
 };
 
+export type ResponseTelemetry = {
+  durationMs: number;
+  estimatedCostUsd: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  requests: number | null;
+  totalTokens: number | null;
+};
+
 export type ChatRequest = {
   attachments: Attachment[];
   chatId: string;
@@ -78,6 +87,8 @@ export type RunEvent =
   | { type: "reasoning-start" }
   | { delta: string; type: "reasoning-delta" }
   | { type: "response-reset" }
+  | { startedAt: string; type: "response-start" }
+  | { durationMs: number; type: "response-complete" }
   | { chatId: string; icon: string; title: string; type: "chat-metadata" }
   | Extract<MessagePart, { type: "reasoning" | "tool" | "evaluation" | "prompt-revision" }>
   | { message: string; type: "error" }

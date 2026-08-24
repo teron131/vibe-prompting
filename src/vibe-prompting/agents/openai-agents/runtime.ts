@@ -10,6 +10,7 @@ import {
 } from "@openai/agents";
 
 import { resolveModelIdentities } from "../../clients/llm/models-dev.ts";
+import { startModelCostEstimate } from "../../clients/llm/pricing.ts";
 import { loadRuntimeConfig, type ModelConfig } from "../../config/index.ts";
 import type { CriterionLibrary } from "../../evaluation/criteria.ts";
 import type { EvaluationResults } from "../../evaluation/results/index.ts";
@@ -44,6 +45,8 @@ export type AgentStreamEvent =
   | { type: "reasoning-start" }
   | { type: "reasoning-delta"; delta: string }
   | { type: "response-reset" }
+  | { type: "response-start"; startedAt: string }
+  | { type: "response-complete"; durationMs: number }
   | {
       type: "tool";
       callId: string;
@@ -120,6 +123,14 @@ export type ChatSteering = {
 export type ChatRunResult = {
   message: string;
   model: ModelConfig;
+  telemetry: {
+    durationMs: number;
+    estimatedCostUsd: number | null;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    requests: number;
+    totalTokens: number | null;
+  };
 };
 
 /** Builds one agent runner with provider-specific reasoning settings and scoped tools. */
@@ -187,6 +198,8 @@ export async function streamChatRun(
   input: ChatRunInput,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<ChatRunResult> {
+  const startedAt = performance.now();
+  onEvent({ type: "response-start", startedAt: new Date().toISOString() });
   const enabled = new Set(input.enabledTools);
   const toolkits: AgentToolkit[] = [];
   const promptToolsEnabled = enabled.has("prompt-library");
@@ -210,6 +223,8 @@ export async function streamChatRun(
     adaptTools(toolDefinitions, { actorUserId: input.actorUserId, chatId: input.chatId }),
     input.reasoningEffort,
   );
+  const costEstimate = startModelCostEstimate(runtime.model.id);
+  const usage = { inputTokens: 0, outputTokens: 0, requests: 0, totalTokens: 0 };
   let runInput = formatConversation(input);
   const toolNames = new Map<string, string>();
   while (true) {
@@ -235,6 +250,10 @@ export async function streamChatRun(
     } finally {
       disconnectSteering?.();
     }
+    usage.requests += run.state.usage.requests;
+    usage.inputTokens += run.state.usage.inputTokens;
+    usage.outputTokens += run.state.usage.outputTokens;
+    usage.totalTokens += run.state.usage.totalTokens;
     if (run.error) throw run.error;
     if (typeof run.finalOutput !== "string") throw new Error("The model did not return text.");
     const queuedSteering = input.steering?.drain() ?? [];
@@ -247,7 +266,21 @@ export async function streamChatRun(
       continue;
     }
     if (!input.steering || input.steering.close()) {
-      return { message: run.finalOutput, model: runtime.model };
+      const hasReportedTokens = usage.totalTokens > 0;
+      const durationMs = Math.max(0, performance.now() - startedAt);
+      onEvent({ type: "response-complete", durationMs });
+      return {
+        message: run.finalOutput,
+        model: runtime.model,
+        telemetry: {
+          durationMs,
+          estimatedCostUsd: await costEstimate.calculate(usage),
+          inputTokens: hasReportedTokens ? usage.inputTokens : null,
+          outputTokens: hasReportedTokens ? usage.outputTokens : null,
+          requests: usage.requests,
+          totalTokens: hasReportedTokens ? usage.totalTokens : null,
+        },
+      };
     }
   }
 }

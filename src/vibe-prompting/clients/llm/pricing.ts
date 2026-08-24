@@ -7,6 +7,7 @@ import { resolveModelCatalogId } from "./models-dev.ts";
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/frontend/v1/catalog/models";
 const OPENROUTER_PRICING_URL = "https://openrouter.ai/api/frontend/v1/stats/effective-pricing";
 const CACHE_TTL_MS = 60 * 60 * 1000;
+const COST_ESTIMATE_WAIT_MS = 100;
 const FETCH_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 300;
 
@@ -46,6 +47,15 @@ export type ModelPrice = {
   outputPricePerMillionTokens: number;
 };
 
+type ModelTokenUsage = {
+  inputTokens: number | null | undefined;
+  outputTokens: number | null | undefined;
+};
+
+export type ModelCostEstimate = {
+  calculate(usage: ModelTokenUsage): Promise<number | null>;
+};
+
 let directoryCache: TimedPromise<OpenRouterDirectory> | undefined;
 const priceCache = new Map<string, TimedPromise<ModelPrice>>();
 
@@ -61,6 +71,29 @@ export async function resolveModelPrice(id: string): Promise<ModelPrice> {
     if (priceCache.get(catalogId) === entry) priceCache.delete(catalogId);
   });
   return promise;
+}
+
+/** Starts price resolution alongside a model run and gives completion a bounded, non-blocking cost projection. */
+export function startModelCostEstimate(modelId: string): ModelCostEstimate {
+  const price = resolveModelPrice(modelId).catch(() => undefined);
+  return {
+    async calculate(usage) {
+      const inputTokens = normalizeTokenCount(usage.inputTokens);
+      const outputTokens = normalizeTokenCount(usage.outputTokens);
+      if (inputTokens === 0 && outputTokens === 0) return null;
+      const resolvedPrice = await resolveWithin(price, COST_ESTIMATE_WAIT_MS);
+      if (!resolvedPrice) return null;
+      return calculateModelCostUsd(resolvedPrice, { inputTokens, outputTokens });
+    },
+  };
+}
+
+export function calculateModelCostUsd(price: ModelPrice, usage: ModelTokenUsage): number {
+  return (
+    (normalizeTokenCount(usage.inputTokens) * price.inputPricePerMillionTokens +
+      normalizeTokenCount(usage.outputTokens) * price.outputPricePerMillionTokens) /
+    1_000_000
+  );
 }
 
 async function loadModelPrice(catalogId: string): Promise<ModelPrice> {
@@ -140,6 +173,22 @@ function retryDelay(attempt: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, RETRY_BASE_DELAY_MS * 2 ** attempt + Math.floor(Math.random() * 100));
   });
+}
+
+async function resolveWithin<T>(
+  promise: Promise<T | undefined>,
+  waitMs: number,
+): Promise<T | undefined> {
+  return Promise.race([
+    promise,
+    new Promise<undefined>((resolve) => {
+      setTimeout(resolve, waitMs);
+    }),
+  ]);
+}
+
+function normalizeTokenCount(value: number | null | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
 }
 
 function resolvePermaslugCandidates(modelId: string, directory: OpenRouterDirectory): string[] {

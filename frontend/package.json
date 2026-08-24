@@ -1,6 +1,6 @@
 {
   "name": "vibe-prompting-frontend",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@streamdown/math": "1.0.2",
     "clsx": "^2.1.1",
     "katex": "0.18.4",
     "lucide-react": "^1.33.0",

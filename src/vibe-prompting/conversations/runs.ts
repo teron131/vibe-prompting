@@ -5,6 +5,8 @@ export type ConversationRunEvent =
   | { type: "reasoning-start" }
   | { delta: string; type: "reasoning-delta" }
   | { type: "response-reset" }
+  | { startedAt: string; type: "response-start" }
+  | { durationMs: number; type: "response-complete" }
   | { chatId: string; icon: string; title: string; type: "chat-metadata" }
   | {
       callId: string;

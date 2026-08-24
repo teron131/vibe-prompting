@@ -12,24 +12,47 @@ export function projectTargetRunMessages(
   events: TargetRunEvent[],
 ): ChatMessage[] {
   if (!run) return [];
-  return run.turns.flatMap((turn) => [
-    {
-      chatId: run.id,
-      createdAt: turn.createdAt,
-      id: `${turn.id}-input`,
-      metadata: { targetRunId: run.id, targetRunTurnId: turn.id },
-      parts: [{ text: turn.input, type: "text" as const }],
-      role: "user" as const,
-    },
-    {
-      chatId: run.id,
-      createdAt: turn.completedAt ?? turn.createdAt,
-      id: turn.id,
-      metadata: { targetRunId: run.id, targetRunTurnId: turn.id },
-      parts: projectTurnParts(turn, turn.status === "running" ? events : []),
-      role: "assistant" as const,
-    },
-  ]);
+  return run.turns.flatMap((turn) => {
+    const telemetry = turnTelemetry(turn);
+    return [
+      {
+        chatId: run.id,
+        createdAt: turn.createdAt,
+        id: `${turn.id}-input`,
+        metadata: { targetRunId: run.id, targetRunTurnId: turn.id },
+        parts: [{ text: turn.input, type: "text" as const }],
+        role: "user" as const,
+      },
+      {
+        chatId: run.id,
+        createdAt: turn.completedAt ?? turn.createdAt,
+        id: turn.id,
+        metadata: {
+          targetRunId: run.id,
+          targetRunTurnId: turn.id,
+          ...(turn.status === "running" ? { responseStartedAt: turn.createdAt } : {}),
+          ...(telemetry ? { telemetry } : {}),
+        },
+        parts: projectTurnParts(turn, turn.status === "running" ? events : []),
+        role: "assistant" as const,
+      },
+    ];
+  });
+}
+
+function turnTelemetry(turn: TargetRunTurn) {
+  if (turn.status !== "completed" || !turn.completedAt) return undefined;
+  return {
+    durationMs:
+      turn.usage?.durationMs ??
+      Math.max(0, new Date(turn.completedAt).getTime() - new Date(turn.createdAt).getTime()),
+    estimatedCostUsd:
+      typeof turn.usage?.estimatedCostUsd === "number" ? turn.usage.estimatedCostUsd : null,
+    inputTokens: turn.usage?.inputTokens ?? null,
+    outputTokens: turn.usage?.outputTokens ?? null,
+    requests: null,
+    totalTokens: turn.usage?.totalTokens ?? null,
+  };
 }
 
 export function projectCompletedTargetTrace(

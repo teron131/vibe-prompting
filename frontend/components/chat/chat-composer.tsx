@@ -35,6 +35,7 @@ import { useDismissibleDetails } from "@/hooks/use-dismissible-details";
 
 import { ComposerMenu } from "./composer-menu";
 import { ModelSelector } from "./model-selector";
+import { type ResponseTelemetrySummary, ResponseTelemetryTotal } from "./response-telemetry";
 
 const TOOL_OPTIONS: Array<{ id: ChatToolId; label: string; description: string }> = [
   {
@@ -84,6 +85,7 @@ export function ChatComposer({
   running,
   onSubmit,
   onStop,
+  telemetrySummary,
 }: {
   variant?: "agent" | "target";
   activePrompt?: PromptSummary;
@@ -107,6 +109,7 @@ export function ChatComposer({
   running: boolean;
   onSubmit(): void;
   onStop(): void;
+  telemetrySummary?: ResponseTelemetrySummary;
 }) {
   const composerRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -488,6 +491,7 @@ export function ChatComposer({
           </div>
         ) : null}
       </form>
+      <ResponseTelemetryTotal summary={telemetrySummary} />
     </div>
   );
 }

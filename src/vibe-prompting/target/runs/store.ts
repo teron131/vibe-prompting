@@ -65,7 +65,7 @@ export type TargetRunExecutionContext = {
   targetModelId: string;
   targetProfileId: string;
   targetProfileRevisionId: string;
-  turn: { id: string; input: string; position: number };
+  turn: { createdAt: Date; id: string; input: string; position: number };
 };
 
 export type NewTargetRun = {
@@ -257,7 +257,12 @@ export class TargetRunStore {
         targetModelId: row.targetModelId,
         targetProfileId: row.targetProfileId,
         targetProfileRevisionId: row.targetProfileRevisionId,
-        turn: { id: activeTurn.id, input: activeTurn.input, position: activeTurn.position },
+        turn: {
+          createdAt: activeTurn.createdAt,
+          id: activeTurn.id,
+          input: activeTurn.input,
+          position: activeTurn.position,
+        },
       };
     });
   }

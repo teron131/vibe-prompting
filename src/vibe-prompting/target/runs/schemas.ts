@@ -9,6 +9,8 @@ export type TargetRunTurnStatus = "running" | "completed" | "failed" | "cancelle
 export type TargetReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
 export type TargetRunUsage = {
+  durationMs: number | null;
+  estimatedCostUsd: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;

@@ -2,6 +2,7 @@
 
 import type { ModelMessage } from "ai";
 
+import { startModelCostEstimate } from "../../clients/llm/pricing.ts";
 import { loadRuntimeConfig } from "../../config/index.ts";
 import type { Database } from "../../database/index.ts";
 import type { PromptSystem } from "../../prompt-system/index.ts";
@@ -148,6 +149,7 @@ export class TargetRuns {
       });
       const launchedTarget = pinnedTarget;
       const claimed = this.#registry.claim(runId);
+      const costEstimate = startModelCostEstimate(context.targetModelId);
       void launchedTarget.runtime
         .run({
           messages: toModelMessages(context.responseHistory, context.turn.input),
@@ -155,13 +157,19 @@ export class TargetRuns {
           signal: claimed.signal,
         })
         .then(async (result) => {
+          const durationMs = Math.max(0, Date.now() - context.turn.createdAt.getTime());
+          const usage = {
+            ...result.usage,
+            durationMs,
+            estimatedCostUsd: await costEstimate.calculate(result.usage),
+          };
           await this.#store.completeTurn(
             runId,
             context.turn.id,
             result.activity,
             result.output,
             result.responseMessages,
-            result.usage,
+            usage,
           );
           claimed.publish({ type: "finish" });
         })
