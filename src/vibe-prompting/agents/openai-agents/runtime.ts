@@ -11,50 +11,54 @@ import {
 
 import { resolveModelIdentities } from "../../clients/llm/models-dev.ts";
 import { loadRuntimeConfig, type ModelConfig } from "../../config/index.ts";
+import type { CriterionLibrary } from "../../evaluation/criteria.ts";
 import type { EvaluationResults } from "../../evaluation/results/index.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
 import type { PromptSystem } from "../../prompt-system/index.ts";
 import type { TargetRuns } from "../../target/runs/index.ts";
 import {
   type AgentTool,
-  createEvaluationDataTools,
-  createEvaluationTool,
+  type AgentToolExecutionContext,
+  AgentToolkit,
   createExaSearchTool,
-  createPromptLibraryTools,
   createPromptWorkspace,
   createScopedFsTools,
-  createTargetRunTools,
+  CriteriaLibraryToolkit,
+  EvaluationResultsToolkit,
+  EvaluationRunsToolkit,
+  PromptLibraryToolkit,
+  TargetRunsToolkit,
 } from "../tools/index.ts";
-import { createAgentInstructions } from "./instructions.ts";
+import { AGENT_INSTRUCTIONS } from "./instructions.ts";
 import { createModel } from "./model.ts";
 import { readChatCompletionsReasoning } from "./reasoning.ts";
 
 export type AgentRuntime = {
-  agent: OpenAIAgent;
   model: ModelConfig;
+  agent: OpenAIAgent;
   runner: Runner;
 };
 
 export type AgentStreamEvent =
-  | { delta: string; type: "text-delta" }
+  | { type: "text-delta"; delta: string }
   | { type: "reasoning-start" }
-  | { delta: string; type: "reasoning-delta" }
+  | { type: "reasoning-delta"; delta: string }
   | { type: "response-reset" }
   | {
-      callId: string;
-      input?: unknown;
-      name: string;
-      output?: unknown;
-      state: "completed" | "running";
-      summary?: string;
       type: "tool";
+      callId: string;
+      name: string;
+      state: "completed" | "running";
+      input?: unknown;
+      output?: unknown;
+      summary?: string;
     }
-  | { promptId: string; revisionId: string; type: "prompt-revision" }
-  | { summary: string; type: "reasoning" };
+  | { type: "prompt-revision"; promptId: string; revisionId: string }
+  | { type: "reasoning"; summary: string };
 
 export type PromptEdit = {
-  markdown: string;
   message: string;
+  markdown: string;
   model: ModelConfig;
 };
 
@@ -69,7 +73,7 @@ export const CHAT_TOOL_IDS = ["prompt-library", "evaluations", "web-search"] as 
 
 export type ChatToolId = (typeof CHAT_TOOL_IDS)[number];
 
-export type ChatReasoningEffort = "high" | "low" | "medium" | "xhigh";
+export type ChatReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
 type ChatInputContent = Exclude<
   Extract<AgentInputItem, { role: "user" }>["content"],
@@ -77,10 +81,10 @@ type ChatInputContent = Exclude<
 >[number];
 
 export type ChatAttachment = {
-  dataUrl: string;
-  mediaType: string;
   name: string;
+  mediaType: string;
   size: number;
+  dataUrl: string;
 };
 
 export type ChatConversationMessage = {
@@ -90,26 +94,27 @@ export type ChatConversationMessage = {
 
 export type ChatRunInput = {
   actorUserId: string;
-  attachments: ChatAttachment[];
   chatId: string;
+  instruction: string;
+  history: ChatConversationMessage[];
+  attachments: ChatAttachment[];
+  modelId: string;
+  reasoningEffort: ChatReasoningEffort;
   enabledTools: ChatToolId[];
+  prompts: PromptSystem;
+  criterion: CriterionLibrary;
   evaluations: EvaluationRuns;
   evaluationResults: EvaluationResults;
-  history: ChatConversationMessage[];
-  instruction: string;
-  modelId: string;
-  prompts: PromptSystem;
   targetRuns: TargetRuns;
-  reasoningEffort: ChatReasoningEffort;
   signal?: AbortSignal;
   steering?: ChatSteering;
 };
 
 export type ChatSteering = {
-  close(): boolean;
   connect(handler: (instruction: string) => boolean): () => void;
   drain(): string[];
   retry(): void;
+  close(): boolean;
 };
 
 export type ChatRunResult = {
@@ -127,8 +132,9 @@ export function createAgentRuntime(
   const usesResponses = config.id.startsWith("gpt-");
 
   return {
+    model: config,
     agent: new OpenAIAgent({
-      instructions: createAgentInstructions(tools.map(({ name }) => name)),
+      instructions: AGENT_INSTRUCTIONS,
       model: config.id,
       modelSettings:
         config.platform === "gemini"
@@ -153,7 +159,6 @@ export function createAgentRuntime(
       name: "Vibe Prompting",
       tools,
     }),
-    model: config,
     runner: new Runner({
       modelProvider: provider,
       tracingDisabled: true,
@@ -162,13 +167,17 @@ export function createAgentRuntime(
 }
 
 /** Translates framework-neutral definitions into OpenAI Agents SDK function tools at runtime composition. */
-function adaptTools(definitions: readonly AgentTool[]): Tool[] {
+function adaptTools(
+  definitions: readonly AgentTool[],
+  executionContext: AgentToolExecutionContext = {},
+): Tool[] {
   return definitions.map((definition) =>
     tool({
       name: definition.name,
       description: definition.description,
       parameters: definition.parameters,
-      execute: (input, _context, details) => definition.execute(input, { signal: details?.signal }),
+      execute: (input, _context, details) =>
+        definition.execute(input, { ...executionContext, signal: details?.signal }),
     }),
   );
 }
@@ -179,34 +188,26 @@ export async function streamChatRun(
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<ChatRunResult> {
   const enabled = new Set(input.enabledTools);
-  const toolDefinitions: AgentTool[] = [];
+  const toolkits: AgentToolkit[] = [];
   const promptToolsEnabled = enabled.has("prompt-library");
   const evaluationsEnabled = enabled.has("evaluations");
   if (promptToolsEnabled) {
-    toolDefinitions.push(...createPromptLibraryTools(input.prompts, input.actorUserId));
+    toolkits.push(new PromptLibraryToolkit(input.prompts));
   }
   if (evaluationsEnabled)
-    toolDefinitions.push(
-      createEvaluationTool(
-        input.evaluations,
-        input.actorUserId,
-        input.chatId,
-        getEvaluationModelReferences,
-      ),
-      ...createTargetRunTools(
-        input.targetRuns,
-        input.actorUserId,
-        input.chatId,
-        getEvaluationModelReferences,
-      ),
-      ...createEvaluationDataTools(input.evaluationResults),
+    toolkits.push(
+      new CriteriaLibraryToolkit(input.criterion),
+      new EvaluationRunsToolkit(input.evaluations, getEvaluationModelReferences),
+      new EvaluationResultsToolkit(input.evaluationResults),
+      new TargetRunsToolkit(input.targetRuns, getEvaluationModelReferences),
     );
+  const toolDefinitions = AgentToolkit.compose(toolkits);
   if (enabled.has("web-search")) toolDefinitions.push(createExaSearchTool());
 
   if (input.signal?.aborted) throw abortReason(input.signal);
   const runtime = createAgentRuntime(
     input.modelId,
-    adaptTools(toolDefinitions),
+    adaptTools(toolDefinitions, { actorUserId: input.actorUserId, chatId: input.chatId }),
     input.reasoningEffort,
   );
   let runInput = formatConversation(input);
@@ -290,8 +291,8 @@ export async function streamPromptEdit(
       throw new Error("The model did not return text.");
     }
     return {
-      markdown: await workspace.read(),
       message: run.finalOutput,
+      markdown: await workspace.read(),
       model: runtime.model,
     };
   } finally {
@@ -332,9 +333,9 @@ function projectEvent(event: RunStreamEvent, toolNames: Map<string, string>): Ag
       {
         type: "tool",
         callId: identity.callId,
-        input: getToolInput(event.item.rawItem),
         name: identity.name,
         state: "running",
+        input: getToolInput(event.item.rawItem),
       },
     ];
   }
@@ -352,8 +353,8 @@ function projectEvent(event: RunStreamEvent, toolNames: Map<string, string>): Ag
       type: "tool",
       callId,
       name,
-      output,
       state: "completed",
+      output,
       summary: summarizeTool(name, output),
     };
     const revisionEvent = projectPromptRevision(name, output);
@@ -369,7 +370,7 @@ function projectPromptRevision(
   if (toolName !== "edit_prompt" || !isRecord(output) || !isRecord(output.prompt)) return undefined;
   const { id, revisionId } = output.prompt;
   if (typeof id !== "string" || typeof revisionId !== "string") return undefined;
-  return { promptId: id, revisionId, type: "prompt-revision" };
+  return { type: "prompt-revision", promptId: id, revisionId };
 }
 
 function getReasoningSummary(value: unknown): string | undefined {
@@ -442,11 +443,15 @@ function getToolIdentity(value: unknown): { callId: string; name: string } | und
 }
 
 function summarizeTool(name: string, output: unknown): string {
+  if (isRecord(output) && typeof output.summary === "string" && output.summary.trim()) {
+    return output.summary;
+  }
   if (name === "list_prompts") return "Listed saved prompts.";
-  if (name === "create_prompt") return "Created a prompt.";
   if (name === "read_prompt") return "Read the current prompt.";
-  if (name === "edit_prompt") return "Updated the working prompt.";
-  if (name === "evaluate") return "Started an evaluation run.";
+  if (name === "search_prompts") return "Searched saved prompts.";
+  if (name === "list_criteria_library") return "Listed saved criteria.";
+  if (name === "preview_evaluation_batch") return "Previewed an evaluation batch.";
+  if (name === "list_evaluation_runs") return "Listed evaluation runs.";
   if (name === "search_evaluations") return "Searched persisted evaluation cases.";
   if (name === "get_evaluation_analytics") return "Analyzed persisted evaluation data.";
   if (name === "web_search_exa") return "Completed web research.";

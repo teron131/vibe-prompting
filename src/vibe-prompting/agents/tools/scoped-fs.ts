@@ -35,20 +35,24 @@ export function createScopedFsTools(workspace: PromptWorkspace): AgentTool[] {
   return [
     defineAgentTool({
       name: "read_prompt",
+      title: "Read working prompt",
       description:
-        "Read the complete current prompt as LINE#HASH:content physical lines before deciding what to edit.",
+        "Read the complete working prompt with current LINE#HASH physical-line references for structured editing.",
       parameters: z.object({}),
+      annotations: { readOnlyHint: true, openWorldHint: false },
       async execute() {
         return formatPromptHashlines(await workspace.read());
       },
     }),
     defineAgentTool({
       name: "edit_prompt",
+      title: "Edit working prompt",
       description:
-        "Update the working prompt after read_prompt with structured replace_range, insert_before, insert_after, or append operations. Copy LINE#HASH refs exactly and send replacement content as complete physical lines without refs. All edits apply atomically against the latest read result. Never send diff or patch syntax.",
+        "Update the in-memory working prompt with an atomic batch of replace_range, insert_before, insert_after, or append operations addressed by current LINE#HASH refs. Edit content contains complete physical lines without refs.",
       parameters: z.object({
         edits: promptHashlineEditsSchema,
       }),
+      annotations: { destructiveHint: false, openWorldHint: false },
       async execute({ edits }) {
         await workspace.applyEdits(edits);
         return "Updated the working prompt.";

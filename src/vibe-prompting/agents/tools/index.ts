@@ -1,13 +1,18 @@
 /** Publishes framework-neutral agent tool definitions while keeping execution adaptation with each runtime integration. */
 
-export { type AgentTool, defineAgentTool } from "./api.ts";
-export { createEvaluationDataTools } from "./evaluation-search.ts";
 export {
-  type ConfiguredModelReference,
-  createEvaluationTool,
-  resolveConfiguredModelId,
-} from "./evaluation.ts";
+  AgentToolkit,
+  type AgentToolkitId,
+  type AgentTool,
+  type AgentToolAnnotations,
+  type AgentToolExecutionContext,
+  defineAgentTool,
+  requireAgentActor,
+} from "./api.ts";
+export { PromptLibraryToolkit } from "./prompt-library.ts";
+export { CriteriaLibraryToolkit } from "./criteria-library.ts";
+export { EvaluationRunsToolkit } from "./evaluation-runs.ts";
+export { EvaluationResultsToolkit } from "./evaluation-search.ts";
+export { TargetRunsToolkit } from "./target-runs.ts";
 export { createExaSearchTool } from "./exa.ts";
-export { createPromptLibraryTools } from "./prompt-library.ts";
 export { createPromptWorkspace, createScopedFsTools, type PromptWorkspace } from "./scoped-fs.ts";
-export { createTargetRunTools } from "./target-runs.ts";

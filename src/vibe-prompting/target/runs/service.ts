@@ -42,7 +42,7 @@ export class TargetRuns {
   async startAgentRun(
     actorUserId: string,
     rawInput: unknown,
-    chatId: string,
+    chatId: string | null,
   ): Promise<StoredTargetRun> {
     return this.#startRun(actorUserId, rawInput, "ai", chatId);
   }

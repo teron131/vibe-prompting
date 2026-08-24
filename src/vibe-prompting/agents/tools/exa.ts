@@ -19,9 +19,11 @@ const exaWebSearchSchema = z.object({
 export function createExaSearchTool() {
   return defineAgentTool({
     name: EXA_WEB_SEARCH_TOOL,
+    title: "Search the web",
     description:
-      "Search the web for current information, news, facts, people, companies, or other outside knowledge and return clean result highlights with source URLs.",
+      "Search the public web for current or external information and return relevant page highlights with source URLs.",
     parameters: exaWebSearchSchema,
+    annotations: { readOnlyHint: true, openWorldHint: true },
     async execute(input, { signal }) {
       const results = await searchExaWeb(input, signal);
       return {

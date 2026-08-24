@@ -1,15 +1,15 @@
-/** Enforces active application sessions across workspace pages and APIs while preserving public authentication and health routes. */
+/** Enforces active browser sessions while leaving authentication, health, and separately authenticated MCP routes to their owning adapters. */
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { getRequestSessionUser } from "@/auth/session";
 
-const PUBLIC_PATHS = ["/api/auth", "/api/health", "/login"];
+const SESSION_EXEMPT_PATHS = ["/api/auth", "/api/health", "/login", "/mcp"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
+  if (SESSION_EXEMPT_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
     return NextResponse.next();
   }
 

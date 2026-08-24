@@ -65,11 +65,11 @@ export class EvaluationRuns {
     return this.#startRun(actorUserId, rawInput, "human", null);
   }
 
-  /** Validates and persists an agent-requested run while attributing it to its chat. */
+  /** Validates and persists an agent-requested run with optional originating-chat attribution. */
   async startAgentRun(
     actorUserId: string,
     rawInput: unknown,
-    chatId: string,
+    chatId: string | null,
   ): Promise<EvaluationRunSummary> {
     return this.#startRun(actorUserId, rawInput, "ai", chatId);
   }
@@ -148,11 +148,11 @@ export class EvaluationRuns {
     return this.#startBatch(actorUserId, rawInput, "human", null);
   }
 
-  /** Pins every agent batch target, commits all run records together, and attributes them to its chat. */
+  /** Pins every agent batch target, commits all run records together, and preserves optional originating-chat attribution. */
   async startAgentBatch(
     actorUserId: string,
     rawInput: unknown,
-    chatId: string,
+    chatId: string | null,
   ): Promise<EvaluationBatchStart> {
     return this.#startBatch(actorUserId, rawInput, "ai", chatId);
   }

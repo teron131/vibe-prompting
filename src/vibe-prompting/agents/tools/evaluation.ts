@@ -4,59 +4,76 @@ import { z } from "zod";
 
 import { criteriaSchema } from "../../evaluation/api.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
-import { type AgentTool, defineAgentTool } from "./api.ts";
+import { type AgentTool, defineAgentTool, requireAgentActor } from "./api.ts";
 
 /** Identifies configured models by either their canonical ID or display label. */
 export type ConfiguredModelReference = { id: string; label: string };
 
 const evaluationCaseSchema = z.object({
-  input: z.string().trim().min(1),
-  criteria: criteriaSchema,
+  input: z.string().trim().min(1).describe("Input sent to the Target."),
+  criteria: criteriaSchema.describe("Criterion definitions used to judge this case."),
 });
 const batchConfigurationSchema = z.object({
-  name: z.string().trim().min(1),
-  criteria: criteriaSchema,
+  name: z.string().trim().min(1).describe("Human-readable matrix configuration name."),
+  criteria: criteriaSchema.describe("Criterion definitions shared by this configuration."),
 });
 const evaluationSchema = z.object({
-  promptId: z.uuid(),
-  promptRevisionId: z.uuid(),
+  promptId: z.uuid().describe("Saved prompt ID."),
+  promptRevisionId: z.uuid().describe("Exact prompt revision ID to evaluate."),
   targetModelId: z.string().trim().min(1).describe("Configured target model ID or display label."),
   targetModelIds: z
     .array(z.string().trim().min(1).describe("Configured target model ID or display label."))
     .min(1)
     .max(6)
-    .optional(),
+    .optional()
+    .describe("Target models used for matrix execution."),
   judges: z
     .array(z.string().trim().min(1).describe("Configured judge model ID or display label."))
     .min(1)
-    .max(3),
-  batchConfigurations: z.array(batchConfigurationSchema).min(1).max(6).optional(),
-  cases: z.array(evaluationCaseSchema).min(1).max(3),
-  repetitions: z.number().int().min(1).max(5).optional(),
+    .max(3)
+    .describe("Independent judge models used for every case."),
+  batchConfigurations: z
+    .array(batchConfigurationSchema)
+    .min(1)
+    .max(6)
+    .optional()
+    .describe("Named Criteria configurations for matrix execution."),
+  cases: z.array(evaluationCaseSchema).min(1).max(3).describe("Evaluation cases."),
+  repetitions: z
+    .number()
+    .int()
+    .min(1)
+    .max(5)
+    .optional()
+    .describe("Execution count for each matrix combination."),
 });
 
 /** Adapts the agent's compact evaluation input into persisted single runs or batches. */
 export function createEvaluationTool(
   evaluations: EvaluationRuns,
-  actorUserId: string,
-  chatId: string,
   loadModels: () => Promise<readonly ConfiguredModelReference[]>,
 ): AgentTool {
   return defineAgentTool({
     name: "evaluate",
+    title: "Start evaluation",
     description:
-      "Start one persisted evaluation run, or preview and start a matrix when batchConfigurations, targetModelIds, or repetitions are supplied.",
+      "Start a durable evaluation for one exact prompt revision across supplied cases and judge models. Optional target models, Criteria configurations, or repetitions expand the request into a persisted evaluation matrix.",
     parameters: evaluationSchema,
-    async execute({
-      promptId,
-      promptRevisionId,
-      targetModelId,
-      targetModelIds,
-      judges,
-      batchConfigurations,
-      cases,
-      repetitions,
-    }) {
+    annotations: { destructiveHint: false, openWorldHint: true },
+    async execute(
+      {
+        promptId,
+        promptRevisionId,
+        targetModelId,
+        targetModelIds,
+        judges,
+        batchConfigurations,
+        cases,
+        repetitions,
+      },
+      context,
+    ) {
+      const { actorUserId, chatId } = requireAgentActor(context);
       const models = await loadModels();
       if (batchConfigurations || targetModelIds || repetitions) {
         const inheritedCriteria = cases[0]?.criteria ?? [];
@@ -91,9 +108,9 @@ export function createEvaluationTool(
         const batch = await evaluations.startAgentBatch(actorUserId, batchInput, chatId);
         return {
           artifacts: batch.runs.map((run) => ({
-            href: `/evaluations/${run.id}`,
             id: run.id,
             kind: "evaluation",
+            href: `/evaluations/${run.id}`,
           })),
           preview,
           runs: batch.runs,
@@ -115,7 +132,7 @@ export function createEvaluationTool(
         chatId,
       );
       return {
-        artifact: { href: `/evaluations/${run.id}`, id: run.id, kind: "evaluation" },
+        artifact: { id: run.id, kind: "evaluation", href: `/evaluations/${run.id}` },
         run,
         summary: "Started persisted evaluation run.",
       };

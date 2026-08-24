@@ -1,4 +1,4 @@
-/** Exposes persisted evaluation records and aggregates through framework-neutral agent tools. */
+/** Owns the toolkit for persisted evaluation records and aggregate analysis. */
 
 import { z } from "zod";
 
@@ -8,7 +8,7 @@ import {
   type EvaluationResults,
   type ResultFilters,
 } from "../../evaluation/results/index.ts";
-import { type AgentTool, defineAgentTool } from "./api.ts";
+import { AgentToolkit, defineAgentTool } from "./api.ts";
 
 const evaluationSearchSchema = evaluationResultListInputSchema.safeExtend({
   caseId: z.uuid().optional().describe("Exact case ID; when supplied, other inputs are ignored."),
@@ -16,46 +16,52 @@ const evaluationSearchSchema = evaluationResultListInputSchema.safeExtend({
 });
 
 /** Exposes record retrieval and aggregate analysis as distinct choices while sharing one filter vocabulary. */
-export function createEvaluationDataTools(evaluationResults: EvaluationResults): AgentTool[] {
-  return [
-    defineAgentTool({
-      name: "search_evaluations",
-      description:
-        "Find persisted evaluation cases and their complete judge-attributed scores. Supply caseId for one exact case; otherwise use search text, filters, cursor, and limit.",
-      parameters: evaluationSearchSchema,
-      async execute({ caseId, ...input }) {
-        if (caseId) {
-          const item = await evaluationResults.getResult(caseId);
+export class EvaluationResultsToolkit extends AgentToolkit {
+  constructor(evaluationResults: EvaluationResults) {
+    super("evaluation-results", [
+      defineAgentTool({
+        name: "search_evaluations",
+        title: "Search evaluation results",
+        description:
+          "Read one exact persisted evaluation case by ID or search paginated cases by text and shared result filters, including complete judge-attributed scores.",
+        parameters: evaluationSearchSchema,
+        annotations: { readOnlyHint: true, openWorldHint: false },
+        async execute({ caseId, ...input }) {
+          if (caseId) {
+            const item = await evaluationResults.getResult(caseId);
+            return {
+              artifact: { kind: "evaluation-search", href: resultHref({ runId: item.runId }) },
+              item,
+              summary: `Found evaluation case ${caseId} with ${item.scores.length} scores.`,
+            };
+          }
+          const result = await evaluationResults.listResults(input);
+          const { facets: _facets, ...searchResult } = result;
           return {
-            artifact: { href: resultHref({ runId: item.runId }), kind: "evaluation-search" },
-            item,
-            summary: `Found evaluation case ${caseId} with ${item.scores.length} scores.`,
+            artifact: { kind: "evaluation-search", href: resultHref(result.appliedFilters) },
+            result: searchResult,
+            summary: `Found ${result.total} matching evaluation cases and returned ${result.items.length}.`,
           };
-        }
-        const result = await evaluationResults.listResults(input);
-        const { facets: _facets, ...searchResult } = result;
-        return {
-          artifact: { href: resultHref(result.appliedFilters), kind: "evaluation-search" },
-          result: searchResult,
-          summary: `Found ${result.total} matching evaluation cases and returned ${result.items.length}.`,
-        };
-      },
-    }),
-    defineAgentTool({
-      name: "get_evaluation_analytics",
-      description:
-        "Get aggregate evaluation totals, score distributions, numeric statistics, execution timing, judge agreement, timeline, and facets for the supplied filters.",
-      parameters: evaluationFiltersSchema,
-      async execute(filters) {
-        const result = await evaluationResults.getAnalytics(filters);
-        return {
-          artifact: { href: analyticsHref(result.appliedFilters), kind: "evaluation-analytics" },
-          result,
-          summary: `${result.totals.cases} cases, ${result.totals.scores} scores, and ${result.totals.runs} runs match the current filters.`,
-        };
-      },
-    }),
-  ];
+        },
+      }),
+      defineAgentTool({
+        name: "get_evaluation_analytics",
+        title: "Get evaluation analytics",
+        description:
+          "Aggregate persisted evaluation cases under shared result filters, returning totals, score distributions, numeric statistics, execution timing, judge agreement, timelines, and facets.",
+        parameters: evaluationFiltersSchema,
+        annotations: { readOnlyHint: true, openWorldHint: false },
+        async execute(filters) {
+          const result = await evaluationResults.getAnalytics(filters);
+          return {
+            artifact: { kind: "evaluation-analytics", href: analyticsHref(result.appliedFilters) },
+            result,
+            summary: `${result.totals.cases} cases, ${result.totals.scores} scores, and ${result.totals.runs} runs match the current filters.`,
+          };
+        },
+      }),
+    ]);
+  }
 }
 
 function analyticsHref(filters: ResultFilters): string {

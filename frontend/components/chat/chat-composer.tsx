@@ -36,77 +36,77 @@ import { useDismissibleDetails } from "@/hooks/use-dismissible-details";
 import { ComposerMenu } from "./composer-menu";
 import { ModelSelector } from "./model-selector";
 
-const TOOL_OPTIONS: Array<{ description: string; id: ChatToolId; label: string }> = [
+const TOOL_OPTIONS: Array<{ id: ChatToolId; label: string; description: string }> = [
   {
-    description: "Create, read, and edit saved prompts.",
     id: "prompt-library",
     label: "Prompt Library",
+    description: "Create, read, and edit saved prompts.",
   },
   {
-    description: "Start persisted prompt evaluations and score reports.",
     id: "evaluations",
     label: "Evaluations",
+    description: "Manage criteria, Target Runs, persisted evaluations, and score reports.",
   },
   {
-    description: "Search the web when current information is needed.",
     id: "web-search",
     label: "Web Search",
+    description: "Search the web when current information is needed.",
   },
 ];
 
-const REASONING_OPTIONS: Array<{ label: string; value: ChatReasoningEffort }> = [
-  { label: "Low", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "High", value: "high" },
-  { label: "Extra High", value: "xhigh" },
+const REASONING_OPTIONS: Array<{ value: ChatReasoningEffort; label: string }> = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "Extra High" },
 ];
 
 export function ChatComposer({
+  variant = "agent",
   activePrompt,
-  attachments,
-  enabledTools,
-  instruction,
-  models,
-  onAttachmentsChange,
-  onInstructionChange,
-  onModelChange,
-  onOpenPrompt,
-  onPromptChange,
-  onQuoteRemove,
-  onReasoningEffortChange,
-  onStop,
-  onSubmit,
-  onToolsChange,
   prompts,
+  onPromptChange,
+  onOpenPrompt,
+  instruction,
+  onInstructionChange,
+  attachments,
+  onAttachmentsChange,
   quotes,
-  reasoningEffort,
-  running,
+  onQuoteRemove,
+  models,
   selectedModelId,
   targetModelLocked = false,
-  variant = "agent",
+  onModelChange,
+  reasoningEffort,
+  onReasoningEffortChange,
+  enabledTools,
+  onToolsChange,
+  running,
+  onSubmit,
+  onStop,
 }: {
+  variant?: "agent" | "target";
   activePrompt?: PromptSummary;
-  attachments: Attachment[];
-  enabledTools: ChatToolId[];
-  instruction: string;
-  models: ConfiguredModel[];
-  onAttachmentsChange(value: Attachment[]): void;
-  onInstructionChange(value: string): void;
-  onModelChange(value: string): void;
-  onOpenPrompt(): void;
-  onPromptChange(prompt: PromptSummary | undefined): void;
-  onQuoteRemove(quote: ChatQuote): void;
-  onReasoningEffortChange(value: ChatReasoningEffort): void;
-  onStop(): void;
-  onSubmit(): void;
-  onToolsChange(value: ChatToolId[]): void;
   prompts: PromptSummary[];
+  onPromptChange(prompt: PromptSummary | undefined): void;
+  onOpenPrompt(): void;
+  instruction: string;
+  onInstructionChange(value: string): void;
+  attachments: Attachment[];
+  onAttachmentsChange(value: Attachment[]): void;
   quotes: ChatQuote[];
-  reasoningEffort: ChatReasoningEffort;
-  running: boolean;
+  onQuoteRemove(quote: ChatQuote): void;
+  models: ConfiguredModel[];
   selectedModelId: string;
   targetModelLocked?: boolean;
-  variant?: "agent" | "target";
+  onModelChange(value: string): void;
+  reasoningEffort: ChatReasoningEffort;
+  onReasoningEffortChange(value: ChatReasoningEffort): void;
+  enabledTools: ChatToolId[];
+  onToolsChange(value: ChatToolId[]): void;
+  running: boolean;
+  onSubmit(): void;
+  onStop(): void;
 }) {
   const composerRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
