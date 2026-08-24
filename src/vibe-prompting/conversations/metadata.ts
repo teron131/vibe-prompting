@@ -1,7 +1,7 @@
 /** Generates and validates stable chat-history metadata independently from agent and evaluator model selection. */
 
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import dynamicIconImports from "lucide-react/dynamicIconImports.js";
+import dynamicIconImports from "lucide-react/dynamicIconImports.mjs";
 import { z } from "zod";
 
 import { createModel } from "../clients/llm/langchain.ts";

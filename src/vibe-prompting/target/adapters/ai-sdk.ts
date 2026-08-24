@@ -13,12 +13,11 @@ import {
 import {
   type AgentCallParameters,
   type AgentStreamParameters,
-  type GenerateTextResult,
   type LanguageModel,
   type LanguageModelUsage,
   type ModelMessage,
   modelMessageSchema,
-  type StreamTextResult,
+  type TextStreamPart,
   type ToolLoopAgentSettings,
   type ToolSet,
 } from "ai";
@@ -29,23 +28,27 @@ import type { TargetActivityPart, TargetRuntimeEvent } from "../activity.ts";
 import type { Target } from "../api.ts";
 import type { TargetConfiguration } from "../configuration.ts";
 
-type AiSdkGenerateResult<TOOLS extends ToolSet, OUTPUT> = Omit<
-  GenerateTextResult<TOOLS, never>,
-  "experimental_output" | "output"
-> & {
+type ResponseMessage = Extract<ModelMessage, { role: "assistant" | "tool" }>;
+
+type AiSdkGenerateResult<OUTPUT> = {
   readonly output: OUTPUT;
+  readonly responseMessages: ResponseMessage[];
+};
+
+type AiSdkStreamResult<TOOLS extends ToolSet> = {
+  readonly stream: AsyncIterable<TextStreamPart<TOOLS>>;
+  readonly responseMessages: PromiseLike<ResponseMessage[]>;
+  readonly totalUsage: PromiseLike<LanguageModelUsage>;
 };
 
 type AiSdkAgent<CALL_OPTIONS, TOOLS extends ToolSet, OUTPUT> = {
   generate(
     options: AgentCallParameters<CALL_OPTIONS, TOOLS>,
-  ): PromiseLike<AiSdkGenerateResult<TOOLS, OUTPUT>>;
+  ): PromiseLike<AiSdkGenerateResult<OUTPUT>>;
   stream(
     options: AgentStreamParameters<CALL_OPTIONS, TOOLS>,
-  ): PromiseLike<StreamTextResult<TOOLS, never>>;
+  ): PromiseLike<AiSdkStreamResult<TOOLS>>;
 };
-
-type ResponseMessage = GenerateTextResult<ToolSet, never>["response"]["messages"][number];
 
 export type AiSdkRunOptions<CALL_OPTIONS, TOOLS extends ToolSet> = Omit<
   AgentCallParameters<CALL_OPTIONS, TOOLS>,
@@ -156,7 +159,7 @@ export class AiSdkAdapter<CALL_OPTIONS = never, TOOLS extends ToolSet = ToolSet,
       onEvent?.(part);
     };
 
-    for await (const event of result.fullStream) {
+    for await (const event of result.stream) {
       if (event.type === "reasoning-start") {
         finishReasoning();
         onEvent?.({ type: "reasoning-start" });
@@ -218,10 +221,13 @@ export class AiSdkAdapter<CALL_OPTIONS = never, TOOLS extends ToolSet = ToolSet,
     }
 
     finishReasoning();
-    const [response, usage] = await Promise.all([result.response, result.totalUsage]);
+    const [responseMessages, usage] = await Promise.all([
+      result.responseMessages,
+      result.totalUsage,
+    ]);
     return {
       activity,
-      messages: sanitizeAiSdkHistory(response.messages as ModelMessage[]),
+      messages: sanitizeAiSdkHistory(responseMessages as ModelMessage[]),
       output,
       usage: projectUsage(usage),
     };
@@ -236,9 +242,9 @@ export class AiSdkAdapter<CALL_OPTIONS = never, TOOLS extends ToolSet = ToolSet,
     } as AgentCallParameters<CALL_OPTIONS, TOOLS>);
   }
 
-  private toRunResult(result: AiSdkGenerateResult<TOOLS, OUTPUT>): AiSdkRunResult {
+  private toRunResult(result: AiSdkGenerateResult<OUTPUT>): AiSdkRunResult {
     return {
-      messages: result.response.messages,
+      messages: result.responseMessages,
       model: this.model,
     };
   }

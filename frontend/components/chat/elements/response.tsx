@@ -68,7 +68,6 @@ export function ResponseText({
           "text-xs! leading-4! [&_code]:text-xs! [&_h1]:my-1.5! [&_h1]:text-sm! [&_h1]:leading-5! [&_h2]:my-1.5! [&_h2]:text-xs! [&_h2]:leading-4! [&_h3]:my-1! [&_h3]:text-xs! [&_h3]:leading-4! [&_li]:my-0.5! [&_ol]:my-1.5! [&_p]:my-1.5! [&_pre]:text-xs! [&_ul]:my-1.5!",
         className,
       )}
-      cdnUrl={null}
       components={renderImages ? responseComponents : textOnlyResponseComponents}
       mode={renderMath && normalizedText.includes("$$") ? "static" : "streaming"}
       remarkPlugins={renderMath ? responseRemarkPlugins : textRemarkPlugins}

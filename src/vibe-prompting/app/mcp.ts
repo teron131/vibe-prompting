@@ -27,7 +27,7 @@ export function createMcpServer(
   services: ApplicationServices,
   loadModels: () => Promise<ConfiguredModel[]> = getConfiguredModels,
 ): FastMCP {
-  const server = new FastMCP({ name: "vibe-prompting" });
+  const server = new FastMCP({ name: "Vibe Prompting" });
   const loadModelReferences = async () =>
     (await loadModels()).map(({ id, label }) => ({ id, label }));
   const toolkits = [
@@ -75,7 +75,7 @@ function registerTool(server: FastMCP, services: ApplicationServices, tool: Agen
       input: tool.parameters,
       annotations: tool.annotations,
     },
-    async (input) => {
+    async (input: Record<string, unknown>) => {
       const actorUserId = await requireMcpActor(server, services);
       const output = await tool.execute(input, { actorUserId, chatId: null });
       return absolutizeArtifactLinks(output);

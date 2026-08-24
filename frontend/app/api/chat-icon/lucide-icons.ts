@@ -1,7 +1,7 @@
 /** Validates Lucide names and renders selected icons at the server boundary. */
 
 import "server-only";
-import dynamicIconImports from "lucide-react/dynamicIconImports.js";
+import dynamicIconImports from "lucide-react/dynamicIconImports.mjs";
 
 export const DEFAULT_CHAT_ICON = "message-circle";
 
