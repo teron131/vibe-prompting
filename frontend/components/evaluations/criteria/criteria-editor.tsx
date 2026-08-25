@@ -9,7 +9,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
-  Library,
   LoaderCircle,
   Pencil,
   Plus,
@@ -23,6 +22,7 @@ import { CriterionTypeIcon } from "@/components/evaluations/shared/criterion-typ
 import { EvaluationPageBar } from "@/components/evaluations/shared/evaluation-page-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
 import type { Criteria, CriteriaResponse, SavedCriterion } from "@/contracts/evaluations";
 import { ApiRequestError, createApiRequester, createErrorReader } from "@/shared/api";
@@ -37,7 +37,6 @@ export function CriteriaEditor({
   criteria,
   criterion,
   listOpen,
-  onCreateCriterion,
   onDeleted,
   onReload,
   onSaved,
@@ -46,7 +45,6 @@ export function CriteriaEditor({
   criteria?: Criteria;
   criterion: SavedCriterion[];
   listOpen: boolean | null;
-  onCreateCriterion(): void;
   onDeleted(id: string): void;
   onReload(): Promise<LibraryState>;
   onSaved(criteria: Criteria): void;
@@ -63,6 +61,8 @@ export function CriteriaEditor({
         .filter((candidate): candidate is SavedCriterion => Boolean(candidate)),
     [criterion, draft.criterionIds],
   );
+  const availableCriterion = criterion.filter(({ id }) => !draft.criterionIds.includes(id));
+  const canAddCriterion = availableCriterion.length > 0 && draft.criterionIds.length < 10;
 
   useEffect(() => {
     setDraft(toDraft(criteria));
@@ -207,8 +207,8 @@ export function CriteriaEditor({
         </div>
       </EvaluationPageBar>
 
-      <div className="grid gap-8 px-4 pt-6 pb-12 sm:px-6 min-[840px]:px-7 @min-[980px]:grid-cols-[minmax(0,1fr)_18rem] xl:px-10">
-        <section className="min-w-0">
+      <div className="px-4 pt-6 pb-12 sm:px-6 min-[840px]:px-7 xl:px-10">
+        <section className="max-w-4xl min-w-0">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b pb-3">
             <div>
               <h2 className="text-sm font-semibold">Criterion Order</h2>
@@ -216,9 +216,42 @@ export function CriteriaEditor({
                 This sequence is preserved when the evaluation runs.
               </p>
             </div>
-            <span className="font-mono text-[10px] text-muted-foreground">
-              {criterionOrder.length}/10
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {criterionOrder.length}/10
+              </span>
+              <Select
+                aria-label="Add Criterion to order"
+                className="h-8 w-44"
+                disabled={!canAddCriterion}
+                onValueChange={(id) => {
+                  if (id) addCriterion(id);
+                }}
+                renderIcon={(id) => {
+                  const item = criterion.find((candidate) => candidate.id === id);
+                  return item ? (
+                    <CriterionTypeIcon className="size-3 text-muted-foreground" type={item.type} />
+                  ) : (
+                    <Plus className="size-3.5 text-muted-foreground" />
+                  );
+                }}
+                triggerClassName="px-2.5 text-xs shadow-none"
+                value=""
+              >
+                <option disabled value="">
+                  {draft.criterionIds.length >= 10
+                    ? "Order is full"
+                    : availableCriterion.length
+                      ? "Add Criterion"
+                      : "All Criterion added"}
+                </option>
+                {availableCriterion.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </div>
           {criterionOrder.length ? (
             <ol className="divide-y">
@@ -285,7 +318,7 @@ export function CriteriaEditor({
           )}
 
           {draft.id ? (
-            <footer className="mt-8 flex flex-wrap items-center justify-end gap-3 border-t pt-5">
+            <footer className="mt-4 flex flex-wrap items-center justify-end gap-3">
               {confirmingDelete ? (
                 <>
                   <p className="text-xs text-muted-foreground">
@@ -316,75 +349,6 @@ export function CriteriaEditor({
             </footer>
           ) : null}
         </section>
-
-        <aside className="h-fit border-y @min-[980px]:sticky @min-[980px]:top-[calc(var(--header-height)+1rem)]">
-          <div className="flex items-center justify-between gap-3 px-3 py-3">
-            <div>
-              <h2 className="text-xs font-semibold">Criterion Library</h2>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                Add a Criterion to the end of the order.
-              </p>
-            </div>
-            <Button
-              aria-label="Create Criterion"
-              onClick={onCreateCriterion}
-              size="icon"
-              variant="outline"
-            >
-              <Plus className="size-3.5" />
-            </Button>
-          </div>
-          {criterion.length ? (
-            <div className="max-h-[28rem] divide-y overflow-y-auto border-t">
-              {criterion.map((item) => {
-                const position = draft.criterionIds.indexOf(item.id);
-                const added = position >= 0;
-                return (
-                  <button
-                    aria-label={
-                      added
-                        ? `${item.name} is ${position + 1} in the Criterion order`
-                        : `Add ${item.name} to the Criterion order`
-                    }
-                    className={cn(
-                      "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                      added
-                        ? "cursor-default bg-accent/55 text-foreground"
-                        : "hover:bg-accent hover:text-foreground",
-                    )}
-                    disabled={added}
-                    key={item.id}
-                    onClick={() => addCriterion(item.id)}
-                    type="button"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs font-medium">{item.name}</span>
-                      <span className="mt-1 inline-flex items-center gap-1 font-mono text-[10px] uppercase text-muted-foreground">
-                        <CriterionTypeIcon className="size-3" type={item.type} /> {item.type}
-                      </span>
-                    </span>
-                    {added ? (
-                      <span className="font-mono text-[10px] text-muted-foreground">
-                        {String(position + 1).padStart(2, "0")}
-                      </span>
-                    ) : (
-                      <Plus className="size-3.5 text-muted-foreground" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <button
-              className="w-full border-t px-4 py-8 text-center text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-              onClick={onCreateCriterion}
-              type="button"
-            >
-              <Library className="mx-auto mb-2 size-4" />
-              Create the first Criterion
-            </button>
-          )}
-        </aside>
       </div>
     </div>
   );

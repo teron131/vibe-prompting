@@ -289,7 +289,6 @@ export function EvaluationCriterionWorkspace() {
             criterion={criterion}
             key={creatingCriteria ? "new-criteria" : (selectedCriteria?.id ?? "empty-criteria")}
             listOpen={listOpen}
-            onCreateCriterion={createCriterion}
             onDeleted={deleteCriteria}
             onReload={reload}
             onSaved={saveCriteria}

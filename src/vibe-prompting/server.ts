@@ -2,6 +2,7 @@
 
 import { AuthService } from "./auth/index.ts";
 import { resolveModelIdentities } from "./clients/llm/models-dev.ts";
+import { configureModelPriceCache } from "./clients/llm/pricing.ts";
 import { configureSpendLimit } from "./clients/llm/spend.ts";
 import { loadModelSpendLimits, loadRuntimeConfig } from "./config/index.ts";
 import { ConversationRunRegistry } from "./conversations/runs.ts";
@@ -71,6 +72,7 @@ export async function createApplicationServices(
   await database.initialize();
   const settings = new ApplicationSettingsStore(database);
   await settings.initialize();
+  configureModelPriceCache(database);
   configureSpendLimit(database, loadModelSpendLimits());
   const search = new HybridSearch(database);
   const prompts = new PromptSystem(database, search);

@@ -13,7 +13,6 @@ import { requestJson } from "@/shared/api";
 import { ComposerMenu } from "./composer-menu";
 
 const modelIdentityRequests = new Map<string, Promise<ConfiguredModel>>();
-const ARTIFICIAL_ANALYSIS_LOGO_BASE_URL = "https://artificialanalysis.ai/img/logos";
 
 export function ModelSelector({
   disabled,
@@ -81,14 +80,16 @@ export function ModelIcon({
 }) {
   const identity = useModelIdentity(model, modelId);
   const provider = identity?.provider.trim().toLowerCase();
-  const src = provider
-    ? `${ARTIFICIAL_ANALYSIS_LOGO_BASE_URL}/${encodeURIComponent(provider)}_small.svg`
-    : undefined;
   const [failedSrc, setFailedSrc] = useState<string>();
+  const bundledSrc = provider ? `/provider-icons/${encodeURIComponent(provider)}.svg` : undefined;
+  const discoveredSrc = provider
+    ? `/api/provider-icons/${encodeURIComponent(provider)}`
+    : undefined;
+  const src = bundledSrc && failedSrc === bundledSrc ? discoveredSrc : bundledSrc;
 
   if (!identity)
     return <span aria-hidden="true" className="size-4 shrink-0 rounded-full bg-muted" />;
-  if (!src || failedSrc === src) {
+  if (!src || failedSrc === discoveredSrc) {
     return (
       <span
         aria-label={`${identity.provider} logo unavailable`}

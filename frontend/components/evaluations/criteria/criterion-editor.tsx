@@ -82,6 +82,11 @@ export function CriterionEditor({
     if (!prepared.instruction) return toast.error("Add the complete judge instruction.");
     const categoriesError = validateCategories(prepared);
     if (categoriesError) return toast.error(categoriesError);
+    setDraft({
+      ...prepared,
+      ...(draft.id && { id: draft.id }),
+      ...(draft.version && { version: draft.version }),
+    });
     setSaving(true);
     try {
       const result = await api.json<SavedCriterionResponse>(
@@ -278,54 +283,56 @@ export function CriterionEditor({
             </div>
           ) : null}
 
-          <section className="mt-8 border-y py-4">
-            <h2 className="text-xs font-semibold">Used by {usedBy.length} Criteria</h2>
-            {usedBy.length ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {usedBy.map((value) => (
-                  <span className="border bg-muted/30 px-2 py-1 text-xs" key={value.id}>
-                    {value.name}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-1 text-xs text-muted-foreground">
-                This Criterion is not used by Criteria yet.
-              </p>
-            )}
-          </section>
-
-          {draft.id ? (
-            <footer className="mt-8 flex flex-wrap items-center justify-end gap-3 border-t pt-5">
-              {confirmingDelete ? (
-                <>
-                  <p className="text-xs text-muted-foreground">
-                    {criterionDeletionWarning(draft.name, usedBy)}
-                  </p>
-                  <Button onClick={() => setConfirmingDelete(false)} size="sm" variant="outline">
-                    Cancel
-                  </Button>
-                  <Button disabled={deleting} onClick={remove} size="sm" variant="destructive">
-                    {deleting ? (
-                      <LoaderCircle className="size-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="size-3.5" />
-                    )}{" "}
-                    Delete
-                  </Button>
-                </>
+          <section className="mt-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+            <div>
+              <h2 className="text-xs font-semibold">Used by {usedBy.length} Criteria</h2>
+              {usedBy.length ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {usedBy.map((value) => (
+                    <span className="border bg-muted/30 px-2 py-1 text-xs" key={value.id}>
+                      {value.name}
+                    </span>
+                  ))}
+                </div>
               ) : (
-                <Button
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => setConfirmingDelete(true)}
-                  size="sm"
-                  variant="ghost"
-                >
-                  <Trash2 className="size-3.5" /> Delete Criterion
-                </Button>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  This Criterion is not used by Criteria yet.
+                </p>
               )}
-            </footer>
-          ) : null}
+            </div>
+
+            {draft.id ? (
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                {confirmingDelete ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      {criterionDeletionWarning(draft.name, usedBy)}
+                    </p>
+                    <Button onClick={() => setConfirmingDelete(false)} size="sm" variant="outline">
+                      Cancel
+                    </Button>
+                    <Button disabled={deleting} onClick={remove} size="sm" variant="destructive">
+                      {deleting ? (
+                        <LoaderCircle className="size-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-3.5" />
+                      )}{" "}
+                      Delete
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setConfirmingDelete(true)}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    <Trash2 className="size-3.5" /> Delete Criterion
+                  </Button>
+                )}
+              </div>
+            ) : null}
+          </section>
         </div>
       </div>
     </div>
@@ -494,7 +501,9 @@ function prepare(draft: Draft): Criterion {
   if (criterion.type === "categorical") {
     return {
       ...criterion,
-      categories: criterion.categories.map((category) => category.trim()),
+      categories: criterion.categories
+        .map((category) => category.trim())
+        .filter((category) => category.length > 0),
       instruction: criterion.instruction.trim(),
       name: criterion.name.trim(),
     };

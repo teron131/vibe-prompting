@@ -31,7 +31,7 @@ export function ResponseTelemetryLine({ telemetry }: { telemetry: ResponseTeleme
     <span
       aria-label="Response telemetry"
       className="flex flex-wrap items-center gap-x-1.5 font-mono text-[11px] tabular-nums text-muted-foreground/80"
-      title="End-to-end time includes tools. Tokens and estimated cost cover the primary model calls attributed to this response; tool-owned model calls may be accounted separately. Cost uses OpenRouter effective pricing."
+      title="End-to-end time includes tools. Tokens and estimated cost cover the primary model calls attributed to this response; tool-owned model calls may be accounted separately. Cost uses OpenRouter provider prices weighted by token share."
     >
       {segments.map((segment, index) => (
         <span className="inline-flex items-center gap-x-1.5" key={segment}>
@@ -83,7 +83,7 @@ export function ResponseTelemetryTotal({
   return (
     <div
       className="mt-2 flex flex-wrap justify-start gap-x-1.5 px-3 font-mono text-[10px] tabular-nums text-muted-foreground/75"
-      title="This total appears only when every completed response in the current conversation has measured telemetry. Cost uses OpenRouter effective pricing."
+      title="This total appears only when every completed response in the current conversation has measured telemetry. Cost uses OpenRouter provider prices weighted by token share."
     >
       <span>Total</span>
       {summary.totalTokens !== null ? (

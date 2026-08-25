@@ -2,11 +2,13 @@
 
 import { z } from "zod";
 
+import type { Database } from "../../database/index.ts";
 import { resolveModelCatalogId } from "./models-dev.ts";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/frontend/v1/catalog/models";
 const OPENROUTER_PRICING_URL = "https://openrouter.ai/api/frontend/v1/stats/effective-pricing";
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const PRICE_FRESH_MS = 24 * 60 * 60 * 1000;
+const STALE_PRICE_RETRY_MS = 5 * 60 * 1000;
 const COST_ESTIMATE_WAIT_MS = 100;
 const FETCH_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 300;
@@ -36,11 +38,24 @@ const effectivePricingSchema = z.object({
 });
 
 type ProviderSummary = z.infer<typeof providerSummarySchema>;
+type CachedModelPriceRow = {
+  modelId: string;
+  catalogId: string;
+  permaslug: string;
+  inputPricePerMillionTokens: number;
+  outputPricePerMillionTokens: number;
+  fetchedAt: Date;
+};
 type OpenRouterDirectory = {
   permaslugBySlug: Map<string, string>;
   slugs: string[];
 };
 type TimedPromise<T> = { expiresAt: number; promise: Promise<T> };
+type ResolvedModelPrice = ModelPrice & {
+  catalogId: string;
+  permaslug: string;
+  fetchedAt: number;
+};
 
 export type ModelPrice = {
   inputPricePerMillionTokens: number;
@@ -58,17 +73,23 @@ export type ModelCostEstimate = {
 
 let directoryCache: TimedPromise<OpenRouterDirectory> | undefined;
 const priceCache = new Map<string, TimedPromise<ModelPrice>>();
+let priceDatabase: Database | undefined;
+
+export function configureModelPriceCache(database: Database): void {
+  priceDatabase = database;
+  priceCache.clear();
+}
 
 export async function resolveModelPrice(id: string): Promise<ModelPrice> {
-  const catalogId = await resolveModelCatalogId(id);
-  const cached = priceCache.get(catalogId);
+  const modelId = id.trim();
+  const cached = priceCache.get(modelId);
   if (cached && cached.expiresAt > Date.now()) return cached.promise;
 
-  const promise = loadModelPrice(catalogId);
-  const entry = { expiresAt: Date.now() + CACHE_TTL_MS, promise };
-  priceCache.set(catalogId, entry);
+  const promise = loadCachedOrRemoteModelPrice(modelId);
+  const entry = { expiresAt: Date.now() + STALE_PRICE_RETRY_MS, promise };
+  priceCache.set(modelId, entry);
   void promise.catch(() => {
-    if (priceCache.get(catalogId) === entry) priceCache.delete(catalogId);
+    if (priceCache.get(modelId) === entry) priceCache.delete(modelId);
   });
   return promise;
 }
@@ -96,7 +117,34 @@ export function calculateModelCostUsd(price: ModelPrice, usage: ModelTokenUsage)
   );
 }
 
-async function loadModelPrice(catalogId: string): Promise<ModelPrice> {
+async function loadCachedOrRemoteModelPrice(modelId: string): Promise<ModelPrice> {
+  const stored = await readCachedModelPrice(modelId);
+  if (stored) {
+    const price = projectModelPrice(stored);
+    const expiresAt = stored.fetchedAt + PRICE_FRESH_MS;
+    if (expiresAt > Date.now()) {
+      cacheResolvedPrice(modelId, price, expiresAt);
+      return price;
+    }
+    cacheResolvedPrice(modelId, price, Date.now() + STALE_PRICE_RETRY_MS);
+    void refreshModelPrice(modelId).catch(() => undefined);
+    return price;
+  }
+  return refreshModelPrice(modelId);
+}
+
+async function refreshModelPrice(modelId: string): Promise<ModelPrice> {
+  const resolved = await fetchModelPrice(modelId);
+  await persistModelPrice(modelId, resolved).catch((error) => {
+    console.warn(`Could not persist the OpenRouter price for ${modelId}.`, error);
+  });
+  const price = projectModelPrice(resolved);
+  cacheResolvedPrice(modelId, price, resolved.fetchedAt + PRICE_FRESH_MS);
+  return price;
+}
+
+async function fetchModelPrice(modelId: string): Promise<ResolvedModelPrice> {
+  const catalogId = await resolveModelCatalogId(modelId);
   const directory = await loadOpenRouterDirectory();
   const permaslugs = resolvePermaslugCandidates(catalogId, directory);
   if (permaslugs.length === 0) {
@@ -116,7 +164,13 @@ async function loadModelPrice(catalogId: string): Promise<ModelPrice> {
       if (inputPricePerMillionTokens === null || outputPricePerMillionTokens === null) {
         throw new Error(`OpenRouter does not publish complete provider pricing for ${permaslug}.`);
       }
-      return { inputPricePerMillionTokens, outputPricePerMillionTokens };
+      return {
+        catalogId,
+        permaslug,
+        inputPricePerMillionTokens,
+        outputPricePerMillionTokens,
+        fetchedAt: Date.now(),
+      };
     } catch (error) {
       lastError = error;
     }
@@ -138,12 +192,88 @@ async function loadOpenRouterDirectory(): Promise<OpenRouterDirectory> {
       return { permaslugBySlug, slugs: [...permaslugBySlug.keys()] };
     },
   );
-  const entry = { expiresAt: Date.now() + CACHE_TTL_MS, promise };
+  const entry = { expiresAt: Date.now() + PRICE_FRESH_MS, promise };
   directoryCache = entry;
   void promise.catch(() => {
     if (directoryCache === entry) directoryCache = undefined;
   });
   return promise;
+}
+
+async function readCachedModelPrice(modelId: string): Promise<ResolvedModelPrice | undefined> {
+  const database = priceDatabase;
+  if (!database) return undefined;
+  let rows: CachedModelPriceRow[];
+  try {
+    rows = await database.run(
+      (sql) => sql<CachedModelPriceRow[]>`
+        SELECT
+          model_id,
+          catalog_id,
+          permaslug,
+          input_price_per_million_tokens,
+          output_price_per_million_tokens,
+          fetched_at
+        FROM model_price_cache
+        WHERE model_id = ${modelId}
+      `,
+    );
+  } catch (error) {
+    console.warn(`Could not read the cached OpenRouter price for ${modelId}.`, error);
+    return undefined;
+  }
+  const [row] = rows;
+  const fetchedAt = row?.fetchedAt.getTime();
+  if (!row || fetchedAt === undefined || !Number.isFinite(fetchedAt)) return undefined;
+  return {
+    catalogId: row.catalogId,
+    permaslug: row.permaslug,
+    inputPricePerMillionTokens: row.inputPricePerMillionTokens,
+    outputPricePerMillionTokens: row.outputPricePerMillionTokens,
+    fetchedAt,
+  };
+}
+
+async function persistModelPrice(modelId: string, price: ResolvedModelPrice): Promise<void> {
+  const database = priceDatabase;
+  if (!database) return;
+  await database.run(
+    (sql) => sql`
+      INSERT INTO model_price_cache (
+        model_id,
+        catalog_id,
+        permaslug,
+        input_price_per_million_tokens,
+        output_price_per_million_tokens,
+        fetched_at
+      )
+      VALUES (
+        ${modelId},
+        ${price.catalogId},
+        ${price.permaslug},
+        ${price.inputPricePerMillionTokens},
+        ${price.outputPricePerMillionTokens},
+        ${new Date(price.fetchedAt)}
+      )
+      ON CONFLICT (model_id) DO UPDATE
+      SET catalog_id = EXCLUDED.catalog_id,
+          permaslug = EXCLUDED.permaslug,
+          input_price_per_million_tokens = EXCLUDED.input_price_per_million_tokens,
+          output_price_per_million_tokens = EXCLUDED.output_price_per_million_tokens,
+          fetched_at = EXCLUDED.fetched_at
+    `,
+  );
+}
+
+function cacheResolvedPrice(modelId: string, price: ModelPrice, expiresAt: number): void {
+  priceCache.set(modelId, { expiresAt, promise: Promise.resolve(price) });
+}
+
+function projectModelPrice(price: ModelPrice): ModelPrice {
+  return {
+    inputPricePerMillionTokens: price.inputPricePerMillionTokens,
+    outputPricePerMillionTokens: price.outputPricePerMillionTokens,
+  };
 }
 
 async function fetchJsonWithRetry(url: string, label: string): Promise<unknown> {
