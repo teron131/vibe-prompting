@@ -10,13 +10,13 @@ import {
   PanelRightOpen,
   TriangleAlert,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppIcon } from "@/components/app-icon";
 import { Conversation as ConversationView } from "@/components/chat/elements/conversation";
-import { PromptContextPanel } from "@/components/prompts/context-panel";
 import { FeaturePageHeader } from "@/components/shell/header";
 import { ButtonLink } from "@/components/ui/button";
 import type {
@@ -48,7 +48,13 @@ import {
 import { ChatComposer } from "./chat-composer";
 import { ChatHistoryIcon } from "./history-icon";
 import { summarizeResponseTelemetry } from "./response-telemetry";
-import { TargetWorkspace } from "./target/workspace";
+
+const PromptContextPanel = dynamic(() =>
+  import("@/components/prompts/context-panel").then(({ PromptContextPanel }) => PromptContextPanel),
+);
+const TargetWorkspace = dynamic(() =>
+  import("./target/workspace").then(({ TargetWorkspace }) => TargetWorkspace),
+);
 
 const DEFAULT_TOOLS: ChatToolId[] = ["prompt-library", "evaluations", "web-search"];
 const PROMPT_PANEL_MEDIA_QUERY = "(min-width: 800px)";
@@ -114,6 +120,7 @@ export function Chat({
   const [highlightedQuote, setHighlightedQuote] = useState<PromptQuote>();
   const [reviewRevision, setReviewRevision] = useState<PromptRevisionReference>();
   const [panelOpen, setPanelOpen] = useState(Boolean(initialPromptId));
+  const [panelMounted, setPanelMounted] = useState(Boolean(initialPromptId));
   const [instruction, setInstruction] = useState("");
   const [loading, setLoading] = useState(true);
   const [workspaceReady, setWorkspaceReady] = useState(false);
@@ -239,6 +246,10 @@ export function Chat({
     selectedModelId,
     workspaceReady,
   ]);
+
+  useEffect(() => {
+    if (panelOpen) setPanelMounted(true);
+  }, [panelOpen]);
 
   useEffect(() => {
     const opened = panelOpen && !panelWasOpen.current;
@@ -518,21 +529,23 @@ export function Chat({
               />
             </section>
           )}
-          <PromptContextPanel
-            activePrompt={activePrompt}
-            highlightedQuote={highlightedQuote}
-            onClose={() => setPanelOpen(false)}
-            onPromptUpdated={(prompt) =>
-              setPrompts((current) =>
-                current.map((candidate) => (candidate.id === prompt.id ? prompt : candidate)),
-              )
-            }
-            onQuote={addQuote}
-            onSelectPrompt={(prompt) => activatePrompt(prompt, true)}
-            open={panelOpen}
-            prompts={prompts}
-            reviewRevision={reviewRevision}
-          />
+          {panelMounted || panelOpen ? (
+            <PromptContextPanel
+              activePrompt={activePrompt}
+              highlightedQuote={highlightedQuote}
+              onClose={() => setPanelOpen(false)}
+              onPromptUpdated={(prompt) =>
+                setPrompts((current) =>
+                  current.map((candidate) => (candidate.id === prompt.id ? prompt : candidate)),
+                )
+              }
+              onQuote={addQuote}
+              onSelectPrompt={(prompt) => activatePrompt(prompt, true)}
+              open={panelOpen}
+              prompts={prompts}
+              reviewRevision={reviewRevision}
+            />
+          ) : null}
         </div>
       )}
     </main>
@@ -592,17 +605,50 @@ function useChatRun({
 
   useEffect(() => {
     if (!chatId || !detached) return;
-    const timer = window.setInterval(() => {
-      void loadConversation(chatId)
-        .then((data) => {
-          if (!data.active) {
-            window.clearInterval(timer);
-            void onPromptsRefresh().catch((cause) => setError(readError(cause)));
-          }
-        })
-        .catch((cause) => setError(readError(cause)));
-    }, 1500);
-    return () => window.clearInterval(timer);
+    let active = true;
+    let polling = false;
+    let timer: number | undefined;
+    const intervalMs = 1500;
+    const schedule = (delay = intervalMs) => {
+      if (!active || document.hidden) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        void poll();
+      }, delay);
+    };
+    const poll = async () => {
+      if (polling || document.hidden) return;
+      polling = true;
+      const startedAt = performance.now();
+      try {
+        const data = await loadConversation(chatId);
+        if (!active) return;
+        if (data.active) schedule(Math.max(0, intervalMs - (performance.now() - startedAt)));
+        else void onPromptsRefresh().catch((cause) => setError(readError(cause)));
+      } catch (cause) {
+        if (!active) return;
+        setError(readError(cause));
+        schedule(Math.max(0, intervalMs - (performance.now() - startedAt)));
+      } finally {
+        polling = false;
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      if (polling || timer !== undefined) return;
+      void poll();
+    };
+    schedule();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [chatId, detached, loadConversation, onPromptsRefresh]);
 
   async function submit(replacement?: ReplacementSubmission) {

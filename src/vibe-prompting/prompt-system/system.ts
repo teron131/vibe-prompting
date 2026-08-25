@@ -25,6 +25,8 @@ export type StoredPrompt = {
   updatedAt: string;
 };
 
+export type StoredPromptSummary = Omit<StoredPrompt, "markdown">;
+
 export type StoredPromptRevisionSummary = {
   id: string;
   promptId: string;
@@ -57,6 +59,8 @@ type PromptRow = {
   revisionCount: number;
   updatedAt: Date;
 };
+
+type PromptSummaryRow = Omit<PromptRow, "markdown">;
 
 type PromptRevisionRow = {
   id: string;
@@ -154,13 +158,39 @@ export class PromptSystem {
     });
   }
 
+  /** Lists browser-facing prompt metadata without transferring active Markdown that callers do not consume. */
+  async listPromptSummaries(): Promise<StoredPromptSummary[]> {
+    return this.#database.run(async (sql) => {
+      const rows = await sql<PromptSummaryRow[]>`
+        SELECT
+          prompts.id,
+          prompts.title,
+          prompts.active_revision_id AS revision_id,
+          prompts.active_revision_id,
+          prompt_revisions.revision_number AS active_revision_number,
+          prompt_revisions.revision_number,
+          (
+            SELECT count(*)::integer
+            FROM prompt_revisions AS all_revisions
+            WHERE all_revisions.prompt_id = prompts.id
+          ) AS revision_count,
+          prompts.updated_at
+        FROM prompts
+        JOIN prompt_revisions
+          ON prompt_revisions.prompt_id = prompts.id
+          AND prompt_revisions.id = prompts.active_revision_id
+        ORDER BY prompts.updated_at DESC, prompts.id
+      `;
+      return rows.map(projectPromptSummary);
+    });
+  }
+
   async getPrompt(promptId: string): Promise<StoredPrompt> {
     return this.#database.run((sql) => requireActivePrompt(sql, promptId));
   }
 
   async listRevisions(promptId: string): Promise<StoredPromptRevisionSummary[]> {
     return this.#database.run(async (sql) => {
-      await requireActivePrompt(sql, promptId);
       const rows = await sql<PromptRevisionSummaryRow[]>`
         SELECT
           prompt_revisions.id,
@@ -176,6 +206,7 @@ export class PromptSystem {
         WHERE prompt_revisions.prompt_id = ${promptId}
         ORDER BY prompt_revisions.revision_number DESC
       `;
+      if (rows.length === 0) throw new PromptNotFoundError(promptId);
       return rows.map(projectRevisionSummary);
     });
   }
@@ -447,6 +478,19 @@ function projectPrompt(row: PromptRow): StoredPrompt {
     id: row.id,
     title: row.title,
     markdown: row.markdown,
+    revisionId: row.revisionId,
+    revisionNumber: row.revisionNumber,
+    activeRevisionId: row.activeRevisionId,
+    activeRevisionNumber: row.activeRevisionNumber,
+    revisionCount: row.revisionCount,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function projectPromptSummary(row: PromptSummaryRow): StoredPromptSummary {
+  return {
+    id: row.id,
+    title: row.title,
     revisionId: row.revisionId,
     revisionNumber: row.revisionNumber,
     activeRevisionId: row.activeRevisionId,

@@ -8,6 +8,7 @@ export {
   type AiEditInput,
   type PromptRevisionAuthor,
   type StoredPrompt,
+  type StoredPromptSummary,
   type StoredPromptRevision,
   type StoredPromptRevisionSummary,
 } from "./system.ts";

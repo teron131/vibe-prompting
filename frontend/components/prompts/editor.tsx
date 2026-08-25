@@ -3,13 +3,11 @@
 "use client";
 
 import { GitCompareArrows, History, LoaderCircle, Save } from "lucide-react";
+import dynamic from "next/dynamic";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { PromptDiff } from "@/components/prompts/diff";
-import { PromptEvaluationView } from "@/components/prompts/evaluation-view";
-import { MarkdownPreview } from "@/components/prompts/markdown-preview";
 import { promptRevisionAuthorLabel } from "@/components/prompts/revision-author";
 import { PromptStats } from "@/components/prompts/stats";
 import { PromptViewModeControl } from "@/components/prompts/view-mode-control";
@@ -35,6 +33,27 @@ import { formatDateTime } from "@/shared/date";
 
 const promptApi = createApiRequester({ cache: "no-store" }, "Prompt request failed.");
 const readError = createErrorReader("Prompt request failed.");
+const DeferredView = () => (
+  <div className="grid min-h-48 place-items-center">
+    <LoaderCircle aria-label="Loading view" className="size-5 animate-spin text-muted-foreground" />
+  </div>
+);
+const MarkdownPreview = dynamic(
+  () =>
+    import("@/components/prompts/markdown-preview").then(({ MarkdownPreview }) => MarkdownPreview),
+  { loading: DeferredView },
+);
+const PromptDiff = dynamic(
+  () => import("@/components/prompts/diff").then(({ PromptDiff }) => PromptDiff),
+  { loading: DeferredView },
+);
+const PromptEvaluationView = dynamic(
+  () =>
+    import("@/components/prompts/evaluation-view").then(
+      ({ PromptEvaluationView }) => PromptEvaluationView,
+    ),
+  { loading: DeferredView },
+);
 
 export function PromptEditor({
   onDirtyChange,
@@ -154,10 +173,22 @@ export function PromptEditor({
       return;
     }
     let cancelled = false;
+    let polling = false;
     let timer: number | undefined;
+    const intervalMs = 1500;
     setLatestRunLoading(true);
     setLatestRunError(undefined);
+    const schedule = (delay = intervalMs) => {
+      if (cancelled || document.hidden) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        void refresh();
+      }, delay);
+    };
     const refresh = async () => {
+      if (polling || document.hidden) return;
+      polling = true;
+      const startedAt = performance.now();
       try {
         const value = await promptApi.json<EvaluationRunResponse>(
           `/api/evaluations/${latestRunId}`,
@@ -167,18 +198,31 @@ export function PromptEditor({
         setTrend(value.trend);
         setLatestRunLoading(false);
         if (value.run.status === "queued" || value.run.status === "running") {
-          timer = window.setTimeout(refresh, 1500);
+          schedule(Math.max(0, intervalMs - (performance.now() - startedAt)));
         }
       } catch (cause) {
         if (cancelled) return;
         setLatestRunError(readError(cause));
         setLatestRunLoading(false);
+      } finally {
+        polling = false;
       }
     };
-    void refresh();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      if (polling || timer !== undefined) return;
+      void refresh();
+    };
+    if (!document.hidden) void refresh();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       cancelled = true;
-      if (timer) window.clearTimeout(timer);
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [latestRunId, latestRunRequest]);
 

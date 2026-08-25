@@ -12,6 +12,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -41,7 +42,9 @@ import type { PromptsResponse, PromptSummary } from "@/contracts/prompts";
 import type { TargetProfile, TargetProfileResponse } from "@/contracts/targets";
 import { createApiRequester, createErrorReader } from "@/shared/api";
 
-import { RecordedEvaluationBuilder } from "./recorded";
+const RecordedEvaluationBuilder = dynamic(() =>
+  import("./recorded").then(({ RecordedEvaluationBuilder }) => RecordedEvaluationBuilder),
+);
 
 type SavedConfiguration = {
   cases: string[];
@@ -240,29 +243,49 @@ function EvaluationBatchRunBuilder() {
     }
     setBatchStatusError(undefined);
     let active = true;
+    let polling = false;
     let timer: number | undefined;
+    const intervalMs = 1500;
     const runIds = trackedRunIds.split(",");
+    const schedule = (delay = intervalMs) => {
+      if (!active || document.hidden) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        void refresh();
+      }, delay);
+    };
     const refresh = async () => {
+      if (polling || document.hidden) return;
+      polling = true;
+      const startedAt = performance.now();
       try {
         const result = await fetchBatchStatus(runIds);
         if (!active) return;
         setStartedRuns(result.runs);
         setBatchStatusError(undefined);
-        if (result.runs.every(({ status }) => TERMINAL_STATUSES.has(status)) && timer) {
-          window.clearInterval(timer);
-        }
+        if (!result.runs.every(({ status }) => TERMINAL_STATUSES.has(status)))
+          schedule(Math.max(0, intervalMs - (performance.now() - startedAt)));
       } catch (error) {
-        if (active) {
-          if (timer) window.clearInterval(timer);
-          setBatchStatusError(readError(error));
-        }
+        if (active) setBatchStatusError(readError(error));
+      } finally {
+        polling = false;
       }
     };
-    timer = window.setInterval(() => void refresh(), 1500);
-    void refresh();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      if (polling || timer !== undefined) return;
+      void refresh();
+    };
+    if (!document.hidden) void refresh();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       active = false;
-      if (timer) window.clearInterval(timer);
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [batchRetry, trackedRunIds]);
 

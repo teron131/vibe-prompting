@@ -139,10 +139,49 @@ export function TargetWorkspace({
 
   useEffect(() => {
     if (!run?.id || !running) return;
-    const timer = window.setInterval(() => {
-      void loadRun(run.id).catch((cause) => setError(readError(cause)));
-    }, 750);
-    return () => window.clearInterval(timer);
+    let active = true;
+    let polling = false;
+    let timer: number | undefined;
+    const intervalMs = 750;
+    const schedule = (delay = intervalMs) => {
+      if (!active || document.hidden) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        void poll();
+      }, delay);
+    };
+    const poll = async () => {
+      if (polling || document.hidden) return;
+      polling = true;
+      const startedAt = performance.now();
+      try {
+        const response = await loadRun(run.id);
+        if (active && response.active)
+          schedule(Math.max(0, intervalMs - (performance.now() - startedAt)));
+      } catch (cause) {
+        if (!active) return;
+        setError(readError(cause));
+        schedule(Math.max(0, intervalMs - (performance.now() - startedAt)));
+      } finally {
+        polling = false;
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      if (polling || timer !== undefined) return;
+      void poll();
+    };
+    schedule();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [loadRun, run?.id, running]);
 
   const messages = useMemo(() => projectTargetRunMessages(run, events), [events, run]);

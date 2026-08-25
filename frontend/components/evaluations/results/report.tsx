@@ -63,14 +63,49 @@ export function EvaluationReport({ runId }: { runId: string }) {
   }, [load]);
   useEffect(() => {
     if (run?.status !== "queued" && run?.status !== "running") return;
-    const timer = window.setInterval(() => {
-      void load()
-        .then((status) => {
-          if (status !== "queued" && status !== "running") window.clearInterval(timer);
-        })
-        .catch((cause) => setError(readError(cause)));
-    }, 1500);
-    return () => window.clearInterval(timer);
+    let active = true;
+    let polling = false;
+    let timer: number | undefined;
+    const intervalMs = 1500;
+    const schedule = (delay = intervalMs) => {
+      if (!active || document.hidden) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        void poll();
+      }, delay);
+    };
+    const poll = async () => {
+      if (polling || document.hidden) return;
+      polling = true;
+      const startedAt = performance.now();
+      try {
+        const status = await load();
+        if (active && (status === "queued" || status === "running"))
+          schedule(Math.max(0, intervalMs - (performance.now() - startedAt)));
+      } catch (cause) {
+        if (!active) return;
+        setError(readError(cause));
+        schedule(Math.max(0, intervalMs - (performance.now() - startedAt)));
+      } finally {
+        polling = false;
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      if (polling || timer !== undefined) return;
+      void poll();
+    };
+    schedule();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [load, run?.status]);
 
   const counts = new Map<string, number>();

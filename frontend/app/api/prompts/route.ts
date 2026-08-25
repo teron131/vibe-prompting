@@ -16,9 +16,7 @@ export async function GET() {
   try {
     await requireActiveSessionUser();
     const services = await getApplicationServices();
-    const prompts = (await services.prompts.listPrompts()).map(
-      ({ markdown: _markdown, ...prompt }) => prompt,
-    );
+    const prompts = await services.prompts.listPromptSummaries();
     return Response.json({ prompts } satisfies PromptsResponse, { headers: NO_STORE_HEADERS });
   } catch (error) {
     return promptErrorResponse(error);
