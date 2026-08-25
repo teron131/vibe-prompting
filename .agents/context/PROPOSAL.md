@@ -123,7 +123,7 @@ Hashline is only an addressing technique in this product. It does not justify a 
 
 - The TypeScript API is the direct in-process contract for application composition and external library use.
 - Fastify exposes trusted loopback HTTP and OpenAPI operations for prompt editing, configured models, durable Target Runs, durable evaluation runs and batches, Criterion, Criteria, paginated results, analytics, structured queries, and result exploration over the same systems.
-- MCP is a trusted loopback application adapter and may expose Prompt System, Target System, and Evaluation System operations without inventing separate semantics or hosting an independent editing implementation.
+- MCP is a trusted application adapter that exposes Prompt System, Target System, and Evaluation System operations without inventing separate semantics or hosting an independent editing implementation.
 - The built-in agent composes the same operations into natural-language workflows.
 - The Next.js browser authenticates through Google and application sessions, then provides a simple non-technical interface over those operations without becoming their owner.
 
@@ -147,7 +147,6 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 - `config/` owns validated runtime configuration and shared optional spend limits, while `settings/` owns shared user-editable persisted application settings with revision conflicts and contributor attribution.
 - `app/` owns Fastify, MCP, database setup, and application composition rather than domain rules.
 - `frontend/auth/`, `frontend/server/`, and `frontend/proxy.ts` own browser-session resolution, route protection, request validation, and safe transport errors, while the rest of `frontend/` owns browser interaction and presentation rather than backend behavior.
-- The standalone Agent Test Bench owns BuildingAI matrices, repeated experiments, profile fixtures, and its own inspection workflow; it is not application storage or runtime ownership.
 
 ## What Not to Build
 
@@ -163,7 +162,7 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 - Native or unrestricted host filesystem access for an agent.
 - A standalone CLI, MCP server, daemon, or filesystem emulation layer for editing one database-backed prompt.
 - Raw unified, V4A, or bespoke patch syntax when structured edit operations can express the same change directly.
-- A backend dependency on repo-local skills, the standalone bench, or BuildingAI configuration.
+- A backend dependency on repo-local skills, development-only task procedures, or an external agent application's configuration.
 - A multi-turn simulator when a complete history plus one generated next response is sufficient.
 
 ## Current Alignment
@@ -182,7 +181,6 @@ The built-in agent uses separate structured prompt editing, Target Run, evaluati
 
 The remaining gaps are narrower:
 
-- MCP currently exposes only stateless evaluation and should reach useful Prompt, Target, durable Evaluation, result, Criterion, and Criteria operations through the same application services.
 - Asynchronous execution is still owned by the current server process. Durable queue and terminal state are stored in PostgreSQL and startup reconciliation marks abandoned running work as interrupted, but durable resumption or a separate worker process is not yet implemented.
 - Persisted application runs currently construct the built-in prompt-linked AI SDK Target; durable execution of a caller-supplied opaque Target needs an explicit remote or callback boundary before it is warranted.
 - Target Profile revision management remains backend-only even though the active profile and pinned revision are visible in the direct-test workflow.
@@ -195,4 +193,6 @@ Treat authentication, membership, private chats, shared workspace attribution, a
 
 Continue the result-driven product loop: find and read an exact Prompt Revision, apply one atomic batch of hash-addressed structured edits, save one immutable revision, construct or receive a Target, preview and optionally start an evaluation batch, and inspect durable results and aggregates from any supported adapter.
 
-Prioritize meaningful agent workflow, prompt iteration, and evaluation improvements. Revisit the multi-user backbone only when a concrete feature exposes a missing authorization or ownership rule, and add durable worker ownership, MCP parity, broader presets, or Langfuse export only when observed usage earns them.
+Use real prompt and evaluation work through MCP as the primary improvement loop: complete the task, persist only reusable context, treat reproducible friction as product evidence, make a bounded change when the task earns it, and replay the same workflow to verify the improvement.
+
+Prioritize meaningful agent workflow, prompt iteration, and evaluation improvements. Revisit the multi-user backbone only when a concrete feature exposes a missing authorization or ownership rule, and add durable worker ownership, broader presets, or Langfuse export only when observed usage earns them.

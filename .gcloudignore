@@ -10,6 +10,3 @@ docs
 .pnpm-store
 **/.next
 **/node_modules
-agent-test-bench
-test_*.html
-test_*.ts

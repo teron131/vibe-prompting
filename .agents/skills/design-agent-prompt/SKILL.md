@@ -62,6 +62,6 @@ When the user is still deciding whether a prompt should change, report the findi
 
 ## Validate
 
-After drafting or materially changing a prompt, hand the prompt and the changed behavior to the repo-local `agent-test-bench` skill. That skill owns cases, repetitions, runner operation, trace inspection, and result reporting. Do not import or invoke the Prompting application backend for this workflow.
+After drafting or materially changing a prompt, use the repo-local `task-driven-app-improvement` skill to exercise the changed behavior through the application's MCP-backed Prompt, Target Run, and Evaluation workflows. Start with one realistic task and explicit acceptance criteria, repeat only when model variability matters, and keep the saved Prompt Revision, Target Run, and Evaluation Run as the durable evidence when the task warrants them.
 
-Use the returned evidence to decide whether another prompt edit is warranted. Before editing again, determine whether the problem belongs to the prompt, model, runtime, tool, source data, or test case. Do not add prompt text to compensate for a runtime, tool, data, or test-case failure.
+Use the resulting evidence to decide whether another prompt edit is warranted. Before editing again, determine whether the problem belongs to the prompt, model, runtime, tool, source data, or task design. Do not add prompt text to compensate for a runtime, tool, data, or task failure.
