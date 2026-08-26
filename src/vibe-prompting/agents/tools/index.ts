@@ -13,6 +13,7 @@ export { PromptLibraryToolkit } from "./prompt-library.ts";
 export { CriteriaLibraryToolkit } from "./criteria-library.ts";
 export { EvaluationRunsToolkit } from "./evaluation-runs.ts";
 export { EvaluationResultsToolkit } from "./evaluation-search.ts";
+export { ScenarioRunsToolkit } from "./scenario-runs.ts";
 export { TargetRunsToolkit } from "./target-runs.ts";
 export { createExaSearchTool } from "./exa.ts";
 export { createPromptWorkspace, createScopedFsTools, type PromptWorkspace } from "./scoped-fs.ts";

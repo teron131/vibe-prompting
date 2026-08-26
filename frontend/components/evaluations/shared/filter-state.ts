@@ -12,7 +12,7 @@ export function parseEvaluationFilters(search: string): EvaluationWorkspaceFilte
     criterion: params.get("criterion") ?? undefined,
     dataType: (params.get("dataType") as EvaluationDataType | null) ?? undefined,
     from: params.get("from") ?? undefined,
-    judgeModelIds: repeated(params, "judgeModelId"),
+    judgeModels: repeated(params, "judgeModel"),
     promptId: params.get("promptId") ?? undefined,
     promptRevisionId: params.get("promptRevisionId") ?? undefined,
     runId: params.get("runId") ?? undefined,
@@ -20,7 +20,7 @@ export function parseEvaluationFilters(search: string): EvaluationWorkspaceFilte
     searchField:
       (params.get("searchField") as EvaluationWorkspaceFilters["searchField"] | null) ?? undefined,
     status: (params.get("status") as EvaluationRunStatus | null) ?? undefined,
-    targetModelIds: repeated(params, "targetModelId"),
+    targetModels: repeated(params, "targetModel"),
     to: params.get("to") ?? undefined,
   };
 }
@@ -29,8 +29,8 @@ export function evaluationFilterParams(filters: EvaluationWorkspaceFilters): URL
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
     if (!value) continue;
-    if (key === "targetModelIds" || key === "judgeModelIds") {
-      const parameter = key === "targetModelIds" ? "targetModelId" : "judgeModelId";
+    if (key === "targetModels" || key === "judgeModels") {
+      const parameter = key === "targetModels" ? "targetModel" : "judgeModel";
       for (const item of value as string[]) params.append(parameter, item);
       continue;
     }

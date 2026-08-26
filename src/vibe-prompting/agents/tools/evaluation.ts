@@ -20,14 +20,14 @@ const batchConfigurationSchema = z.object({
 const evaluationSchema = z.object({
   promptId: z.uuid().describe("Saved prompt ID."),
   promptRevisionId: z.uuid().describe("Exact prompt revision ID to evaluate."),
-  targetModelId: z.string().trim().min(1).describe("Configured target model ID or display label."),
-  targetModelIds: z
+  targetModel: z.string().trim().min(1).describe("Configured target model ID or display label."),
+  targetModels: z
     .array(z.string().trim().min(1).describe("Configured target model ID or display label."))
     .min(1)
     .max(6)
     .optional()
     .describe("Target models used for matrix execution."),
-  judges: z
+  judgeModels: z
     .array(z.string().trim().min(1).describe("Configured judge model ID or display label."))
     .min(1)
     .max(3)
@@ -64,9 +64,9 @@ export function createEvaluationTool(
       {
         promptId,
         promptRevisionId,
-        targetModelId,
-        targetModelIds,
-        judges,
+        targetModel,
+        targetModels,
+        judgeModels,
         batchConfigurations,
         cases,
         repetitions,
@@ -75,7 +75,7 @@ export function createEvaluationTool(
     ) {
       const { actorUserId, chatId } = requireAgentActor(context);
       const models = await loadModels();
-      if (batchConfigurations || targetModelIds || repetitions) {
+      if (batchConfigurations || targetModels || repetitions) {
         const inheritedCriteria = cases[0]?.criteria ?? [];
         if (
           !batchConfigurations &&
@@ -90,10 +90,10 @@ export function createEvaluationTool(
         const batchInput = {
           promptId,
           promptRevisionId,
-          targetModelIds: (targetModelIds ?? [targetModelId]).map((model) =>
+          targetModels: (targetModels ?? [targetModel]).map((model) =>
             resolveConfiguredModelId(model, models),
           ),
-          judges: judges.map((judge) => resolveConfiguredModelId(judge, models)),
+          judgeModels: judgeModels.map((judge) => resolveConfiguredModelId(judge, models)),
           configurations: (
             batchConfigurations ?? [{ name: "Default", criteria: inheritedCriteria }]
           ).map((configuration, index) => ({
@@ -122,8 +122,8 @@ export function createEvaluationTool(
         {
           promptId,
           promptRevisionId,
-          targetModelId: resolveConfiguredModelId(targetModelId, models),
-          judges: judges.map((judge) => resolveConfiguredModelId(judge, models)),
+          targetModel: resolveConfiguredModelId(targetModel, models),
+          judgeModels: judgeModels.map((judge) => resolveConfiguredModelId(judge, models)),
           cases: cases.map((testCase) => ({
             input: testCase.input,
             criteria: testCase.criteria,

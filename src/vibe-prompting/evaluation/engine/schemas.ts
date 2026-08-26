@@ -148,24 +148,20 @@ const evaluationResultSchema = z.discriminatedUnion("dataType", [
   }),
 ]);
 
-export const evaluationReportSchema = z.object({
-  results: z.array(evaluationResultSchema).min(1),
-});
+export const evaluationResultsSchema = z.array(evaluationResultSchema).min(1);
 
 export type EvaluationCriterion = z.infer<typeof criterionSchema>;
 export type EvaluationCriteria = z.infer<typeof evaluationCriteriaSchema>;
-export type EvaluationReport = z.infer<typeof evaluationReportSchema>;
+export type EvaluationResults = z.infer<typeof evaluationResultsSchema>;
 
-export type EvaluationResponse = {
-  results: Record<
-    string,
-    {
-      value: boolean | number | string;
-      comment: string;
-      evidence: string[];
-    }
-  >;
-};
+export type EvaluationResponse = Record<
+  string,
+  {
+    value: boolean | number | string;
+    comment: string;
+    evidence: string[];
+  }
+>;
 
 /** Builds a strict object-shaped response contract because provider structured outputs reject unions inside arrays. */
 export function createEvaluationResponseSchema(
@@ -184,20 +180,20 @@ export function createEvaluationResponseSchema(
         .describe(`${criterion.name}: ${criterion.instruction}`),
     ]),
   );
-  return z.object({ results: z.object(resultShape) }) as z.ZodType<EvaluationResponse>;
+  return z.object(resultShape) as z.ZodType<EvaluationResponse>;
 }
 
 export function projectEvaluationResponse(
   response: EvaluationResponse,
   criteria: EvaluationCriteria,
-): EvaluationReport {
-  return evaluationReportSchema.parse({
-    results: criteria.map((criterion) => ({
-      ...response.results[criterion.name],
+): EvaluationResults {
+  return evaluationResultsSchema.parse(
+    criteria.map((criterion) => ({
+      ...response[criterion.name],
       dataType: criterion.dataType,
       name: criterion.name,
     })),
-  });
+  );
 }
 
 function criterionValueSchema(criterion: EvaluationCriterion): z.ZodType {

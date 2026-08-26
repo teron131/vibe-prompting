@@ -39,7 +39,7 @@ export type TargetRunSummary = {
   targetProfileName: string;
   targetProfileRevisionId: string;
   targetConfiguration: Record<string, unknown>;
-  targetModelId: string;
+  targetModel: string;
   reasoningEffort: TargetReasoningEffort;
   source: TargetRunSource;
   startedByName: string | null;
@@ -70,7 +70,7 @@ export const targetRunCreateInputSchema = z.object({
   promptId: z.uuid(),
   promptRevisionId: z.uuid(),
   reasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).default("medium"),
-  targetModelId: z.string().trim().min(1),
+  targetModel: z.string().trim().min(1),
 });
 
 export const targetRunTurnInputSchema = z.object({ instruction: z.string().trim().min(1) });

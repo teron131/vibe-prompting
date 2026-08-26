@@ -19,7 +19,7 @@ export async function GET(request: Request) {
       cursor: optional(params, "cursor"),
       dataType: optional(params, "dataType"),
       from: optional(params, "from"),
-      judgeModelIds: repeated(params, "judgeModelId"),
+      judgeModels: repeated(params, "judgeModel"),
       limit: optional(params, "limit"),
       promptId: optional(params, "promptId"),
       promptRevisionId: optional(params, "promptRevisionId"),
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
       search: optional(params, "search") ?? optional(params, "q"),
       searchField: optional(params, "searchField"),
       status: optional(params, "status"),
-      targetModelIds: repeated(params, "targetModelId"),
+      targetModels: repeated(params, "targetModel"),
       to: optional(params, "to"),
     });
     return Response.json(response satisfies EvaluationResultsResponse, {

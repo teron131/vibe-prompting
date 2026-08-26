@@ -11,13 +11,7 @@ import {
 } from "../../clients/langfuse.ts";
 import { targetSchema } from "../../target/api.ts";
 import { LangfuseExperimentRunner } from "../experiments.ts";
-import {
-  getJudgeModels,
-  type JudgeEvaluation,
-  type Judges,
-  judgesGraph,
-  judgesSchema,
-} from "./evaluators.ts";
+import { type JudgeEvaluation, judgeModelsSchema, judgesGraph } from "./evaluators.ts";
 import {
   evaluationCriteriaSchema,
   evaluationSubjectSchema,
@@ -50,7 +44,7 @@ const EvaluatorInput = new StateSchema({
   target: targetSchema.optional(),
   targetModel: z.string().trim().min(1),
   cases: z.array(evaluatorCaseSchema).min(1),
-  judges: judgesSchema,
+  judgeModels: judgeModelsSchema,
   skipTargetModel: z.boolean().default(false),
   maxConcurrency: z.number().int().positive().optional(),
   runName: z.string().trim().min(1).optional(),
@@ -64,7 +58,7 @@ const EvaluatorOutput = new StateSchema({
 
 const EvaluatorState = new StateSchema({
   ...EvaluatorInput.fields,
-  resolvedJudges: judgesSchema.optional(),
+  resolvedJudgeModels: judgeModelsSchema.optional(),
   caseOffset: z.number().int().nonnegative().default(0),
   caseResults: new ReducedValue(
     z.array(indexedCaseResultSchema).default(() => []),
@@ -81,15 +75,15 @@ let defaultRunner: LangfuseExperimentRunner | undefined;
 
 const prepareEvaluation: typeof EvaluatorState.Node = (state) => {
   const judgeModels = state.skipTargetModel
-    ? getJudgeModels(state.judges).filter((model) => model !== state.targetModel)
-    : getJudgeModels(state.judges);
+    ? state.judgeModels.filter((judge) => judge !== state.targetModel)
+    : state.judgeModels;
   if (judgeModels.length === 0) {
     throw new Error("No judge models remain after skipping the Target model.");
   }
 
   const langfuseConfig = loadOptionalLangfuseConfig();
   if (langfuseConfig) getDefaultRunner(langfuseConfig).startTracing();
-  return { resolvedJudges: { model: judgeModels } };
+  return { resolvedJudgeModels: judgeModels };
 };
 
 function getDefaultRunner(config: LangfuseConfig): LangfuseExperimentRunner {
@@ -101,7 +95,7 @@ function getDefaultRunner(config: LangfuseConfig): LangfuseExperimentRunner {
 }
 
 function dispatchCaseBatch(state: EvaluatorStateValue): Send[] {
-  const judges = requireResolvedJudges(state.resolvedJudges);
+  const judgeModels = requireResolvedJudgeModels(state.resolvedJudgeModels);
   const batchEnd = Math.min(
     state.caseOffset + (state.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY),
     state.cases.length,
@@ -116,7 +110,7 @@ function dispatchCaseBatch(state: EvaluatorStateValue): Send[] {
         expectedOutput: testCase.expectedOutput,
         metadata: testCase.metadata,
         criteria: testCase.criteria,
-        judges,
+        judgeModels,
       }),
   );
 }
@@ -168,7 +162,7 @@ const EvaluationCaseInput = new StateSchema({
   expectedOutput: z.unknown().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   criteria: evaluationCriteriaSchema,
-  judges: judgesSchema,
+  judgeModels: judgeModelsSchema,
   output: z.unknown().optional(),
 });
 
@@ -240,8 +234,8 @@ const evaluationCaseGraph = new StateGraph({
   .compile();
 
 function toEvaluatorScores(evaluations: JudgeEvaluation[]): EvaluatorScore[] {
-  return evaluations.flatMap(({ model, report }) =>
-    report.results.map((result) => ({
+  return evaluations.flatMap(({ model, results }) =>
+    results.map((result) => ({
       criterionName: result.name,
       dataType: result.dataType,
       value: result.value,
@@ -252,9 +246,9 @@ function toEvaluatorScores(evaluations: JudgeEvaluation[]): EvaluatorScore[] {
   );
 }
 
-function requireResolvedJudges(judges: Judges | undefined): Judges {
-  if (!judges) throw new Error("Evaluation judges were not prepared.");
-  return judges;
+function requireResolvedJudgeModels(judgeModels: string[] | undefined): string[] {
+  if (!judgeModels) throw new Error("Evaluation judge models were not prepared.");
+  return judgeModels;
 }
 
 function requireEvaluationSubject(

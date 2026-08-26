@@ -37,6 +37,7 @@ import {
   type NormalizedFilters,
   normalizeFilters,
   parseQueryInput,
+  projectEvaluationQueryFilters,
   projectFilters,
   type ResultFilters,
   type ResultListItem,
@@ -153,7 +154,7 @@ export class EvaluationResults {
       evaluationStructuredQuerySchema,
       rawQuery,
     ) as EvaluationStructuredQuery;
-    const appliedFilters = query.filters ?? {};
+    const appliedFilters = projectEvaluationQueryFilters(query);
     if (query.operation === "count") {
       const analytics = await this.getAnalytics(appliedFilters);
       const value = analytics.totals[query.entity];
@@ -221,11 +222,11 @@ export class EvaluationResults {
           ...filters,
           caseIds: null,
           dataType: null,
-          judgeModelIds: null,
+          judgeModels: null,
           promptId: null,
           promptRevisionId: null,
           status: null,
-          targetModelIds: null,
+          targetModels: null,
         },
         filters.searchField,
       ),
@@ -258,7 +259,7 @@ function buildQueryResponse(
   for (const [key, filter] of Object.entries(appliedFilters)) {
     if (!filter) continue;
     if (Array.isArray(filter)) {
-      const parameter = key === "targetModelIds" ? "targetModelId" : "judgeModelId";
+      const parameter = key === "targetModels" ? "targetModel" : "judgeModel";
       for (const item of filter) search.append(parameter, item);
       continue;
     }

@@ -26,10 +26,10 @@ export type EvaluationRunSummary = {
   targetProfileId: string | null;
   targetProfileName: string | null;
   targetProfileRevisionId: string | null;
-  targetModelId: string;
+  targetModel: string;
   targetRunId: string | null;
   targetRunTurnId: string | null;
-  judgeModelIds: string[];
+  judgeModels: string[];
   caseCount: number;
   configurationFingerprint: string;
   effectiveInstructionsHash: string | null;
@@ -48,7 +48,7 @@ export type EvaluationScore = {
   criterionPosition: number;
   criterion: Criterion;
   dataType: "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
-  judgeModelId: string;
+  judgeModel: string;
   value: boolean | number | string;
   comment: string;
   evidence: string[];
@@ -78,8 +78,8 @@ export type EvaluationBatchConfiguration = {
 export type EvaluationBatchRequest = {
   promptId: string;
   promptRevisionId: string;
-  targetModelIds: string[];
-  judges: string[];
+  targetModels: string[];
+  judgeModels: string[];
   configurations: EvaluationBatchConfiguration[];
   cases: Array<{ input: string }>;
   repetitions: number;
@@ -91,7 +91,7 @@ export type EvaluationBatchJob = {
   executionNumber: number;
   configurationId: string;
   configurationName: string;
-  targetModelId: string;
+  targetModel: string;
   repetition: number;
   caseCount: number;
   judgeScoreDecisions: number;

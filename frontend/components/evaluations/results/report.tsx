@@ -122,10 +122,10 @@ export function EvaluationReport({ runId }: { runId: string }) {
         body: JSON.stringify({
           cases: run.cases.map(({ criteria, input }) => ({ criteria, input })),
           isSyntheticExample: run.isSyntheticExample,
-          judges: run.judgeModelIds,
+          judgeModels: run.judgeModels,
           promptId: run.promptId,
           promptRevisionId: prompt.prompt.activeRevisionId,
-          targetModelId: run.targetModelId,
+          targetModel: run.targetModel,
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -228,7 +228,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
             <span className="font-mono">{formatDateTime(run.completedAt ?? run.createdAt)}</span>
           </ProvenanceDatum>
           <ProvenanceDatum label="Target">
-            <ModelIdentityLabel labelClassName="font-mono" modelId={run.targetModelId} />
+            <ModelIdentityLabel labelClassName="font-mono" modelId={run.targetModel} />
           </ProvenanceDatum>
           <ProvenanceDatum label="Prompt Revision">
             <span className="font-mono" title={run.promptRevisionId}>
@@ -264,9 +264,9 @@ export function EvaluationReport({ runId }: { runId: string }) {
             </ProvenanceDatum>
           ) : null}
           <ProvenanceDatum label="Judges">
-            {run.judgeModelIds.length ? (
+            {run.judgeModels.length ? (
               <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
-                {run.judgeModelIds.map((modelId) => (
+                {run.judgeModels.map((modelId) => (
                   <ModelIdentityLabel labelClassName="font-mono" key={modelId} modelId={modelId} />
                 ))}
               </span>
@@ -417,8 +417,8 @@ function Results({ run, trend }: { run: EvaluationRun; trend: BooleanTrendPoint[
             Criterion Overview
           </h2>
           <span className="font-mono text-[11px] text-muted-foreground">
-            {run.caseCount} {run.caseCount === 1 ? "case" : "cases"} · {run.judgeModelIds.length}{" "}
-            {run.judgeModelIds.length === 1 ? "judge" : "judges"}
+            {run.caseCount} {run.caseCount === 1 ? "case" : "cases"} · {run.judgeModels.length}{" "}
+            {run.judgeModels.length === 1 ? "judge" : "judges"}
           </span>
         </div>
         <RunScoreOverview run={run} />
@@ -458,7 +458,7 @@ function Results({ run, trend }: { run: EvaluationRun; trend: BooleanTrendPoint[
               <div className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 Attributed Score Evidence
               </div>
-              <ScoreGrid judges={run.judgeModelIds} testCase={testCase} />
+              <ScoreGrid judgeModels={run.judgeModels} testCase={testCase} />
             </div>
           </article>
         ))}

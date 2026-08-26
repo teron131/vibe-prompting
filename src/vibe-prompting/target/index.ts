@@ -29,3 +29,13 @@ export {
   type TargetProfile,
 } from "./system.ts";
 export { targetConfigurationSchema, type TargetConfiguration } from "./configuration.ts";
+export {
+  MAX_SCENARIO_TURNS,
+  scenarioRunCreateInputSchema,
+  type ScenarioEvaluation,
+  type ScenarioRun,
+  ScenarioRunNotFoundError,
+  ScenarioRunRequestError,
+  type ScenarioRunResponse,
+  ScenarioRuns,
+} from "./scenarios/index.ts";

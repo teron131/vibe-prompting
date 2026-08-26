@@ -163,6 +163,7 @@ export async function POST(request: Request) {
           evaluations: services.evaluations,
           evaluationResults: services.evaluationResults,
           targetRuns: services.targetRuns,
+          scenarios: services.scenarios,
           signal: claim?.signal,
           steering: claim?.steering,
         },
@@ -470,7 +471,7 @@ function formatTargetRunContext(
     },
     runtime: {
       effectiveInstructionsHash: run.effectiveInstructionsHash,
-      modelId: run.targetModelId,
+      modelId: run.targetModel,
       profileId: run.targetProfileId,
       profileName: run.targetProfileName,
       profileRevisionId: run.targetProfileRevisionId,

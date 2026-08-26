@@ -39,11 +39,11 @@ import {
 import { analyticsFilterParams, parseEvaluationFilters } from "../shared/filter-state";
 import { buildCriterionRows, type CriterionRow, formatDuration, formatPercent } from "./model";
 
-type ComparisonDimension = "promptRevisionId" | "targetModelId";
+type ComparisonDimension = "promptRevisionId" | "targetModel";
 
 const emptyFacets: EvaluationWorkspaceFacets = {
   dataTypes: [],
-  judges: [],
+  judgeModels: [],
   prompts: [],
   revisions: [],
   statuses: [],
@@ -89,8 +89,8 @@ export function EvaluationAnalyticsDashboard() {
         hasComparison && comparisonDimension
           ? fetchAnalytics({
               ...filters,
-              ...(comparisonDimension === "targetModelId"
-                ? { targetModelIds: [baselineValue] }
+              ...(comparisonDimension === "targetModel"
+                ? { targetModels: [baselineValue] }
                 : { promptRevisionId: baselineValue }),
             })
           : Promise.resolve(undefined);
@@ -98,8 +98,8 @@ export function EvaluationAnalyticsDashboard() {
         comparisonDimension && currentComparisonValue
           ? fetchAnalytics({
               ...filters,
-              ...(comparisonDimension === "targetModelId"
-                ? { targetModelIds: undefined }
+              ...(comparisonDimension === "targetModel"
+                ? { targetModels: undefined }
                 : { promptRevisionId: undefined }),
             })
           : Promise.resolve(undefined);
@@ -265,12 +265,12 @@ function AnalyticsFilters({
     [
       filters.promptId,
       filters.promptRevisionId,
-      filters.targetModelIds?.length,
-      filters.judgeModelIds?.length,
+      filters.targetModels?.length,
+      filters.judgeModels?.length,
       comparisonDimension,
     ].filter(Boolean).length;
   const baselineOptions =
-    comparisonDimension === "targetModelId"
+    comparisonDimension === "targetModel"
       ? comparisonFacets.targetModels.map(({ count, value }) => ({ count, label: value, value }))
       : comparisonDimension === "promptRevisionId"
         ? comparisonFacets.revisions.map(({ count, value }) => ({
@@ -325,9 +325,9 @@ function AnalyticsFilters({
           className="min-w-0 flex-1 basis-40"
           label="Target Model"
           onValuesChange={(values) =>
-            updateFilter("targetModelIds", values.length ? values : undefined)
+            updateFilter("targetModels", values.length ? values : undefined)
           }
-          values={filters.targetModelIds ?? []}
+          values={filters.targetModels ?? []}
         >
           {facets.targetModels.map((facet) => (
             <option key={facet.value} value={facet.value}>
@@ -340,11 +340,11 @@ function AnalyticsFilters({
           className="min-w-0 flex-1 basis-40"
           label="Judge"
           onValuesChange={(values) =>
-            updateFilter("judgeModelIds", values.length ? values : undefined)
+            updateFilter("judgeModels", values.length ? values : undefined)
           }
-          values={filters.judgeModelIds ?? []}
+          values={filters.judgeModels ?? []}
         >
-          {facets.judges.map((facet) => (
+          {facets.judgeModels.map((facet) => (
             <option key={facet.value} value={facet.value}>
               <ModelFacetLabel count={facet.count} modelId={facet.value} />
             </option>
@@ -407,7 +407,7 @@ function AnalyticsFilters({
           value={comparisonDimension ?? ""}
         >
           <option value="">No baseline</option>
-          <option value="targetModelId">Target model</option>
+          <option value="targetModel">Target model</option>
           <option value="promptRevisionId">Prompt revision</option>
         </FilterSelect>
         {comparisonDimension ? (
@@ -470,8 +470,8 @@ function currentComparison(
   filters: EvaluationWorkspaceFilters,
   dimension: ComparisonDimension | undefined,
 ): string | undefined {
-  if (dimension === "targetModelId") {
-    return filters.targetModelIds?.length === 1 ? filters.targetModelIds[0] : undefined;
+  if (dimension === "targetModel") {
+    return filters.targetModels?.length === 1 ? filters.targetModels[0] : undefined;
   }
   return dimension === "promptRevisionId" ? filters.promptRevisionId : undefined;
 }
@@ -486,7 +486,7 @@ function ModelFacetLabel({ count, modelId }: { count: number; modelId: string })
 }
 
 function comparisonLabel(dimension: ComparisonDimension): string {
-  return dimension === "targetModelId" ? "target model" : "prompt revision";
+  return dimension === "targetModel" ? "target model" : "prompt revision";
 }
 
 function DecisionStrip({
@@ -813,7 +813,7 @@ function readInitialState(): {
   return {
     baselineValue: params.get("baseline") ?? "",
     comparisonDimension:
-      compareBy === "promptRevisionId" || compareBy === "targetModelId" ? compareBy : undefined,
+      compareBy === "promptRevisionId" || compareBy === "targetModel" ? compareBy : undefined,
     filters: parseEvaluationFilters(window.location.search),
   };
 }

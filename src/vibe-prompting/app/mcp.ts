@@ -9,6 +9,7 @@ import {
   EvaluationResultsToolkit,
   EvaluationRunsToolkit,
   PromptLibraryToolkit,
+  ScenarioRunsToolkit,
   TargetRunsToolkit,
 } from "../agents/tools/index.ts";
 import {
@@ -35,6 +36,7 @@ export function createMcpServer(
     new CriteriaLibraryToolkit(services.criterion),
     new EvaluationRunsToolkit(services.evaluations, loadModelReferences),
     new EvaluationResultsToolkit(services.evaluationResults),
+    new ScenarioRunsToolkit(services.scenarios, loadModelReferences),
     new TargetRunsToolkit(services.targetRuns, loadModelReferences),
   ];
   for (const tool of AgentToolkit.compose(toolkits)) registerTool(server, services, tool);

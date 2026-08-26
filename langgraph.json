@@ -3,6 +3,7 @@
   "dependencies": ["."],
   "env": ".env",
   "graphs": {
-    "evaluator": "./src/vibe-prompting/evaluation/engine/graph.ts:evaluatorGraph"
+    "evaluator": "./src/vibe-prompting/evaluation/engine/graph.ts:evaluatorGraph",
+    "target": "./src/vibe-prompting/target/graph.ts:targetGraph"
   }
 }

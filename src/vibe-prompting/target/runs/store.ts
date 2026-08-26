@@ -27,7 +27,7 @@ type RunRow = {
   targetProfileName: string;
   targetProfileRevisionId: string;
   targetConfiguration: Record<string, unknown>;
-  targetModelId: string;
+  targetModel: string;
   reasoningEffort: TargetRunSummary["reasoningEffort"];
   source: TargetRunSource;
   startedByUserId: string;
@@ -62,7 +62,7 @@ export type TargetRunExecutionContext = {
   promptRevisionId: string;
   reasoningEffort: TargetRunSummary["reasoningEffort"];
   responseHistory: Array<{ input: string; responseMessages: ModelMessage[] }>;
-  targetModelId: string;
+  targetModel: string;
   targetProfileId: string;
   targetProfileRevisionId: string;
   turn: { createdAt: Date; id: string; input: string; position: number };
@@ -73,7 +73,7 @@ export type NewTargetRun = {
   promptRevisionId: string;
   targetProfileId: string;
   targetProfileRevisionId: string;
-  targetModelId: string;
+  targetModel: string;
   reasoningEffort: TargetRunSummary["reasoningEffort"];
   effectiveInstructionsHash: string;
   instruction: string;
@@ -123,7 +123,7 @@ export class TargetRunStore {
         )
         VALUES (
           ${runId}, ${input.promptId}, ${input.promptRevisionId}, ${input.targetProfileId},
-          ${input.targetProfileRevisionId}, ${input.targetModelId},
+          ${input.targetProfileRevisionId}, ${input.targetModel},
           ${input.reasoningEffort}, ${input.effectiveInstructionsHash}, ${input.source}, ${input.chatId},
           ${input.startedByUserId}
         )
@@ -254,7 +254,7 @@ export class TargetRunStore {
         promptRevisionId: row.promptRevisionId,
         reasoningEffort: row.reasoningEffort,
         responseHistory,
-        targetModelId: row.targetModelId,
+        targetModel: row.targetModel,
         targetProfileId: row.targetProfileId,
         targetProfileRevisionId: row.targetProfileRevisionId,
         turn: {
@@ -310,7 +310,7 @@ function runProjection(sql: DatabaseClient) {
       target_runs.prompt_revision_id,
       target_runs.target_profile_id,
       target_runs.target_profile_revision_id,
-      target_runs.target_model_id,
+      target_runs.target_model_id AS target_model,
       target_runs.reasoning_effort,
       target_runs.effective_instructions_hash,
       target_runs.source,
@@ -390,7 +390,7 @@ function projectRunSummary(row: RunRow, viewerUserId: string): TargetRunSummary 
     source: row.source,
     startedByName: row.startedByName,
     targetConfiguration: row.targetConfiguration,
-    targetModelId: row.targetModelId,
+    targetModel: row.targetModel,
     targetProfileId: row.targetProfileId,
     targetProfileName: row.targetProfileName,
     targetProfileRevisionId: row.targetProfileRevisionId,

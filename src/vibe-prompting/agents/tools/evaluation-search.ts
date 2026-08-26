@@ -79,7 +79,7 @@ function filterParams(filters: ResultFilters): URLSearchParams {
   for (const [key, value] of Object.entries(filters)) {
     if (!value) continue;
     if (Array.isArray(value)) {
-      const parameter = key === "targetModelIds" ? "targetModelId" : "judgeModelId";
+      const parameter = key === "targetModels" ? "targetModel" : "judgeModel";
       for (const item of value) search.append(parameter, item);
       continue;
     }

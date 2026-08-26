@@ -23,7 +23,7 @@ export type EvaluationExplorerResponse = EvaluationQueryResponse & {
 const SYSTEM_PROMPT = `Translate one evaluation-data question into exactly one safe structured query.
 The database contains immutable runs, their cases, and typed score facts.
 Use count for totals, keyword_count only for case-level phrase totals, group_count for breakdowns, and average only for numeric scores.
-When the user asks how many runs or scores mention a phrase, use count with the requested entity and put the phrase and field in filters.search and filters.searchField.
+When the user asks how many runs or scores mention a phrase, use count with the requested entity and put the phrase and field in search and searchField.
 Keyword fields are input, output, comment, evidence, or all.
 Available grouping fields are dataType, judge, prompt, revision, status, and targetModel; numeric averages may group by criterion, judge, prompt, revision, or targetModel.
 Preserve explicit filters for run, prompt, revision, target model, judge, status, score data type, and date range when they are present.
@@ -31,8 +31,8 @@ Never invent identifiers, SQL, fields, operations, joins, or write actions.
 When a question cannot be represented exactly, choose the closest conservative read query instead of broadening its scope.
 Return one JSON object and no Markdown.
 The discriminator property must be named operation, never metric, action, or type.
-Valid shapes are {"operation":"count","entity":"runs","filters":{"search":"evidence","searchField":"all"}}, {"operation":"keyword_count","field":"all","keyword":"evidence","filters":{}}, {"operation":"group_count","groupBy":"status","limit":20,"filters":{}}, and {"operation":"average","groupBy":"criterion","limit":20,"filters":{}}.
-Omit filters, groupBy, field, and limit when they are not needed.`;
+Valid shapes are {"operation":"count","entity":"runs","search":"evidence","searchField":"all"}, {"operation":"keyword_count","field":"all","keyword":"evidence"}, {"operation":"group_count","groupBy":"status","limit":20}, and {"operation":"average","groupBy":"criterion","limit":20}.
+Omit optional filter fields, groupBy, field, and limit when they are not needed.`;
 
 /** Uses the configured low-effort helper model to turn one question into a read-only result query. */
 export async function exploreEvaluations(

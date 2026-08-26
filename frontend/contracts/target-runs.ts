@@ -38,7 +38,7 @@ export type TargetRunSummary = {
   targetProfileName: string;
   targetProfileRevisionId: string;
   targetConfiguration: Record<string, unknown>;
-  targetModelId: string;
+  targetModel: string;
   reasoningEffort: TargetReasoningEffort;
   source: "ai" | "human";
   startedByName: string | null;

@@ -92,7 +92,7 @@ export function TargetWorkspace({
       setEvents(response.events);
       setError(response.events.find((event) => event.type === "error")?.message);
       onPromptResolved(response.run.promptId);
-      onModelChange(response.run.targetModelId);
+      onModelChange(response.run.targetModel);
       onReasoningEffortChange(response.run.reasoningEffort);
       return response;
     },
@@ -209,7 +209,7 @@ export function TargetWorkspace({
               promptId: activePrompt.id,
               promptRevisionId: activePrompt.revisionId,
               reasoningEffort,
-              targetModelId: selectedModelId,
+              targetModel: selectedModelId,
             }),
             headers: { "content-type": "application/json" },
             method: "POST",
@@ -343,7 +343,7 @@ export function TargetWorkspace({
                   disabled={running && index === messages.length - 1}
                   key={message.id}
                   message={message}
-                  modelId={run?.targetModelId ?? selectedModelId}
+                  modelId={run?.targetModel ?? selectedModelId}
                   onPromptReference={() => undefined}
                   streaming={
                     running && index === messages.length - 1 && message.role === "assistant"
@@ -383,7 +383,7 @@ export function TargetWorkspace({
             quotes={[]}
             reasoningEffort={run?.reasoningEffort ?? reasoningEffort}
             running={running}
-            selectedModelId={run?.targetModelId ?? selectedModelId}
+            selectedModelId={run?.targetModel ?? selectedModelId}
             targetModelLocked={Boolean(run)}
             telemetrySummary={telemetrySummary}
             variant="target"

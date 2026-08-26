@@ -15,6 +15,11 @@ const MIGRATIONS = [
       readFile(new URL("../../../migrations/007_model_price_cache.sql", import.meta.url), "utf8"),
     version: 7,
   },
+  {
+    load: () =>
+      readFile(new URL("../../../migrations/008_scenario_runs.sql", import.meta.url), "utf8"),
+    version: 8,
+  },
 ];
 
 export async function applyMigrations(database: postgres.Sql): Promise<void> {

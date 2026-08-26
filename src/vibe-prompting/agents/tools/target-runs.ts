@@ -9,7 +9,7 @@ import { type ConfiguredModelReference, resolveConfiguredModelId } from "./evalu
 const startSchema = z.object({
   promptId: z.uuid().describe("Saved prompt ID."),
   promptRevisionId: z.uuid().describe("Exact prompt revision ID to run."),
-  targetModelId: z.string().trim().min(1).describe("Configured target model ID or display label."),
+  targetModel: z.string().trim().min(1).describe("Configured target model ID or display label."),
   instruction: z.string().trim().min(1).describe("Initial user turn sent to the Target."),
 });
 
@@ -39,7 +39,7 @@ export class TargetRunsToolkit extends AgentToolkit {
             actorUserId,
             {
               ...input,
-              targetModelId: resolveConfiguredModelId(input.targetModelId, await loadModels()),
+              targetModel: resolveConfiguredModelId(input.targetModel, await loadModels()),
             },
             chatId,
           );

@@ -1,4 +1,4 @@
-/** Owns the human batch-run setup experience while delegating matrix expansion and execution accounting to the evaluation API. */
+/** Owns the human Scenario-run setup experience while delegating workflow execution and evaluation handoff to the Scenario API. */
 
 "use client";
 
@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
@@ -31,14 +31,13 @@ import type {
   Criteria,
   CriteriaListResponse,
   EvaluationBatchConfiguration,
-  EvaluationBatchPreview,
-  EvaluationBatchRequest,
-  EvaluationBatchStart,
-  EvaluationBatchStatus,
-  EvaluationRunStatus,
-  EvaluationRunSummary,
 } from "@/contracts/evaluations";
 import type { PromptsResponse, PromptSummary } from "@/contracts/prompts";
+import {
+  isScenarioActive,
+  isScenarioEvaluationActive,
+  type ScenarioRunResponse,
+} from "@/contracts/scenario-runs";
 import type { TargetProfile, TargetProfileResponse } from "@/contracts/targets";
 import { createApiRequester, createErrorReader } from "@/shared/api";
 
@@ -47,36 +46,41 @@ const RecordedEvaluationBuilder = dynamic(() =>
 );
 
 type SavedConfiguration = {
-  cases: string[];
-  configurationIds: string[];
-  judges: string[];
   name: string;
+  targetModels: string[];
+  judgeModels: string[];
+  configurationIds: string[];
+  scenarioMode: ScenarioMode;
+  scenarios: ScenarioDraft[];
+  driverModel: string;
   repetitions: number;
-  targetModelIds: string[];
 };
 
 type LastRunConfiguration = Omit<SavedConfiguration, "name"> & { promptId: string };
 
-type TrackedBatch = {
-  request: EvaluationBatchRequest;
+type ScenarioMode = "generative" | "static";
+
+type ScenarioDraft = {
+  instruction: string;
+  maxTurns: number;
+  messages: string[];
+};
+
+type TrackedScenarioBatch = {
+  signature: string;
   runIds: string[];
 };
 
-const STORAGE_KEY = "vibe-prompting.evaluation-configurations.v1";
-const LAST_RUN_STORAGE_KEY = "vibe-prompting.evaluation-run.v1";
-const TRACKED_BATCH_STORAGE_KEY = "vibe-prompting.evaluation-batch.v1";
-const TERMINAL_STATUSES = new Set<EvaluationRunStatus>([
-  "completed",
-  "failed",
-  "cancelled",
-  "interrupted",
-]);
+const STORAGE_KEY = "vibe-prompting.scenario-configurations.v4";
+const LAST_RUN_STORAGE_KEY = "vibe-prompting.scenario-run.v4";
+const TRACKED_SCENARIO_STORAGE_KEY = "vibe-prompting.scenario-batch.v1";
 const evaluationApi = createApiRequester({}, (status) => `Request failed with ${status}.`);
 const readError = createErrorReader("The evaluation request failed.");
 const MANIFEST_MIN_WIDTH = 256;
 const MANIFEST_MAX_WIDTH = 560;
 const RUN_FORM_MIN_WIDTH = 440;
-const MAX_CASES = 10;
+const MAX_SCENARIOS = 10;
+const DEFAULT_SCENARIO: ScenarioDraft = { instruction: "", maxTurns: 5, messages: [""] };
 
 export function EvaluationRunBuilder({
   targetRunId,
@@ -90,50 +94,37 @@ export function EvaluationRunBuilder({
       <RecordedEvaluationBuilder targetRunId={targetRunId} targetRunTurnId={targetRunTurnId} />
     );
   }
-  return <EvaluationBatchRunBuilder />;
+  return <EvaluationScenarioRunBuilder />;
 }
 
-function EvaluationBatchRunBuilder() {
+function EvaluationScenarioRunBuilder() {
   const [prompts, setPrompts] = useState<PromptSummary[]>([]);
   const [models, setModels] = useState<ConfiguredModel[]>([]);
   const [criteria, setCriteria] = useState<Criteria[]>([]);
   const [promptId, setPromptId] = useState("");
   const [targetProfile, setTargetProfile] = useState<TargetProfile | null>();
-  const [targetModelIds, setTargetModelIds] = useState<string[]>([]);
-  const [judges, setJudges] = useState<string[]>([]);
+  const [targetModels, setTargetModels] = useState<string[]>([]);
+  const [judgeModels, setJudgeModels] = useState<string[]>([]);
   const [configurationIds, setConfigurationIds] = useState<string[]>([]);
   const [repetitions, setRepetitions] = useState(3);
-  const [cases, setCases] = useState<string[]>([""]);
-  const [preview, setPreview] = useState<EvaluationBatchPreview | null>(null);
-  const [previewing, setPreviewing] = useState(false);
+  const [scenarioMode, setScenarioMode] = useState<ScenarioMode>("static");
+  const [scenarios, setScenarios] = useState<ScenarioDraft[]>([createScenarioDraft()]);
+  const [driverModel, setDriverModel] = useState("");
   const [running, setRunning] = useState(false);
-  const [startedRuns, setStartedRuns] = useState<EvaluationRunSummary[]>([]);
   const [savedConfigurations, setSavedConfigurations] = useState<SavedConfiguration[]>([]);
   const [savedName, setSavedName] = useState("");
   const [runStateReady, setRunStateReady] = useState(false);
-  const [trackedBatch, setTrackedBatch] = useState<TrackedBatch | null>(null);
-  const [batchStatusError, setBatchStatusError] = useState<string>();
-  const [batchRetry, setBatchRetry] = useState(0);
+  const [trackedScenarioBatch, setTrackedScenarioBatch] = useState<TrackedScenarioBatch | null>(
+    null,
+  );
+  const [startedScenarios, setStartedScenarios] = useState<ScenarioRunResponse[]>([]);
+  const [scenarioStatusError, setScenarioStatusError] = useState<string>();
+  const [scenarioRetry, setScenarioRetry] = useState(0);
   const [manifestWidth, setManifestWidth] = useState<number>();
   const workspaceRef = useRef<HTMLDivElement>(null);
   const manifestRef = useRef<HTMLElement>(null);
-  const trackedRunIds = trackedBatch?.runIds.join(",") ?? "";
+  const trackedScenarioIds = trackedScenarioBatch?.runIds.join(",") ?? "";
   const selectedPrompt = prompts.find(({ id }) => id === promptId);
-  const request = useMemo(
-    () =>
-      selectedPrompt
-        ? buildRequest({
-            cases,
-            configurationIds,
-            judges,
-            criteria,
-            prompt: selectedPrompt,
-            repetitions,
-            targetModelIds,
-          })
-        : null,
-    [cases, configurationIds, criteria, judges, repetitions, selectedPrompt, targetModelIds],
-  );
 
   useEffect(() => {
     Promise.all([
@@ -143,7 +134,7 @@ function EvaluationBatchRunBuilder() {
     ])
       .then(([config, promptData, criteriaData]) => {
         const lastRun = readLastRunConfiguration();
-        const lastBatch = readTrackedBatch();
+        const lastScenarioBatch = readTrackedScenarioBatch();
         setModels(config.models);
         setCriteria(criteriaData.criteria);
         setPrompts(promptData.prompts);
@@ -152,14 +143,18 @@ function EvaluationBatchRunBuilder() {
             ? lastRun.promptId
             : "",
         );
-        setTargetModelIds(restoreSelection(lastRun?.targetModelIds, config.models, []));
-        setJudges(restoreSelection(lastRun?.judges, config.models, []));
+        setTargetModels(restoreSelection(lastRun?.targetModels, config.models, []));
+        setJudgeModels(restoreSelection(lastRun?.judgeModels, config.models, []));
         setConfigurationIds(restoreSelection(lastRun?.configurationIds, criteriaData.criteria, []));
         if (lastRun) {
-          setCases(normalizeCases(lastRun.cases));
+          setScenarioMode(lastRun.scenarioMode);
+          setDriverModel(
+            config.models.some(({ id }) => id === lastRun.driverModel) ? lastRun.driverModel : "",
+          );
           setRepetitions(lastRun.repetitions);
+          setScenarios(normalizeScenarios(lastRun.scenarios, lastRun.scenarioMode));
         }
-        if (lastBatch) setTrackedBatch(lastBatch);
+        if (lastScenarioBatch) setTrackedScenarioBatch(lastScenarioBatch);
         setRunStateReady(true);
       })
       .catch((error) => toast.error(readError(error)));
@@ -169,15 +164,29 @@ function EvaluationBatchRunBuilder() {
   useEffect(() => {
     if (!runStateReady) return;
     const lastRun: LastRunConfiguration = {
-      cases: cases.filter((value) => value.trim()).slice(0, MAX_CASES),
-      configurationIds,
-      judges,
       promptId,
+      targetModels,
+      judgeModels,
+      configurationIds,
+      scenarioMode,
+      scenarios: scenarios
+        .filter((scenario) => hasScenarioContent(scenario, scenarioMode))
+        .slice(0, MAX_SCENARIOS),
+      driverModel,
       repetitions,
-      targetModelIds,
     };
     window.localStorage.setItem(LAST_RUN_STORAGE_KEY, JSON.stringify(lastRun));
-  }, [cases, configurationIds, judges, promptId, repetitions, runStateReady, targetModelIds]);
+  }, [
+    configurationIds,
+    driverModel,
+    judgeModels,
+    promptId,
+    repetitions,
+    runStateReady,
+    scenarioMode,
+    scenarios,
+    targetModels,
+  ]);
 
   useEffect(() => {
     if (!promptId) return setTargetProfile(undefined);
@@ -197,56 +206,17 @@ function EvaluationBatchRunBuilder() {
   }, [promptId]);
 
   useEffect(() => {
-    if (
-      !request ||
-      request.configurations.length === 0 ||
-      request.targetModelIds.length === 0 ||
-      request.judges.length === 0 ||
-      request.cases.some(({ input }) => !input.trim())
-    ) {
-      setPreview(null);
+    if (!trackedScenarioIds) {
+      setStartedScenarios([]);
+      setScenarioStatusError(undefined);
       return;
     }
-    let active = true;
-    const timer = window.setTimeout(() => {
-      setPreviewing(true);
-      void evaluationApi
-        .json<EvaluationBatchPreview>("/api/evaluations/preview", {
-          body: JSON.stringify(request),
-          headers: { "content-type": "application/json" },
-          method: "POST",
-        })
-        .then((value) => {
-          if (active) setPreview(value);
-        })
-        .catch((error) => {
-          if (active) {
-            setPreview(null);
-            toast.error(readError(error));
-          }
-        })
-        .finally(() => {
-          if (active) setPreviewing(false);
-        });
-    }, 280);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [request]);
-
-  useEffect(() => {
-    if (!trackedRunIds) {
-      setStartedRuns([]);
-      setBatchStatusError(undefined);
-      return;
-    }
-    setBatchStatusError(undefined);
+    setScenarioStatusError(undefined);
     let active = true;
     let polling = false;
     let timer: number | undefined;
     const intervalMs = 1500;
-    const runIds = trackedRunIds.split(",");
+    const runIds = trackedScenarioIds.split(",");
     const schedule = (delay = intervalMs) => {
       if (!active || document.hidden) return;
       timer = window.setTimeout(() => {
@@ -259,14 +229,21 @@ function EvaluationBatchRunBuilder() {
       polling = true;
       const startedAt = performance.now();
       try {
-        const result = await fetchBatchStatus(runIds);
+        const responses = await mapWithConcurrency(runIds, 6, (runId) =>
+          evaluationApi.json<ScenarioRunResponse>(`/api/scenario-runs/${runId}`),
+        );
         if (!active) return;
-        setStartedRuns(result.runs);
-        setBatchStatusError(undefined);
-        if (!result.runs.every(({ status }) => TERMINAL_STATUSES.has(status)))
+        setStartedScenarios(responses);
+        setScenarioStatusError(undefined);
+        if (
+          responses.some(
+            (response) => isScenarioActive(response) || isScenarioEvaluationActive(response),
+          )
+        ) {
           schedule(Math.max(0, intervalMs - (performance.now() - startedAt)));
+        }
       } catch (error) {
-        if (active) setBatchStatusError(readError(error));
+        if (active) setScenarioStatusError(readError(error));
       } finally {
         polling = false;
       }
@@ -287,23 +264,53 @@ function EvaluationBatchRunBuilder() {
       if (timer !== undefined) window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [batchRetry, trackedRunIds]);
+  }, [scenarioRetry, trackedScenarioIds]);
 
-  async function startBatch() {
-    if (!request || !preview) return;
+  async function startScenarioBatch() {
+    if (!selectedPrompt) return;
+    const matrix = buildScenarioMatrix({
+      prompt: selectedPrompt,
+      targetModels,
+      judgeModels,
+      criteria,
+      configurationIds,
+      scenarioMode,
+      scenarios,
+      driverModel,
+      repetitions,
+    });
+    if (matrix.requests.length === 0) return;
     setRunning(true);
     try {
-      const result = await evaluationApi.json<EvaluationBatchStart>("/api/evaluations/batches", {
-        body: JSON.stringify(request),
-        headers: { "content-type": "application/json" },
-        method: "POST",
+      const settled = await mapWithConcurrency(matrix.requests, 4, async (body) => {
+        try {
+          return {
+            response: await evaluationApi.json<ScenarioRunResponse>("/api/scenario-runs", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+            }),
+          };
+        } catch (error) {
+          return { error };
+        }
       });
-      setStartedRuns(result.runs);
-      setBatchStatusError(undefined);
-      const nextTrackedBatch = { request, runIds: result.runs.map(({ id }) => id) };
-      window.localStorage.setItem(TRACKED_BATCH_STORAGE_KEY, JSON.stringify(nextTrackedBatch));
-      setTrackedBatch(nextTrackedBatch);
-      toast.success(`Started ${result.runs.length} evaluation executions.`);
+      const responses = settled.flatMap((value) => (value.response ? [value.response] : []));
+      const failures = settled.length - responses.length;
+      if (responses.length === 0) throw settled[0]?.error;
+      const nextTrackedBatch = {
+        signature: matrix.signature,
+        runIds: responses.map(({ scenario }) => scenario.id),
+      };
+      setStartedScenarios(responses);
+      setScenarioStatusError(undefined);
+      setTrackedScenarioBatch(nextTrackedBatch);
+      window.localStorage.setItem(TRACKED_SCENARIO_STORAGE_KEY, JSON.stringify(nextTrackedBatch));
+      toast.success(
+        failures
+          ? `Started ${responses.length} Scenario Runs; ${failures} could not be queued.`
+          : `Started ${responses.length} Scenario Runs.`,
+      );
     } catch (error) {
       toast.error(readError(error));
     } finally {
@@ -311,26 +318,38 @@ function EvaluationBatchRunBuilder() {
     }
   }
 
-  function dismissBatch() {
-    window.localStorage.removeItem(TRACKED_BATCH_STORAGE_KEY);
-    setTrackedBatch(null);
-    setStartedRuns([]);
-    setBatchStatusError(undefined);
+  function dismissScenarioBatch() {
+    window.localStorage.removeItem(TRACKED_SCENARIO_STORAGE_KEY);
+    setTrackedScenarioBatch(null);
+    setStartedScenarios([]);
+    setScenarioStatusError(undefined);
   }
 
   function saveConfiguration() {
     const name = savedName.trim();
     if (!name) return toast.error("Name this setup before saving it.");
-    const completeCases = cases.filter((value) => value.trim()).slice(0, MAX_CASES);
-    if (completeCases.length === 0) return toast.error("Add at least one case before saving it.");
+    const completeScenarios = scenarios
+      .filter((scenario) => hasScenarioContent(scenario, scenarioMode))
+      .slice(0, MAX_SCENARIOS);
+    if (completeScenarios.length === 0)
+      return toast.error("Add at least one Scenario before saving it.");
     const replaced = savedConfigurations.some((configuration) => configuration.name === name);
     const next = [
       ...savedConfigurations.filter((configuration) => configuration.name !== name),
-      { cases: completeCases, configurationIds, judges, name, repetitions, targetModelIds },
+      {
+        name,
+        targetModels,
+        judgeModels,
+        configurationIds,
+        scenarioMode,
+        scenarios: completeScenarios,
+        driverModel,
+        repetitions,
+      },
     ];
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     setSavedConfigurations(next);
-    setCases(completeCases);
+    setScenarios(completeScenarios);
     setSavedName("");
     toast.success(
       replaced ? `Replaced “${name}” in this browser.` : `Saved “${name}” in this browser.`,
@@ -340,52 +359,75 @@ function EvaluationBatchRunBuilder() {
   function loadConfiguration(value: string) {
     const saved = savedConfigurations.find(({ name }) => name === value);
     if (!saved) return;
-    setCases(normalizeCases(saved.cases));
+    setScenarioMode(saved.scenarioMode);
     setConfigurationIds(
       saved.configurationIds.filter((id) => criteria.some((value) => value.id === id)),
     );
-    setJudges(saved.judges.filter((id) => models.some((model) => model.id === id)));
+    setJudgeModels(saved.judgeModels.filter((id) => models.some((model) => model.id === id)));
+    setDriverModel(models.some(({ id }) => id === saved.driverModel) ? saved.driverModel : "");
     setRepetitions(saved.repetitions);
-    setTargetModelIds(saved.targetModelIds.filter((id) => models.some((model) => model.id === id)));
+    setScenarios(normalizeScenarios(saved.scenarios, saved.scenarioMode));
+    setTargetModels(saved.targetModels.filter((id) => models.some((model) => model.id === id)));
   }
 
-  const trackedRunCount = trackedBatch?.runIds.length ?? 0;
-  const finishedRuns = startedRuns.filter(({ status }) => TERMINAL_STATUSES.has(status)).length;
-  const completedRuns = startedRuns.filter(({ status }) => status === "completed").length;
-  const failedRuns = startedRuns.filter(
-    ({ status }) => status === "failed" || status === "interrupted",
+  const completeScenarioCount = scenarios.filter((scenario) =>
+    hasScenarioContent(scenario, scenarioMode),
   ).length;
-  const cancelledRuns = startedRuns.filter(({ status }) => status === "cancelled").length;
-  const queuedRuns = startedRuns.filter(({ status }) => status === "queued").length;
-  const runningRuns = startedRuns.filter(({ status }) => status === "running").length;
-  const progress = trackedRunCount ? Math.round((finishedRuns / trackedRunCount) * 100) : 0;
-  const batchFinished = trackedRunCount > 0 && finishedRuns === trackedRunCount;
-  const batchRunning = trackedRunCount > 0 && !batchFinished;
-  const tracksCurrentSetup = Boolean(
-    request && trackedBatch && sameBatchRequest(request, trackedBatch.request),
-  );
+  const scenariosReady =
+    completeScenarioCount === scenarios.length &&
+    (scenarioMode !== "static" ||
+      scenarios.every(
+        ({ messages }) =>
+          messages.length > 0 &&
+          messages.length <= 10 &&
+          messages.every((message) => message.trim()),
+      ));
   const setupRequirements = getSetupRequirements({
-    cases,
-    configurationIds,
-    judges,
     promptId,
-    repetitions,
     selectedPrompt,
-    targetModelIds,
+    targetModels,
+    judgeModels,
+    configurationIds,
+    scenarioMode,
+    scenarioCount: completeScenarioCount,
+    draftScenarioCount: scenarios.length,
+    scenariosReady,
+    repetitions,
   });
-  const completeCaseCount = cases.filter((value) => value.trim()).length;
-  const canAddCase = cases.length < MAX_CASES;
+  const canAddScenario = scenarios.length < MAX_SCENARIOS;
   const selectedCriteria = criteria.filter(({ id }) => configurationIds.includes(id));
-  const executionCount =
-    preview?.executionCount ?? selectedCriteria.length * targetModelIds.length * repetitions;
-  const targetOutputCount = preview?.targetCaseInvocations ?? executionCount * completeCaseCount;
+  const scenarioMatrix = selectedPrompt
+    ? buildScenarioMatrix({
+        prompt: selectedPrompt,
+        targetModels,
+        judgeModels,
+        criteria,
+        configurationIds,
+        scenarioMode,
+        scenarios,
+        driverModel,
+        repetitions,
+      })
+    : null;
+  const scenarioRunCount = scenarioMatrix?.requests.length ?? 0;
+  const trackedScenarioCount = trackedScenarioBatch?.runIds.length ?? 0;
+  const finishedScenarios = startedScenarios.filter(
+    (response) => !isScenarioActive(response) && !isScenarioEvaluationActive(response),
+  ).length;
+  const scenarioProgress = trackedScenarioCount
+    ? Math.round((finishedScenarios / trackedScenarioCount) * 100)
+    : 0;
+  const scenariosRunning = trackedScenarioCount > 0 && finishedScenarios < trackedScenarioCount;
+  const tracksCurrentScenarioSetup = Boolean(
+    scenarioMatrix && trackedScenarioBatch?.signature === scenarioMatrix.signature,
+  );
+  const executionCount = scenarioRunCount;
+  const targetOutputCount = scenarioRunCount;
   const judgeDecisionCount =
-    preview?.judgeScoreDecisions ??
-    targetModelIds.length *
-      repetitions *
-      completeCaseCount *
-      judges.length *
-      selectedCriteria.reduce((total, value) => total + value.criterionSequence.length, 0);
+    scenarioRunCount *
+    judgeModels.length *
+    selectedCriteria.reduce((total, value) => total + value.criterionSequence.length, 0);
+  const setupReady = setupRequirements.every(({ ready }) => ready);
   const maximumManifestWidth = () => {
     return maximumResizablePanelWidth({
       contentMinWidth: RUN_FORM_MIN_WIDTH,
@@ -409,10 +451,10 @@ function EvaluationBatchRunBuilder() {
         <EvaluationPageBar sticky>
           <h1 className="shrink-0 text-base font-semibold tracking-tight">Evaluation Run</h1>
           <p className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground @min-[920px]:block">
-            Configure prompt, models, criteria, cases, and repetitions.
+            Configure prompt, models, criteria, Scenarios, and repetitions.
           </p>
           <p className="ml-auto shrink-0 font-mono text-[11px] uppercase text-muted-foreground">
-            {count(completeCaseCount, "case")} · {repetitions}×
+            {count(completeScenarioCount, "Scenario")} · {repetitions}×
           </p>
         </EvaluationPageBar>
 
@@ -459,15 +501,15 @@ function EvaluationBatchRunBuilder() {
               className="mt-4"
               label="Target Models"
               models={models}
-              onChange={setTargetModelIds}
-              selected={targetModelIds}
+              onChange={setTargetModels}
+              selected={targetModels}
             />
             <EvaluationModelPicker
               className="mt-4"
               label="Judge Models"
               models={models}
-              onChange={setJudges}
-              selected={judges}
+              onChange={setJudgeModels}
+              selected={judgeModels}
             />
           </RunSection>
 
@@ -509,52 +551,160 @@ function EvaluationBatchRunBuilder() {
           <RunSection
             action={
               <Button
-                disabled={!canAddCase}
+                disabled={!canAddScenario}
                 onClick={() => {
-                  if (canAddCase) setCases([...cases, ""]);
+                  if (!canAddScenario) return;
+                  setScenarios([...scenarios, createScenarioDraft()]);
                 }}
                 size="sm"
                 variant="outline"
               >
-                <Plus className="size-3.5" /> Add case
+                <Plus className="size-3.5" /> Add Scenario
               </Button>
             }
-            description="Each input runs through every selected Criteria permutation, target model, and repetition."
-            title="Cases"
+            description={
+              scenarioMode === "generative"
+                ? "The Instruction will be sent to an extra agent to role play the user messages accordingly."
+                : "Build an ordered conversation with one box per user message. One message is a one-turn Static Scenario."
+            }
+            title="Scenarios"
           >
-            <div className="overflow-hidden border-y">
-              <div className="grid grid-cols-[3rem_minmax(0,1fr)_2.75rem] items-center bg-muted/40 text-[11px] uppercase text-muted-foreground">
-                <span className="px-3 py-2 font-mono">Case</span>
-                <span className="px-3 py-2 font-mono">Input</span>
+            <div
+              aria-label="Scenario mode"
+              className="mb-4 inline-flex rounded-lg border bg-muted/25 p-1"
+              role="group"
+            >
+              {(
+                [
+                  ["static", "Static Scenario"],
+                  ["generative", "Generative Scenario"],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  aria-pressed={scenarioMode === mode}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    scenarioMode === mode
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  key={mode}
+                  onClick={() => setScenarioMode(mode)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {scenarioMode === "generative" ? (
+              <DriverModelPicker
+                className="mb-4"
+                models={models}
+                onChange={setDriverModel}
+                selected={driverModel}
+              />
+            ) : null}
+
+            <div className="overflow-hidden border-t">
+              <div
+                className={cn(
+                  "grid items-center bg-muted/40 text-[11px] uppercase text-muted-foreground",
+                  scenarioMode === "generative"
+                    ? "grid-cols-[5.75rem_minmax(0,1fr)_7rem_2.75rem]"
+                    : "grid-cols-[5.75rem_minmax(0,1fr)_2.75rem]",
+                )}
+              >
+                <span className="px-3 py-2 font-mono">Scenario</span>
+                <span className="px-3 py-2 font-mono">
+                  {scenarioMode === "generative" ? "Instruction" : "Messages"}
+                </span>
+                {scenarioMode === "generative" ? (
+                  <span className="px-2 py-2 font-mono">Max turns</span>
+                ) : null}
                 <span className="sr-only">Actions</span>
               </div>
               <div className="divide-y">
-                {cases.map((value, index) => (
+                {scenarios.map((scenario, index) => (
                   <div
-                    className="grid grid-cols-[3rem_minmax(0,1fr)_2.75rem] items-start"
+                    className={cn(
+                      "grid items-start",
+                      scenarioMode === "generative"
+                        ? "grid-cols-[5.75rem_minmax(0,1fr)_7rem_2.75rem]"
+                        : "grid-cols-[5.75rem_minmax(0,1fr)_2.75rem]",
+                    )}
                     key={index}
                   >
                     <span className="px-3 py-3 font-mono text-[11px] text-muted-foreground">
                       {String(index + 1).padStart(2, "0")}
                     </span>
-                    <Textarea
-                      aria-label={`Case ${index + 1}`}
-                      className="my-2 min-h-16 rounded-none border-0 px-3 shadow-none focus-visible:ring-1"
-                      onChange={(event) =>
-                        setCases(
-                          cases.map((item, itemIndex) =>
-                            itemIndex === index ? event.target.value : item,
-                          ),
+                    {scenarioMode === "generative" ? (
+                      <Textarea
+                        aria-label={`Scenario ${index + 1} Instruction`}
+                        className="my-2 min-h-20 rounded-none border-0 px-3 shadow-none focus-visible:ring-1"
+                        onChange={(event) =>
+                          setScenarios(
+                            scenarios.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, instruction: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
+                        placeholder="Describe how the agent should role-play the user"
+                        value={scenario.instruction}
+                      />
+                    ) : (
+                      <ScenarioMessagesEditor
+                        messages={scenario.messages}
+                        onChange={(messages) =>
+                          setScenarios((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, messages } : item,
+                            ),
+                          )
+                        }
+                        scenarioNumber={index + 1}
+                      />
+                    )}
+                    {scenarioMode === "generative" ? (
+                      <div className="px-2 py-2">
+                        <Input
+                          aria-label={`Scenario ${index + 1} maximum turns`}
+                          className="!h-8 !w-full px-2 text-xs shadow-none"
+                          max={10}
+                          min={1}
+                          onChange={(event) =>
+                            setScenarios(
+                              scenarios.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      maxTurns: Math.max(
+                                        1,
+                                        Math.min(10, Number(event.target.value) || 1),
+                                      ),
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }
+                          type="number"
+                          value={scenario.maxTurns}
+                        />
+                      </div>
+                    ) : null}
+                    <Button
+                      aria-label={`Remove Scenario ${index + 1}`}
+                      className="mt-2 text-muted-foreground hover:text-destructive"
+                      disabled={scenarios.length === 1}
+                      onClick={() =>
+                        setScenarios((current) =>
+                          current.length > 1
+                            ? current.filter((_, itemIndex) => itemIndex !== index)
+                            : current,
                         )
                       }
-                      placeholder="Enter the input to evaluate"
-                      value={value}
-                    />
-                    <Button
-                      aria-label={`Remove case ${index + 1}`}
-                      className="mt-2"
-                      disabled={cases.length === 1}
-                      onClick={() => setCases(cases.filter((_, itemIndex) => itemIndex !== index))}
                       size="icon"
                       variant="ghost"
                     >
@@ -629,30 +779,18 @@ function EvaluationBatchRunBuilder() {
         <div className="flex min-h-[calc(100dvh-var(--header-height))] flex-col @min-[720px]:sticky @min-[720px]:top-0 @min-[720px]:max-h-[calc(100dvh-var(--header-height))] @min-[720px]:overflow-y-auto">
           <EvaluationPageBar className="shrink-0" inset="panel">
             <h2 className="text-sm font-semibold">Execution Manifest</h2>
-            {previewing ? (
-              <LoaderCircle
-                aria-label="Refreshing manifest"
-                className="size-4 animate-spin text-muted-foreground"
-              />
-            ) : null}
           </EvaluationPageBar>
           <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-5">
-            {trackedBatch ? (
-              <BatchMonitor
-                cancelledRuns={cancelledRuns}
-                completedRuns={completedRuns}
-                dismiss={dismissBatch}
-                error={batchStatusError}
-                failedRuns={failedRuns}
-                finishedRuns={finishedRuns}
-                models={models}
-                progress={progress}
-                queuedRuns={queuedRuns}
-                retry={() => setBatchRetry((current) => current + 1)}
-                runningRuns={runningRuns}
-                runs={startedRuns}
-                totalRuns={trackedRunCount}
-                tracksCurrentSetup={tracksCurrentSetup}
+            {trackedScenarioBatch ? (
+              <ScenarioBatchMonitor
+                runs={startedScenarios}
+                totalRuns={trackedScenarioCount}
+                finishedRuns={finishedScenarios}
+                progress={scenarioProgress}
+                error={scenarioStatusError}
+                tracksCurrentSetup={tracksCurrentScenarioSetup}
+                retry={() => setScenarioRetry((current) => current + 1)}
+                dismiss={dismissScenarioBatch}
               />
             ) : null}
             <div>
@@ -675,9 +813,9 @@ function EvaluationBatchRunBuilder() {
                           requirement.ready ? "text-foreground" : "text-muted-foreground",
                         )}
                       >
-                        {requirement.modelIds?.length ? (
+                        {requirement.models?.length ? (
                           <div className="flex min-w-0 flex-col items-end gap-1">
-                            {requirement.modelIds.map((modelId) => (
+                            {requirement.models.map((modelId) => (
                               <ModelIdentityLabel
                                 className="max-w-full"
                                 key={modelId}
@@ -702,76 +840,34 @@ function EvaluationBatchRunBuilder() {
               <ManifestFact label="Decisions" value={judgeDecisionCount} />
             </div>
             <WorkloadCalculation
-              cases={completeCaseCount}
+              scenarios={completeScenarioCount}
               criteriaCount={selectedCriteria.length}
               executions={executionCount}
               outputs={targetOutputCount}
               repetitions={repetitions}
-              targets={targetModelIds.length}
+              targets={targetModels.length}
             />
-            {preview ? (
-              <>
-                <div className="border-y">
-                  <div className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2 bg-muted/40 px-2 py-2 font-mono text-[10px] uppercase text-muted-foreground">
-                    <span>No.</span>
-                    <span>Execution Lane</span>
-                  </div>
-                  <div className="divide-y">
-                    {preview.jobs.slice(0, 200).map((job) => (
-                      <div
-                        className="grid grid-cols-[2rem_minmax(0,1fr)] items-center gap-2 px-2 py-2 text-xs"
-                        key={job.id}
-                      >
-                        <span className="font-mono text-[11px] text-muted-foreground">
-                          {String(job.executionNumber).padStart(2, "0")}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium leading-4">
-                            {job.configurationName}
-                          </span>
-                          <span className="flex min-w-0 items-center gap-1 text-[11px] leading-4 text-muted-foreground">
-                            <ModelIdentityLabel
-                              className="min-w-0"
-                              labelClassName="truncate"
-                              model={models.find(({ id }) => id === job.targetModelId)}
-                              modelId={job.targetModelId}
-                            />
-                            <span className="shrink-0">· repetition {job.repetition}</span>
-                          </span>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {preview.jobs.length > 200 && (
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    Showing the first 200 of {preview.jobs.length} executions. All executions will
-                    run.
-                  </p>
-                )}
-              </>
-            ) : null}
             <Button
               className="mt-4 w-full"
-              disabled={!preview || running || batchRunning}
-              onClick={startBatch}
+              disabled={running || !setupReady || scenariosRunning}
+              onClick={startScenarioBatch}
             >
               {running ? (
                 <LoaderCircle className="size-4 animate-spin" />
-              ) : batchRunning ? (
+              ) : scenariosRunning ? (
                 <LoaderCircle className="size-4 animate-spin" />
-              ) : batchFinished && tracksCurrentSetup ? (
+              ) : finishedScenarios === trackedScenarioCount && tracksCurrentScenarioSetup ? (
                 <RotateCcw className="size-4" />
               ) : null}
               {running
                 ? "Starting matrix…"
-                : batchRunning
-                  ? `${queuedRuns} queued · ${runningRuns} running`
-                  : batchFinished && tracksCurrentSetup
-                    ? "Run matrix again"
-                    : preview
-                      ? `Run ${preview.executionCount} executions`
-                      : "Run evaluation"}
+                : scenariosRunning
+                  ? `${finishedScenarios} of ${trackedScenarioCount} finished`
+                  : finishedScenarios === trackedScenarioCount && tracksCurrentScenarioSetup
+                    ? "Run Scenario matrix again"
+                    : setupReady
+                      ? `Run ${scenarioRunCount} Scenarios`
+                      : "Run Scenario evaluation"}
             </Button>
           </div>
         </div>
@@ -780,45 +876,48 @@ function EvaluationBatchRunBuilder() {
   );
 }
 
-/** Reports the batch this browser started, independently of the draft below it, so editing the form never hides work that is still running. */
-function BatchMonitor({
-  cancelledRuns,
-  completedRuns,
-  dismiss,
-  error,
-  failedRuns,
-  finishedRuns,
-  models,
-  progress,
-  queuedRuns,
-  retry,
-  runningRuns,
+/** Reports durable Scenario generation and its automatic recorded-evaluation handoff as one batch. */
+function ScenarioBatchMonitor({
   runs,
   totalRuns,
+  finishedRuns,
+  progress,
+  error,
   tracksCurrentSetup,
+  retry,
+  dismiss,
 }: {
-  cancelledRuns: number;
-  completedRuns: number;
-  dismiss(): void;
-  error?: string;
-  failedRuns: number;
-  finishedRuns: number;
-  models: ConfiguredModel[];
-  progress: number;
-  queuedRuns: number;
-  retry(): void;
-  runningRuns: number;
-  runs: EvaluationRunSummary[];
+  runs: ScenarioRunResponse[];
   totalRuns: number;
+  finishedRuns: number;
+  progress: number;
+  error?: string;
   tracksCurrentSetup: boolean;
+  retry(): void;
+  dismiss(): void;
 }) {
-  const finished = finishedRuns === totalRuns;
+  const finished = totalRuns > 0 && finishedRuns === totalRuns;
+  const evaluating = runs.filter(isScenarioEvaluationActive).length;
+  const generating = runs.filter(
+    (response) => isScenarioActive(response) && !isScenarioEvaluationActive(response),
+  ).length;
+  const failed = runs.filter(
+    ({ evaluations, scenario }) =>
+      scenario.status === "failed" ||
+      scenario.status === "interrupted" ||
+      Boolean(scenario.evaluationErrorMessage) ||
+      evaluations.some(({ status }) => status === "failed" || status === "interrupted"),
+  ).length;
   return (
-    <section aria-label="Batch progress" className="mb-6 rounded-xl bg-background/60 p-4">
+    <section aria-label="Scenario batch progress" className="mb-6 rounded-xl bg-background/60 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-xs font-semibold">
-            {error ? "Batch Status Unavailable" : finished ? "Batch Finished" : "Batch Running"}
+            {error
+              ? "Scenario Status Unavailable"
+              : finished
+                ? "Scenario Batch Finished"
+                : "Scenario Batch Running"}
           </h2>
           <p aria-live="polite" className="mt-1 text-[11px] text-muted-foreground">
             {finishedRuns} of {totalRuns} finished
@@ -834,7 +933,7 @@ function BatchMonitor({
           )}
           {finished || error ? (
             <Button
-              aria-label="Dismiss batch monitor"
+              aria-label="Dismiss Scenario batch monitor"
               onClick={dismiss}
               size="icon"
               variant="ghost"
@@ -845,7 +944,7 @@ function BatchMonitor({
         </div>
       </div>
       <div
-        aria-label="Evaluation batch progress"
+        aria-label="Scenario batch progress"
         aria-valuemax={totalRuns}
         aria-valuemin={0}
         aria-valuenow={finishedRuns}
@@ -857,29 +956,20 @@ function BatchMonitor({
           style={{ width: `${progress}%` }}
         />
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-x-2 gap-y-3 text-center text-[11px] text-muted-foreground @min-[1200px]:grid-cols-5">
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px] text-muted-foreground">
         <span>
-          <strong className="block font-mono text-foreground">{completedRuns}</strong> completed
+          <strong className="block font-mono text-foreground">{generating}</strong> generating
         </span>
         <span>
-          <strong className="block font-mono text-foreground">{queuedRuns}</strong> queued
-        </span>
-        <span>
-          <strong className="block font-mono text-foreground">{runningRuns}</strong> running
+          <strong className="block font-mono text-foreground">{evaluating}</strong> evaluating
         </span>
         <span>
           <strong
-            className={cn(
-              "block font-mono",
-              failedRuns > 0 ? "text-destructive" : "text-foreground",
-            )}
+            className={cn("block font-mono", failed ? "text-destructive" : "text-foreground")}
           >
-            {failedRuns}
-          </strong>
+            {failed}
+          </strong>{" "}
           failed
-        </span>
-        <span>
-          <strong className="block font-mono text-foreground">{cancelledRuns}</strong> cancelled
         </span>
       </div>
       {error ? (
@@ -894,47 +984,44 @@ function BatchMonitor({
       )}
       {runs.length ? (
         <div className="mt-3 max-h-56 divide-y overflow-y-auto border-t">
-          {runs.map((run, index) => (
-            <div className="py-1.5" key={run.id}>
-              <div className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 text-xs">
+          {runs.map((response, index) => {
+            const { scenario } = response;
+            const evaluationActive = isScenarioEvaluationActive(response);
+            return (
+              <div
+                className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 py-2 text-xs"
+                key={scenario.id}
+              >
                 <span className="font-mono text-[11px] text-muted-foreground">
                   {String(index + 1).padStart(2, "0")}
                 </span>
-                <ModelIdentityLabel
-                  className="min-w-0 text-muted-foreground"
-                  labelClassName="truncate text-[11px]"
-                  model={models.find(({ id }) => id === run.targetModelId)}
-                  modelId={run.targetModelId}
-                />
+                <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                  {scenario.mode === "generative" ? "Generative" : "Static"} ·{" "}
+                  {scenario.targetModel}
+                </span>
                 <Link
                   className="inline-flex items-center gap-1 font-medium hover:underline"
-                  href={`/evaluations/${run.id}`}
+                  href={`/evaluations/scenarios/${scenario.id}`}
                 >
-                  {statusLabel(run.status)}
+                  {scenario.status === "running" || scenario.status === "queued"
+                    ? "Generating"
+                    : evaluationActive
+                      ? "Evaluating"
+                      : scenario.status === "completed"
+                        ? "Completed"
+                        : "Failed"}
                   <ChevronRight className="size-3" />
                 </Link>
               </div>
-              {run.errorMessage ? (
-                <p className="mt-1 pl-10 text-[11px] leading-4 text-destructive">
-                  {run.errorMessage}
-                </p>
-              ) : null}
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : null}
-      {finished ? (
-        <Link
-          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-input bg-background text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-          href="/evaluations/analytics"
-        >
-          Compare these runs in analytics
-        </Link>
-      ) : (
+      {!finished ? (
         <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
           These runs are durable. Leaving this page will not stop them.
         </p>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -973,16 +1060,128 @@ function Field({ children, label }: { children: React.ReactNode; label: string }
   );
 }
 
+function ScenarioMessagesEditor({
+  messages,
+  onChange,
+  scenarioNumber,
+}: {
+  messages: string[];
+  onChange(messages: string[]): void;
+  scenarioNumber: number;
+}) {
+  return (
+    <div className="space-y-2 px-3 py-2">
+      {messages.map((message, messageIndex) => (
+        <div className="relative" key={messageIndex}>
+          <span className="pointer-events-none absolute top-2 left-3 z-10 font-mono text-[10px] uppercase text-muted-foreground">
+            Message {String(messageIndex + 1).padStart(2, "0")}
+          </span>
+          <Textarea
+            aria-label={`Scenario ${scenarioNumber} user message ${messageIndex + 1}`}
+            className="!min-h-20 pt-7 pr-11 shadow-none"
+            onChange={(event) =>
+              onChange(
+                messages.map((value, valueIndex) =>
+                  valueIndex === messageIndex ? event.target.value : value,
+                ),
+              )
+            }
+            placeholder="Enter user message"
+            value={message}
+          />
+          <Button
+            aria-label={`Remove user message ${messageIndex + 1} from Scenario ${scenarioNumber}`}
+            className="absolute top-1.5 right-1.5 !size-8 text-muted-foreground hover:text-destructive"
+            disabled={messages.length === 1}
+            onClick={() => {
+              if (messages.length > 1) {
+                onChange(messages.filter((_, index) => index !== messageIndex));
+              }
+            }}
+            size="icon"
+            variant="ghost"
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        className="h-8 justify-start px-2 text-muted-foreground hover:text-foreground"
+        disabled={messages.length >= 10}
+        onClick={() => onChange([...messages, ""])}
+        size="sm"
+        variant="ghost"
+      >
+        <Plus className="size-3.5" /> Add message
+      </Button>
+    </div>
+  );
+}
+
+function DriverModelPicker({
+  className,
+  models,
+  onChange,
+  selected,
+}: {
+  className?: string;
+  models: ConfiguredModel[];
+  onChange(value: string): void;
+  selected: string;
+}) {
+  return (
+    <fieldset className={className}>
+      <legend className="text-xs font-medium">Driver Model</legend>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          aria-pressed={!selected}
+          className={cn(
+            "inline-flex h-7 items-center rounded-full border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            selected
+              ? "bg-background text-foreground hover:bg-accent"
+              : "border-foreground bg-foreground text-background",
+          )}
+          onClick={() => onChange("")}
+          type="button"
+        >
+          Same as Target
+        </button>
+        {models.map((model) => {
+          const active = selected === model.id;
+          return (
+            <button
+              aria-pressed={active}
+              className={cn(
+                "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                active
+                  ? "border-foreground bg-foreground text-background"
+                  : "bg-background text-foreground hover:bg-accent",
+              )}
+              key={model.id}
+              onClick={() => onChange(model.id)}
+              type="button"
+            >
+              <ModelIdentityLabel labelClassName="font-medium leading-none" model={model} />
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
 function getSetupRequirements(input: {
-  cases: string[];
   configurationIds: string[];
-  judges: string[];
+  draftScenarioCount: number;
+  judgeModels: string[];
   promptId: string;
   repetitions: number;
+  scenarioCount: number;
+  scenarioMode: ScenarioMode;
+  scenariosReady: boolean;
   selectedPrompt?: PromptSummary;
-  targetModelIds: string[];
-}): Array<{ label: string; modelIds?: string[]; ready: boolean; value: string }> {
-  const completeCases = input.cases.filter((value) => value.trim()).length;
+  targetModels: string[];
+}): Array<{ label: string; models?: string[]; ready: boolean; value: string }> {
   return [
     {
       label: "Prompt Revision",
@@ -993,30 +1192,33 @@ function getSetupRequirements(input: {
     },
     {
       label: "Target Models",
-      modelIds: input.targetModelIds,
-      ready: input.targetModelIds.length > 0,
-      value: input.targetModelIds.length ? count(input.targetModelIds.length, "model") : "Required",
+      models: input.targetModels,
+      ready: input.targetModels.length > 0,
+      value: input.targetModels.length ? count(input.targetModels.length, "model") : "Required",
     },
     {
       label: "Judge Models",
-      modelIds: input.judges,
-      ready: input.judges.length > 0,
-      value: input.judges.length ? count(input.judges.length, "model") : "Required",
+      models: input.judgeModels,
+      ready: input.judgeModels.length > 0,
+      value: input.judgeModels.length ? count(input.judgeModels.length, "model") : "Required",
     },
     {
       label: "Criteria",
-      ready: input.configurationIds.length > 0,
+      ready: input.configurationIds.length > 0 && input.configurationIds.length <= 12,
       value: input.configurationIds.length
-        ? count(input.configurationIds.length, "set")
+        ? input.configurationIds.length > 12
+          ? "Maximum 12 sets"
+          : count(input.configurationIds.length, "set")
         : "Required",
     },
     {
-      label: "Cases",
-      ready: completeCases === input.cases.length,
-      value:
-        completeCases === input.cases.length
-          ? count(completeCases, "case")
-          : `${input.cases.length - completeCases} incomplete`,
+      label: "Scenarios",
+      ready: input.scenariosReady,
+      value: input.scenariosReady
+        ? count(input.scenarioCount, "Scenario")
+        : input.scenarioMode === "static" && input.scenarioCount === input.draftScenarioCount
+          ? "Use 1–10 turns per Scenario"
+          : `${input.draftScenarioCount - input.scenarioCount} incomplete`,
     },
     {
       label: "Repetitions",
@@ -1049,29 +1251,27 @@ function ManifestFact({ label, value }: { label: string; value: number }) {
 }
 
 function WorkloadCalculation({
-  cases,
   criteriaCount,
   executions,
   outputs,
   repetitions,
+  scenarios,
   targets,
 }: {
-  cases: number;
   criteriaCount: number;
   executions: number;
   outputs: number;
   repetitions: number;
+  scenarios: number;
   targets: number;
 }) {
   return (
     <div className="py-3 text-[11px] leading-4">
       <p className="font-mono text-foreground">
-        {criteriaCount} Criteria × {count(targets, "target model")} ×{" "}
-        {count(repetitions, "repetition")} × {count(cases, "complete case")} ={" "}
-        {count(outputs, "target output")}
+        {`${count(scenarios, "Scenario")} × ${count(targets, "target model")} × ${count(repetitions, "repetition")} = ${count(outputs, "conversation")}`}
       </p>
       <p className="mt-1 text-muted-foreground">
-        {count(executions, "execution")}. Every execution is saved as a separate run.
+        {`${count(executions, "Scenario Run")}. Each completed conversation starts ${count(criteriaCount, "recorded evaluation")}.`}
       </p>
     </div>
   );
@@ -1081,43 +1281,76 @@ function count(value: number, noun: string): string {
   return `${value} ${noun}${value === 1 ? "" : "s"}`;
 }
 
-function buildRequest(input: {
-  cases: string[];
-  configurationIds: string[];
-  judges: string[];
-  criteria: Criteria[];
+type ScenarioCreateRequest = {
+  promptId: string;
+  promptRevisionId: string;
+  targetModel: string;
+  reasoningEffort: "medium";
+  evaluationPlan: {
+    configurations: Array<Omit<EvaluationBatchConfiguration, "id">>;
+    judgeModels: string[];
+  };
+} & (
+  | {
+      mode: "generative";
+      instruction: string;
+      driverModel?: string;
+      maxTurns: number;
+    }
+  | { mode: "static"; messages: string[] }
+);
+
+function buildScenarioMatrix(input: {
   prompt: PromptSummary;
+  targetModels: string[];
+  judgeModels: string[];
+  criteria: Criteria[];
+  configurationIds: string[];
+  scenarioMode: ScenarioMode;
+  scenarios: ScenarioDraft[];
+  driverModel: string;
   repetitions: number;
-  targetModelIds: string[];
-}): EvaluationBatchRequest {
-  return {
-    cases: input.cases.map((caseInput) => ({ input: caseInput })),
+}): { requests: ScenarioCreateRequest[]; signature: string } {
+  const evaluationPlan = {
     configurations: input.criteria
       .filter(({ id }) => input.configurationIds.includes(id))
-      .map(({ criterionSequence, id, name }): EvaluationBatchConfiguration => ({
+      .map(({ criterionSequence, name }) => ({
+        name,
         criteria: criterionSequence.map(
           ({ id: _criterionId, version: _criterionVersion, ...criterion }) => criterion,
         ),
-        id,
-        name,
       })),
-    isSyntheticExample: false,
-    judges: input.judges,
-    promptId: input.prompt.id,
-    promptRevisionId: input.prompt.revisionId,
-    repetitions: input.repetitions,
-    targetModelIds: input.targetModelIds,
+    judgeModels: input.judgeModels,
   };
-}
-
-function statusLabel(status: EvaluationRunStatus): string {
-  return status === "completed"
-    ? "Completed"
-    : status === "failed"
-      ? "Failed"
-      : status === "interrupted"
-        ? "Interrupted"
-        : "Running";
+  const requests = input.scenarios
+    .filter((scenario) => hasScenarioContent(scenario, input.scenarioMode))
+    .flatMap((scenario) =>
+      input.targetModels.flatMap((targetModel) =>
+        Array.from({ length: input.repetitions }, (): ScenarioCreateRequest => {
+          const common = {
+            promptId: input.prompt.id,
+            promptRevisionId: input.prompt.revisionId,
+            targetModel,
+            reasoningEffort: "medium" as const,
+            evaluationPlan,
+          };
+          return input.scenarioMode === "generative"
+            ? {
+                ...common,
+                mode: "generative",
+                instruction: scenario.instruction.trim(),
+                ...(input.driverModel ? { driverModel: input.driverModel } : {}),
+                maxTurns: scenario.maxTurns,
+              }
+            : {
+                ...common,
+                mode: "static",
+                messages: scenario.messages.map((message) => message.trim()).filter(Boolean),
+              };
+        }),
+      ),
+    );
+  return { requests, signature: JSON.stringify(requests) };
 }
 
 function readSavedConfigurations(): SavedConfiguration[] {
@@ -1138,22 +1371,34 @@ function readLastRunConfiguration(): LastRunConfiguration | undefined {
   }
 }
 
-function readTrackedBatch(): TrackedBatch | undefined {
+function readTrackedScenarioBatch(): TrackedScenarioBatch | undefined {
   try {
-    const value = window.localStorage.getItem(TRACKED_BATCH_STORAGE_KEY);
-    return value ? (JSON.parse(value) as TrackedBatch) : undefined;
+    const value = window.localStorage.getItem(TRACKED_SCENARIO_STORAGE_KEY);
+    return value ? (JSON.parse(value) as TrackedScenarioBatch) : undefined;
   } catch {
     return undefined;
   }
 }
 
-function normalizeCases(cases: string[]): string[] {
-  const complete = cases.filter((value) => value.trim()).slice(0, MAX_CASES);
-  return complete.length ? complete : [""];
+function createScenarioDraft(): ScenarioDraft {
+  return { ...DEFAULT_SCENARIO, messages: [""] };
 }
 
-function sameBatchRequest(left: EvaluationBatchRequest, right: EvaluationBatchRequest): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+function hasScenarioContent(scenario: ScenarioDraft, mode: ScenarioMode): boolean {
+  return mode === "generative"
+    ? Boolean(scenario.instruction.trim())
+    : scenario.messages.some((message) => message.trim());
+}
+
+function normalizeScenarios(scenarios: ScenarioDraft[], mode: ScenarioMode): ScenarioDraft[] {
+  const complete = scenarios
+    .filter((scenario) => hasScenarioContent(scenario, mode))
+    .slice(0, MAX_SCENARIOS)
+    .map((scenario) => ({
+      ...scenario,
+      messages: scenario.messages.length ? scenario.messages.slice(0, 10) : [""],
+    }));
+  return complete.length ? complete : [createScenarioDraft()];
 }
 
 function restoreSelection<T extends { id: string }>(
@@ -1166,15 +1411,21 @@ function restoreSelection<T extends { id: string }>(
   return saved.length > 0 && restored.length === 0 ? fallback : restored;
 }
 
-async function fetchBatchStatus(runIds: string[]): Promise<EvaluationBatchStatus> {
-  const chunks = Array.from({ length: Math.ceil(runIds.length / 200) }, (_, index) =>
-    runIds.slice(index * 200, (index + 1) * 200),
-  );
-  const responses = await Promise.all(
-    chunks.map((chunk) => {
-      const query = new URLSearchParams(chunk.map((runId) => ["runId", runId]));
-      return evaluationApi.json<EvaluationBatchStatus>(`/api/evaluations/batches?${query}`);
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  operation: (value: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await operation(values[index] as T, index);
+      }
     }),
   );
-  return { runs: responses.flatMap(({ runs }) => runs) };
+  return results;
 }

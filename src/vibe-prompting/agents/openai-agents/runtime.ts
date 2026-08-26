@@ -17,6 +17,7 @@ import type { EvaluationResults } from "../../evaluation/results/index.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
 import type { PromptSystem } from "../../prompt-system/index.ts";
 import type { TargetRuns } from "../../target/runs/index.ts";
+import type { ScenarioRuns } from "../../target/scenarios/index.ts";
 import {
   type AgentTool,
   type AgentToolExecutionContext,
@@ -28,6 +29,7 @@ import {
   EvaluationResultsToolkit,
   EvaluationRunsToolkit,
   PromptLibraryToolkit,
+  ScenarioRunsToolkit,
   TargetRunsToolkit,
 } from "../tools/index.ts";
 import { AGENT_INSTRUCTIONS } from "./instructions.ts";
@@ -109,6 +111,7 @@ export type ChatRunInput = {
   evaluations: EvaluationRuns;
   evaluationResults: EvaluationResults;
   targetRuns: TargetRuns;
+  scenarios: ScenarioRuns;
   signal?: AbortSignal;
   steering?: ChatSteering;
 };
@@ -212,6 +215,7 @@ export async function streamChatRun(
       new CriteriaLibraryToolkit(input.criterion),
       new EvaluationRunsToolkit(input.evaluations, getEvaluationModelReferences),
       new EvaluationResultsToolkit(input.evaluationResults),
+      new ScenarioRunsToolkit(input.scenarios, getEvaluationModelReferences),
       new TargetRunsToolkit(input.targetRuns, getEvaluationModelReferences),
     );
   const toolDefinitions = AgentToolkit.compose(toolkits);

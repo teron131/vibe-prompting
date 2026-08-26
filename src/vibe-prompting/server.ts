@@ -16,6 +16,7 @@ import { HybridSearch } from "./search.ts";
 import { ApplicationSettingsStore } from "./settings/index.ts";
 import { TargetSystem } from "./target/index.ts";
 import { TargetRuns } from "./target/runs/index.ts";
+import { ScenarioRuns } from "./target/scenarios/index.ts";
 
 export type ConfiguredModel = {
   id: string;
@@ -29,6 +30,7 @@ export type ApplicationServices = {
   prompts: PromptSystem;
   targets: TargetSystem;
   targetRuns: TargetRuns;
+  scenarios: ScenarioRuns;
   evaluations: EvaluationRuns;
   evaluationResults: EvaluationResults;
   criterion: CriterionLibrary;
@@ -42,7 +44,7 @@ const sharedState = globalThis as typeof globalThis & {
   vibePromptingServicesVersion?: number;
   vibePromptingServices?: Promise<ApplicationServices>;
 };
-const APPLICATION_SERVICES_VERSION = 32;
+const APPLICATION_SERVICES_VERSION = 34;
 
 /** Resolves configured model identities after the shared services and database are ready. */
 export async function getConfiguredModels(): Promise<ConfiguredModel[]> {
@@ -79,12 +81,14 @@ export async function createApplicationServices(
   const targets = new TargetSystem(database, prompts);
   const targetRuns = new TargetRuns(database, prompts, targets);
   const evaluations = new EvaluationRuns(database, prompts, targets, targetRuns);
+  const scenarios = new ScenarioRuns(database, prompts, targetRuns, evaluations);
   const criterion = new CriterionLibrary(database);
   return {
     auth: new AuthService(database),
     prompts,
     targets,
     targetRuns,
+    scenarios,
     evaluations,
     evaluationResults: new EvaluationResults(database, search),
     criterion,
@@ -116,6 +120,7 @@ async function replaceApplicationServices(
   const services = await createApplicationServices();
   await services.evaluations.reconcileInterrupted();
   await services.targetRuns.reconcileInterrupted();
+  await services.scenarios.reconcileInterrupted();
   return services;
 }
 

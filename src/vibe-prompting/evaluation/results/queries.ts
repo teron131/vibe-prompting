@@ -20,8 +20,8 @@ type ResultRow = {
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
-  targetModelId: string;
-  judgeModelIds: string[];
+  targetModel: string;
+  judgeModels: string[];
   status: EvaluationRunStatus;
   input: unknown;
   output: unknown | null;
@@ -39,7 +39,7 @@ type ScoreRow = {
   criterionPosition: number;
   criterion: Criterion;
   dataType: EvaluationDataType;
-  judgeModelId: string;
+  judgeModel: string;
   value: boolean | number | string;
   comment: string;
   evidence: string[];
@@ -66,9 +66,9 @@ export function selectResultRows(
       evaluation_cases.id AS case_id, evaluation_cases.position,
       evaluation_cases.input_json AS input, evaluation_cases.output_json AS output,
       evaluation_runs.id AS run_id,
-      evaluation_runs.prompt_revision_id, evaluation_runs.target_model_id,
+      evaluation_runs.prompt_revision_id, evaluation_runs.target_model_id AS target_model,
       evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
-      evaluation_runs.status, evaluation_runs.judge_model_ids,
+      evaluation_runs.status, evaluation_runs.judge_model_ids AS judge_models,
       evaluation_runs.error_message, evaluation_runs.is_synthetic_example,
       evaluation_runs.created_at, evaluation_runs.completed_at, prompts.title AS prompt_title,
       prompt_revisions.revision_number AS prompt_revision_number
@@ -114,9 +114,9 @@ export function selectResultById(sql: DatabaseClient, caseId: string) {
       evaluation_cases.id AS case_id, evaluation_cases.position,
       evaluation_cases.input_json AS input, evaluation_cases.output_json AS output,
       evaluation_runs.id AS run_id,
-      evaluation_runs.prompt_revision_id, evaluation_runs.target_model_id,
+      evaluation_runs.prompt_revision_id, evaluation_runs.target_model_id AS target_model,
       evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
-      evaluation_runs.status, evaluation_runs.judge_model_ids,
+      evaluation_runs.status, evaluation_runs.judge_model_ids AS judge_models,
       evaluation_runs.error_message, evaluation_runs.is_synthetic_example,
       evaluation_runs.created_at, evaluation_runs.completed_at, prompts.title AS prompt_title,
       prompt_revisions.revision_number AS prompt_revision_number
@@ -135,7 +135,8 @@ export function selectScoresForCases(sql: DatabaseClient, caseIds: string[]) {
     SELECT
       evaluation_scores.id, evaluation_scores.case_id,
       evaluation_scores.criterion_position, evaluation_scores.data_type,
-      evaluation_scores.criterion_json AS criterion, evaluation_scores.judge_model_id,
+      evaluation_scores.criterion_json AS criterion,
+      evaluation_scores.judge_model_id AS judge_model,
       evaluation_scores.value_json AS value, evaluation_scores.comment,
       evaluation_scores.evidence_json AS evidence
     FROM evaluation_scores
@@ -154,7 +155,7 @@ export function projectCaseResults(rows: ResultRow[], scores: ScoreRow[]): Resul
       criterionPosition: score.criterionPosition,
       criterion: score.criterion,
       dataType: score.dataType,
-      judgeModelId: score.judgeModelId,
+      judgeModel: score.judgeModel,
       value: score.value,
       comment: score.comment,
       evidence: score.evidence,
@@ -168,8 +169,8 @@ export function projectCaseResults(rows: ResultRow[], scores: ScoreRow[]): Resul
     promptRevisionId: row.promptRevisionId,
     promptRevisionNumber: row.promptRevisionNumber,
     promptTitle: row.promptTitle,
-    targetModelId: row.targetModelId,
-    judgeModelIds: row.judgeModelIds,
+    targetModel: row.targetModel,
+    judgeModels: row.judgeModels,
     status: row.status,
     input: row.input,
     output: row.output,
@@ -278,19 +279,19 @@ export async function selectFacets(
   sql: DatabaseClient,
   filters: NormalizedFilters,
 ): Promise<EvaluationWorkspaceFacets> {
-  const [prompts, revisions, targetModels, statuses, judges, dataTypes] = await Promise.all([
+  const [prompts, revisions, targetModels, statuses, judgeModels, dataTypes] = await Promise.all([
     selectPromptFacets(sql, withoutFacet(filters, "promptId")),
     selectRunFacet(sql, withoutFacet(filters, "promptRevisionId"), "revision"),
-    selectRunFacet(sql, withoutFacet(filters, "targetModelIds"), "targetModel"),
+    selectRunFacet(sql, withoutFacet(filters, "targetModels"), "targetModel"),
     selectRunFacet(sql, withoutFacet(filters, "status"), "status"),
-    selectScoreFacet(sql, withoutFacet(filters, "judgeModelIds"), "judge"),
+    selectScoreFacet(sql, withoutFacet(filters, "judgeModels"), "judge"),
     selectScoreFacet(sql, withoutFacet(filters, "dataType"), "dataType"),
   ]);
   return {
     prompts,
     revisions,
     targetModels,
-    judges,
+    judgeModels,
     statuses: statuses as EvaluationWorkspaceFacets["statuses"],
     dataTypes: dataTypes as EvaluationWorkspaceFacets["dataTypes"],
   };
@@ -379,22 +380,22 @@ function caseIdsCondition(sql: DatabaseClient, filters: NormalizedFilters) {
 }
 
 function targetModelsCondition(sql: DatabaseClient, filters: NormalizedFilters) {
-  if (filters.targetModelIds === null) return sql`TRUE`;
-  return sql`evaluation_runs.target_model_id = ANY(${sql.array(filters.targetModelIds)}::text[])`;
+  if (filters.targetModels === null) return sql`TRUE`;
+  return sql`evaluation_runs.target_model_id = ANY(${sql.array(filters.targetModels)}::text[])`;
 }
 
 function caseJudgeModelsCondition(sql: DatabaseClient, filters: NormalizedFilters) {
-  if (filters.judgeModelIds === null) return sql`TRUE`;
+  if (filters.judgeModels === null) return sql`TRUE`;
   return sql`EXISTS (
     SELECT 1 FROM evaluation_scores
     WHERE evaluation_scores.case_id = evaluation_cases.id
-      AND evaluation_scores.judge_model_id = ANY(${sql.array(filters.judgeModelIds)}::text[])
+      AND evaluation_scores.judge_model_id = ANY(${sql.array(filters.judgeModels)}::text[])
   )`;
 }
 
 function judgeModelsCondition(sql: DatabaseClient, filters: NormalizedFilters) {
-  if (filters.judgeModelIds === null) return sql`TRUE`;
-  return sql`evaluation_scores.judge_model_id = ANY(${sql.array(filters.judgeModelIds)}::text[])`;
+  if (filters.judgeModels === null) return sql`TRUE`;
+  return sql`evaluation_scores.judge_model_id = ANY(${sql.array(filters.judgeModels)}::text[])`;
 }
 
 export function selectTotals(sql: DatabaseClient, filters: NormalizedFilters) {
@@ -581,7 +582,7 @@ export function selectGroupedRows(
     groupBy === "dataType"
       ? facets.dataTypes
       : groupBy === "judge"
-        ? facets.judges
+        ? facets.judgeModels
         : groupBy === "revision"
           ? facets.revisions
           : groupBy === "status"

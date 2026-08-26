@@ -14,8 +14,8 @@ export type ResultFilters = {
   runId?: string;
   promptId?: string;
   promptRevisionId?: string;
-  targetModelIds?: string[];
-  judgeModelIds?: string[];
+  targetModels?: string[];
+  judgeModels?: string[];
   status?: EvaluationRunStatus;
   dataType?: EvaluationDataType;
   from?: string;
@@ -27,7 +27,7 @@ export type ResultScore = {
   criterionPosition: number;
   criterion: Criterion;
   dataType: EvaluationDataType;
-  judgeModelId: string;
+  judgeModel: string;
   value: boolean | number | string;
   comment: string;
   evidence: string[];
@@ -40,8 +40,8 @@ export type ResultListItem = {
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
-  targetModelId: string;
-  judgeModelIds: string[];
+  targetModel: string;
+  judgeModels: string[];
   status: EvaluationRunStatus;
   input: unknown;
   output: unknown | null;
@@ -58,7 +58,7 @@ export type EvaluationWorkspaceFacets = {
   prompts: Array<{ count: number; id: string; label: string }>;
   revisions: Array<{ count: number; value: string }>;
   targetModels: Array<{ count: number; value: string }>;
-  judges: Array<{ count: number; value: string }>;
+  judgeModels: Array<{ count: number; value: string }>;
   statuses: Array<{ count: number; value: EvaluationRunStatus }>;
   dataTypes: Array<{ count: number; value: EvaluationDataType }>;
 };
@@ -125,27 +125,6 @@ export type EvaluationAnalyticsResponse = {
   provenance: EvaluationWorkspaceProvenance;
 };
 
-export type EvaluationStructuredQuery =
-  | { operation: "count"; entity: "cases" | "runs" | "scores"; filters?: ResultFilters }
-  | {
-      operation: "keyword_count";
-      keyword: string;
-      field?: "all" | "comment" | "evidence" | "input" | "output";
-      filters?: ResultFilters;
-    }
-  | {
-      operation: "group_count";
-      groupBy: "dataType" | "judge" | "prompt" | "revision" | "status" | "targetModel";
-      limit?: number;
-      filters?: ResultFilters;
-    }
-  | {
-      operation: "average";
-      groupBy?: "criterion" | "judge" | "prompt" | "revision" | "targetModel";
-      limit?: number;
-      filters?: ResultFilters;
-    };
-
 export type EvaluationQueryResponse = {
   operation: EvaluationStructuredQuery["operation"];
   query: EvaluationStructuredQuery;
@@ -166,8 +145,8 @@ export type NormalizedFilters = {
   runId: string | null;
   promptId: string | null;
   promptRevisionId: string | null;
-  targetModelIds: string[] | null;
-  judgeModelIds: string[] | null;
+  targetModels: string[] | null;
+  judgeModels: string[] | null;
   status: EvaluationRunStatus | null;
   dataType: EvaluationDataType | null;
   from: Date | null;
@@ -185,7 +164,7 @@ const statusSchema = z.enum([
   "cancelled",
   "interrupted",
 ]);
-const modelIdsSchema = z.array(z.string().trim().min(1).max(200)).max(20).optional();
+const modelsSchema = z.array(z.string().trim().min(1).max(200)).max(20).optional();
 const optionalDateSchema = z
   .string()
   .trim()
@@ -199,8 +178,8 @@ export const evaluationFiltersSchema = z
     runId: z.uuid().optional(),
     promptId: z.uuid().optional(),
     promptRevisionId: z.uuid().optional(),
-    targetModelIds: modelIdsSchema,
-    judgeModelIds: modelIdsSchema,
+    targetModels: modelsSchema,
+    judgeModels: modelsSchema,
     status: statusSchema.optional(),
     dataType: dataTypeSchema.optional(),
     from: optionalDateSchema,
@@ -223,30 +202,32 @@ export const evaluationResultListInputSchema = evaluationFiltersSchema.extend({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export const evaluationStructuredQuerySchema = z.discriminatedUnion("operation", [
-  z.object({
+  evaluationFiltersSchema.safeExtend({
     operation: z.literal("count"),
     entity: z.enum(["cases", "runs", "scores"]),
-    filters: evaluationFiltersSchema.optional(),
   }),
-  z.object({
+  evaluationFiltersSchema.safeExtend({
     operation: z.literal("keyword_count"),
     keyword: z.string().trim().min(1).max(200),
     field: z.enum(["all", "comment", "evidence", "input", "output"]).default("all"),
-    filters: evaluationFiltersSchema.optional(),
   }),
-  z.object({
+  evaluationFiltersSchema.safeExtend({
     operation: z.literal("group_count"),
     groupBy: z.enum(["dataType", "judge", "prompt", "revision", "status", "targetModel"]),
     limit: z.number().int().min(1).max(50).default(20),
-    filters: evaluationFiltersSchema.optional(),
   }),
-  z.object({
+  evaluationFiltersSchema.safeExtend({
     operation: z.literal("average"),
     groupBy: z.enum(["criterion", "judge", "prompt", "revision", "targetModel"]).optional(),
     limit: z.number().int().min(1).max(50).default(20),
-    filters: evaluationFiltersSchema.optional(),
   }),
 ]);
+export type EvaluationStructuredQuery = z.infer<typeof evaluationStructuredQuerySchema>;
+
+/** Projects the shared top-level filter fields out of one operation-specific query. */
+export function projectEvaluationQueryFilters(query: EvaluationStructuredQuery): ResultFilters {
+  return evaluationFiltersSchema.strip().parse(query);
+}
 
 export class EvaluationResultNotFoundError extends Error {
   readonly statusCode = 404;
@@ -295,8 +276,8 @@ export function normalizeFilters(filters: ResultFilters): NormalizedFilters {
     runId: filters.runId ?? null,
     promptId: filters.promptId ?? null,
     promptRevisionId: filters.promptRevisionId ?? null,
-    targetModelIds: filters.targetModelIds?.length ? filters.targetModelIds : null,
-    judgeModelIds: filters.judgeModelIds?.length ? filters.judgeModelIds : null,
+    targetModels: filters.targetModels?.length ? filters.targetModels : null,
+    judgeModels: filters.judgeModels?.length ? filters.judgeModels : null,
     status: filters.status ?? null,
     dataType: filters.dataType ?? null,
     from: filters.from ? new Date(filters.from) : null,

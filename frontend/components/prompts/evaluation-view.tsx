@@ -100,7 +100,7 @@ export function PromptEvaluationView({
                 key={run.id}
               >
                 <span className="min-w-0">
-                  <span className="block truncate font-medium">{run.targetModelId}</span>
+                  <span className="block truncate font-medium">{run.targetModel}</span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">
                     {revisionLabel(run.promptRevisionId, revisionVersions)} · {run.caseCount}{" "}
                     {run.caseCount === 1 ? "case" : "cases"} ·{" "}
@@ -134,7 +134,7 @@ function LatestResult({
             <Status status={run.status} />
           </div>
           <p className="mt-1 truncate text-sm">
-            {run.targetProfileName ?? "Legacy runtime"} · {run.targetModelId}
+            {run.targetProfileName ?? "Legacy runtime"} · {run.targetModel}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Tested {revisionLabel(run.promptRevisionId, revisionVersions)} · {run.caseCount}{" "}

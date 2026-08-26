@@ -30,10 +30,10 @@ type RunSummaryRow = {
   targetProfileId: string | null;
   targetProfileRevisionId: string | null;
   targetProfileName: string | null;
-  targetModelId: string;
+  targetModel: string;
   targetRunId: string | null;
   targetRunTurnId: string | null;
-  judgeModelIds: string[];
+  judgeModels: string[];
   caseCount: number;
   configurationFingerprint: string;
   effectiveInstructionsHash: string | null;
@@ -68,7 +68,7 @@ type ScoreRow = {
   criterionPosition: number;
   criterion: Criterion;
   dataType: StoredEvaluationScore["dataType"];
-  judgeModelId: string;
+  judgeModel: string;
   value: boolean | number | string;
   comment: string;
   evidence: string[];
@@ -101,8 +101,8 @@ export type NewEvaluationRun = {
   promptRevisionId: string;
   targetProfileId: string;
   targetProfileRevisionId: string;
-  targetModelId: string;
-  judgeModelIds: string[];
+  targetModel: string;
+  judgeModels: string[];
   cases: EvaluationCase<unknown>[];
   effectiveInstructionsHash: string;
   configurationFingerprint: string;
@@ -120,8 +120,8 @@ export type EvaluationExecution = {
   promptRevisionId: string;
   targetProfileId: string | null;
   targetProfileRevisionId: string | null;
-  targetModelId: string;
-  judgeModelIds: string[];
+  targetModel: string;
+  judgeModels: string[];
   cases: Array<{ input: unknown; criteria: Criterion[]; output: unknown | null }>;
   targetRunTurnId: string | null;
   startedByUserId: string;
@@ -252,7 +252,7 @@ export class EvaluationRunStore {
             criterionPosition: score.criterionPosition,
             criterion: score.criterion,
             dataType: score.dataType,
-            judgeModelId: score.judgeModelId,
+            judgeModel: score.judgeModel,
             value: score.value,
             comment: score.comment,
             evidence: score.evidence,
@@ -270,8 +270,8 @@ export class EvaluationRunStore {
         promptRevisionId: row.promptRevisionId,
         targetProfileId: row.targetProfileId,
         targetProfileRevisionId: row.targetProfileRevisionId,
-        targetModelId: row.targetModelId,
-        judgeModelIds: row.judgeModelIds,
+        targetModel: row.targetModel,
+        judgeModels: row.judgeModels,
         cases: (await selectCases(sql, runId)).map(({ input, criteria, output }) => ({
           input,
           criteria,
@@ -390,7 +390,7 @@ async function insertRun(sql: DatabaseClient, input: NewEvaluationRun): Promise<
     )
     VALUES (
       ${runId}, ${input.promptId}, ${input.promptRevisionId}, ${input.chatId}, ${input.source},
-      ${input.targetModelId}, ${sql.array(input.judgeModelIds)}, 'queued',
+      ${input.targetModel}, ${sql.array(input.judgeModels)}, 'queued',
       ${input.configurationFingerprint}, ${input.isSyntheticExample}, ${input.targetProfileId},
       ${input.targetProfileRevisionId}, ${input.effectiveInstructionsHash},
       ${input.targetRunId}, ${input.targetRunTurnId},
@@ -441,8 +441,8 @@ async function completeRun(
     `;
     const judgeOffsets = new Map<string, number>();
     for (const evaluation of evaluatedCase.evaluations) {
-      const criterionPosition = judgeOffsets.get(evaluation.judge) ?? 0;
-      judgeOffsets.set(evaluation.judge, criterionPosition + 1);
+      const criterionPosition = judgeOffsets.get(evaluation.judgeModel) ?? 0;
+      judgeOffsets.set(evaluation.judgeModel, criterionPosition + 1);
       const criterion = configuredCase.criteria[criterionPosition];
       if (!criterion) throw new Error(`Unknown criterion position: ${criterionPosition}.`);
       await insertScore(sql, storedCase.id, criterionPosition, criterion, evaluation);
@@ -470,7 +470,7 @@ async function insertScore(
     VALUES (
       ${randomUUID()}, ${caseId}, ${criterionPosition},
       ${criterion.type.toUpperCase() as StoredEvaluationScore["dataType"]},
-      ${sql.json(criterion as postgres.JSONValue)}, ${evaluation.judge},
+      ${sql.json(criterion as postgres.JSONValue)}, ${evaluation.judgeModel},
       ${sql.json(evaluation.value as postgres.JSONValue)}, ${evaluation.comment},
       ${sql.json(evaluation.evidence)}
     )
@@ -490,8 +490,8 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
       evaluation_runs.prompt_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
       starter.name AS started_by_name,
-      evaluation_runs.target_model_id,
-      evaluation_runs.judge_model_ids, evaluation_runs.status,
+      evaluation_runs.target_model_id AS target_model,
+      evaluation_runs.judge_model_ids AS judge_models, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
       evaluation_runs.is_synthetic_example,
       evaluation_runs.effective_instructions_hash,
@@ -530,8 +530,8 @@ function selectRunRows(sql: DatabaseClient, limit: number) {
       evaluation_runs.prompt_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
       starter.name AS started_by_name,
-      evaluation_runs.target_model_id,
-      evaluation_runs.judge_model_ids, evaluation_runs.status,
+      evaluation_runs.target_model_id AS target_model,
+      evaluation_runs.judge_model_ids AS judge_models, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
       evaluation_runs.is_synthetic_example,
       evaluation_runs.effective_instructions_hash,
@@ -562,8 +562,8 @@ function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, limit: nu
       evaluation_runs.prompt_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
       starter.name AS started_by_name,
-      evaluation_runs.target_model_id,
-      evaluation_runs.judge_model_ids, evaluation_runs.status,
+      evaluation_runs.target_model_id AS target_model,
+      evaluation_runs.judge_model_ids AS judge_models, evaluation_runs.status,
       evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
       evaluation_runs.is_synthetic_example,
       evaluation_runs.effective_instructions_hash,
@@ -603,7 +603,7 @@ function selectScores(sql: DatabaseClient, runId: string) {
       evaluation_scores.id, evaluation_scores.case_id,
       evaluation_scores.criterion_position, evaluation_scores.data_type,
       evaluation_scores.criterion_json AS criterion,
-      evaluation_scores.judge_model_id, evaluation_scores.value_json AS value,
+      evaluation_scores.judge_model_id AS judge_model, evaluation_scores.value_json AS value,
       evaluation_scores.comment, evaluation_scores.evidence_json AS evidence
     FROM evaluation_scores
     JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
@@ -622,10 +622,10 @@ function projectRunSummary(row: RunSummaryRow, viewerUserId: string): Evaluation
     targetProfileId: row.targetProfileId,
     targetProfileRevisionId: row.targetProfileRevisionId,
     targetProfileName: row.targetProfileName,
-    targetModelId: row.targetModelId,
+    targetModel: row.targetModel,
     targetRunId: row.targetRunId,
     targetRunTurnId: row.targetRunTurnId,
-    judgeModelIds: row.judgeModelIds,
+    judgeModels: row.judgeModels,
     caseCount: row.caseCount,
     configurationFingerprint: row.configurationFingerprint,
     effectiveInstructionsHash: row.effectiveInstructionsHash,

@@ -18,7 +18,7 @@ export type EvaluationBatchJob = {
   executionNumber: number;
   configurationId: string;
   configurationName: string;
-  targetModelId: string;
+  targetModel: string;
   repetition: number;
   caseCount: number;
   judgeScoreDecisions: number;
@@ -45,10 +45,10 @@ export type EvaluationRunSummary = {
   targetProfileId: string | null;
   targetProfileRevisionId: string | null;
   targetProfileName: string | null;
-  targetModelId: string;
+  targetModel: string;
   targetRunId: string | null;
   targetRunTurnId: string | null;
-  judgeModelIds: string[];
+  judgeModels: string[];
   caseCount: number;
   configurationFingerprint: string;
   effectiveInstructionsHash: string | null;
@@ -67,7 +67,7 @@ export type StoredEvaluationScore = {
   criterionPosition: number;
   criterion: Criterion;
   dataType: "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
-  judgeModelId: string;
+  judgeModel: string;
   value: boolean | number | string;
   comment: string;
   evidence: string[];
@@ -100,11 +100,7 @@ export type BooleanTrendPoint = {
 export const evaluationRunInputSchema = requestSchema.extend({
   promptId: z.uuid(),
   promptRevisionId: z.uuid(),
-  targetModelId: z.string().trim().min(1),
-  judges: z
-    .array(z.string().trim().min(1))
-    .min(1)
-    .refine((judges) => new Set(judges).size === judges.length, "Judge model IDs must be unique."),
+  targetModel: z.string().trim().min(1),
   cases: requestSchema.shape.cases.element
     .extend({ input: z.string().trim().min(1) })
     .array()
@@ -115,10 +111,7 @@ export const evaluationRunInputSchema = requestSchema.extend({
 /** Validates a request to judge one completed Target Run turn without invoking the Target again. */
 export const recordedEvaluationRunInputSchema = z.object({
   criteria: criteriaSchema,
-  judges: z
-    .array(z.string().trim().min(1))
-    .min(1)
-    .refine((judges) => new Set(judges).size === judges.length, "Judge model IDs must be unique."),
+  judgeModels: requestSchema.shape.judgeModels,
   targetRunId: z.uuid(),
   targetRunTurnId: z.uuid(),
 });
@@ -127,16 +120,19 @@ export const recordedEvaluationRunInputSchema = z.object({
 export const evaluationBatchInputSchema = z.object({
   promptId: z.uuid(),
   promptRevisionId: z.uuid(),
-  targetModelIds: z
+  targetModels: z
     .array(z.string().trim().min(1))
     .min(1)
     .max(12)
-    .refine((models) => new Set(models).size === models.length, "Target model IDs must be unique."),
-  judges: z
+    .refine((models) => new Set(models).size === models.length, "Target models must be unique."),
+  judgeModels: z
     .array(z.string().trim().min(1))
     .min(1)
     .max(6)
-    .refine((judges) => new Set(judges).size === judges.length, "Judge model IDs must be unique."),
+    .refine(
+      (judgeModels) => new Set(judgeModels).size === judgeModels.length,
+      "Judge models must be unique.",
+    ),
   configurations: z
     .array(
       z.object({

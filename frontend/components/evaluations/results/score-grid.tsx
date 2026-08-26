@@ -10,7 +10,13 @@ const POSITIVE = new Set(["good", "pass", "passed", "success"]);
 const NEGATIVE = new Set(["bad", "fail", "failed"]);
 const WARNING = new Set(["decent", "partial"]);
 
-export function ScoreGrid({ judges, testCase }: { judges: string[]; testCase: EvaluationCase }) {
+export function ScoreGrid({
+  judgeModels,
+  testCase,
+}: {
+  judgeModels: string[];
+  testCase: EvaluationCase;
+}) {
   const scoresByPosition = new Map<number, EvaluationScore[]>();
   for (const score of testCase.scores) {
     const scores = scoresByPosition.get(score.criterionPosition) ?? [];
@@ -25,7 +31,7 @@ export function ScoreGrid({ judges, testCase }: { judges: string[]; testCase: Ev
           <thead className="bg-muted/35 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="w-72 border-r px-4 py-2 text-left font-medium sm:px-5">Criterion</th>
-              {judges.map((judge) => (
+              {judgeModels.map((judge) => (
                 <th
                   className="min-w-44 border-r px-3 py-2 text-left font-medium last:border-r-0"
                   key={judge}
@@ -54,11 +60,11 @@ export function ScoreGrid({ judges, testCase }: { judges: string[]; testCase: Ev
                     scores={scoresByPosition.get(position) ?? []}
                   />
                 </th>
-                {judges.map((judge) => (
+                {judgeModels.map((judge) => (
                   <td className="border-r px-3 py-3 align-top last:border-r-0" key={judge}>
                     <ScoreCell
                       score={(scoresByPosition.get(position) ?? []).find(
-                        (score) => score.judgeModelId === judge,
+                        (score) => score.judgeModel === judge,
                       )}
                     />
                   </td>
@@ -212,7 +218,7 @@ function ScoreEvidence({ score }: { score: EvaluationScore }) {
         <ModelIdentityLabel
           className="min-w-0"
           labelClassName="font-mono text-[11px] font-medium"
-          modelId={score.judgeModelId}
+          modelId={score.judgeModel}
           variant="short-id"
         />
         <span

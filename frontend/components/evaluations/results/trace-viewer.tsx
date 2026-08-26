@@ -284,7 +284,7 @@ function EvaluationTraceDialog({ item, onClose }: { item: EvaluationResultItem; 
               ) : null}
               {!loading ? (
                 <>
-                  <FullTraceMessages messages={leadingMessages} modelId={item.targetModelId} />
+                  <FullTraceMessages messages={leadingMessages} modelId={item.targetModel} />
                   {condensed ? (
                     <>
                       <button
@@ -303,13 +303,10 @@ function EvaluationTraceDialog({ item, onClose }: { item: EvaluationResultItem; 
                       </button>
                       <div id={`trace-middle-${item.caseId}`}>
                         {middleMessagesOpen ? (
-                          <FullTraceMessages
-                            messages={middleMessages}
-                            modelId={item.targetModelId}
-                          />
+                          <FullTraceMessages messages={middleMessages} modelId={item.targetModel} />
                         ) : null}
                       </div>
-                      <FullTraceMessages messages={trailingMessages} modelId={item.targetModelId} />
+                      <FullTraceMessages messages={trailingMessages} modelId={item.targetModel} />
                     </>
                   ) : null}
                 </>
@@ -393,7 +390,7 @@ function TraceScore({ score }: { score: EvaluationResultScore }) {
       <ModelIdentityLabel
         className="mt-3 text-muted-foreground"
         labelClassName="font-mono text-[11px]"
-        modelId={score.judgeModelId}
+        modelId={score.judgeModel}
         variant="short-id"
       />
       <p className="mt-2 text-xs leading-5 text-muted-foreground">{score.comment}</p>

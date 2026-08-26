@@ -8,7 +8,7 @@ import type { Database } from "../../database/index.ts";
 import type { PromptSystem } from "../../prompt-system/index.ts";
 import { sanitizeAiSdkHistory } from "../adapters/ai-sdk.ts";
 import type { PinnedTarget, TargetSystem } from "../system.ts";
-import { TargetRunRegistry } from "./registry.ts";
+import { type TargetRunClaim, TargetRunRegistry } from "./registry.ts";
 import {
   type StoredTargetRun,
   targetRunCreateInputSchema,
@@ -37,7 +37,8 @@ export class TargetRuns {
   }
 
   async startHumanRun(actorUserId: string, rawInput: unknown): Promise<StoredTargetRun> {
-    return this.#startRun(actorUserId, rawInput, "human", null);
+    const launched = await this.#startRun(actorUserId, rawInput, "human", null);
+    return this.#store.get(launched.runId, actorUserId);
   }
 
   async startAgentRun(
@@ -45,7 +46,22 @@ export class TargetRuns {
     rawInput: unknown,
     chatId: string | null,
   ): Promise<StoredTargetRun> {
-    return this.#startRun(actorUserId, rawInput, "ai", chatId);
+    const launched = await this.#startRun(actorUserId, rawInput, "ai", chatId);
+    return this.#store.get(launched.runId, actorUserId);
+  }
+
+  /** Starts a workflow-owned Target Run and exposes its terminal turn without polling. */
+  async startRunAndWait(
+    actorUserId: string,
+    rawInput: unknown,
+    chatId: string | null = null,
+    source: TargetRunSource = "ai",
+  ): Promise<{ run: StoredTargetRun; completion: Promise<StoredTargetRun> }> {
+    const launched = await this.#startRun(actorUserId, rawInput, source, chatId, true);
+    return {
+      run: await this.#store.get(launched.runId, actorUserId),
+      completion: launched.completion.then(() => this.#store.get(launched.runId, actorUserId)),
+    };
   }
 
   async continueRun(
@@ -61,6 +77,25 @@ export class TargetRuns {
     await this.#store.appendTurn(actorUserId, runId, parsed.data.instruction);
     await this.#launch(runId, actorUserId);
     return this.#store.get(runId, actorUserId);
+  }
+
+  /** Continues an automated Target Run and exposes its terminal turn to the owning workflow without polling. */
+  async continueRunAndWait(
+    actorUserId: string,
+    runId: string,
+    rawInput: unknown,
+  ): Promise<{ run: StoredTargetRun; completion: Promise<StoredTargetRun> }> {
+    const parsed = targetRunTurnInputSchema.safeParse(rawInput);
+    if (!parsed.success)
+      throw new TargetRunRequestError(
+        parsed.error.issues[0]?.message ?? "Invalid Target Run turn.",
+      );
+    await this.#store.appendTurn(actorUserId, runId, parsed.data.instruction);
+    const launched = await this.#launch(runId, actorUserId, undefined, true);
+    return {
+      run: await this.#store.get(runId, actorUserId),
+      completion: launched.completion.then(() => this.#store.get(runId, actorUserId)),
+    };
   }
 
   async getRun(viewerUserId: string, runId: string): Promise<StoredTargetRun> {
@@ -95,21 +130,22 @@ export class TargetRuns {
     rawInput: unknown,
     source: TargetRunSource,
     chatId: string | null,
-  ): Promise<StoredTargetRun> {
+    waitForCapacity: boolean = false,
+  ): Promise<{ runId: string; completion: Promise<void> }> {
     const parsed = targetRunCreateInputSchema.safeParse(rawInput);
     if (!parsed.success)
       throw new TargetRunRequestError(
         parsed.error.issues[0]?.message ?? "Invalid Target Run request.",
       );
     const input = parsed.data;
-    requireConfiguredModel(input.targetModelId);
+    requireConfiguredModel(input.targetModel);
     await this.#prompts.getRevision(input.promptId, input.promptRevisionId);
     const pinnedTarget = await this.#targets.createPinnedTarget({
       actorUserId,
       promptId: input.promptId,
       promptRevisionId: input.promptRevisionId,
       reasoningEffort: input.reasoningEffort,
-      targetModelId: input.targetModelId,
+      targetModel: input.targetModel,
     });
     let runId: string;
     try {
@@ -122,7 +158,7 @@ export class TargetRuns {
         reasoningEffort: input.reasoningEffort,
         source,
         startedByUserId: actorUserId,
-        targetModelId: input.targetModelId,
+        targetModel: input.targetModel,
         targetProfileId: pinnedTarget.profile.id,
         targetProfileRevisionId: pinnedTarget.profile.revisionId,
       });
@@ -130,11 +166,16 @@ export class TargetRuns {
       await pinnedTarget.close();
       throw error;
     }
-    await this.#launch(runId, actorUserId, pinnedTarget);
-    return this.#store.get(runId, actorUserId);
+    const launched = await this.#launch(runId, actorUserId, pinnedTarget, waitForCapacity);
+    return { runId, completion: launched.completion };
   }
 
-  async #launch(runId: string, actorUserId: string, preparedTarget?: PinnedTarget): Promise<void> {
+  async #launch(
+    runId: string,
+    actorUserId: string,
+    preparedTarget?: PinnedTarget,
+    waitForCapacity: boolean = false,
+  ): Promise<{ completion: Promise<void> }> {
     const context = await this.#store.getExecutionContext(runId);
     let pinnedTarget = preparedTarget;
     try {
@@ -143,53 +184,67 @@ export class TargetRuns {
         promptId: context.promptId,
         promptRevisionId: context.promptRevisionId,
         reasoningEffort: context.reasoningEffort,
-        targetModelId: context.targetModelId,
+        targetModel: context.targetModel,
         targetProfileId: context.targetProfileId,
         targetProfileRevisionId: context.targetProfileRevisionId,
       });
       const launchedTarget = pinnedTarget;
-      const claimed = this.#registry.claim(runId);
-      const costEstimate = startModelCostEstimate(context.targetModelId);
-      void launchedTarget.runtime
-        .run({
-          messages: toModelMessages(context.responseHistory, context.turn.input),
-          onEvent: claimed.publish,
-          signal: claimed.signal,
-        })
-        .then(async (result) => {
-          const durationMs = Math.max(0, Date.now() - context.turn.createdAt.getTime());
-          const usage = {
-            ...result.usage,
-            durationMs,
-            estimatedCostUsd: await costEstimate.calculate(result.usage),
-          };
-          await this.#store.completeTurn(
-            runId,
-            context.turn.id,
-            result.activity,
-            result.output,
-            result.responseMessages,
-            usage,
-          );
-          claimed.publish({ type: "finish" });
-        })
-        .catch(async (error: unknown) => {
-          const interrupted = claimed.signal.aborted;
-          const message = interrupted
-            ? "The Target Run turn was stopped."
-            : safeExecutionError(error);
-          await this.#store.failTurn(
-            runId,
-            context.turn.id,
-            interrupted ? "interrupted" : "failed",
-            message,
-          );
-          claimed.publish(interrupted ? { type: "stopped" } : { message, type: "error" });
-        })
-        .finally(async () => {
-          await launchedTarget.close();
-          claimed.release();
-        });
+      const execute = (claimed: TargetRunClaim) => {
+        const costEstimate = startModelCostEstimate(context.targetModel);
+        return launchedTarget.runtime
+          .run({
+            messages: toModelMessages(context.responseHistory, context.turn.input),
+            onEvent: claimed.publish,
+            signal: claimed.signal,
+          })
+          .then(async (result) => {
+            const durationMs = Math.max(0, Date.now() - context.turn.createdAt.getTime());
+            const usage = {
+              ...result.usage,
+              durationMs,
+              estimatedCostUsd: await costEstimate.calculate(result.usage),
+            };
+            await this.#store.completeTurn(
+              runId,
+              context.turn.id,
+              result.activity,
+              result.output,
+              result.responseMessages,
+              usage,
+            );
+            claimed.publish({ type: "finish" });
+          })
+          .catch(async (error: unknown) => {
+            const interrupted = claimed.signal.aborted;
+            const message = interrupted
+              ? "The Target Run turn was stopped."
+              : safeExecutionError(error);
+            await this.#store.failTurn(
+              runId,
+              context.turn.id,
+              interrupted ? "interrupted" : "failed",
+              message,
+            );
+            claimed.publish(interrupted ? { type: "stopped" } : { message, type: "error" });
+          })
+          .finally(async () => {
+            await launchedTarget.close();
+            claimed.release();
+          });
+      };
+      const completion = waitForCapacity
+        ? this.#registry.claimWhenAvailable(runId).then(execute, async (error: unknown) => {
+            await launchedTarget.close();
+            const interrupted = error instanceof DOMException && error.name === "AbortError";
+            await this.#store.failTurn(
+              runId,
+              context.turn.id,
+              interrupted ? "interrupted" : "failed",
+              interrupted ? "The Target Run turn was stopped." : safeExecutionError(error),
+            );
+          })
+        : execute(this.#registry.claim(runId));
+      return { completion };
     } catch (error) {
       await pinnedTarget?.close().catch(() => undefined);
       await this.#store

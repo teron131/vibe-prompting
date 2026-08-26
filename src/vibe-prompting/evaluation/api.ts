@@ -80,11 +80,12 @@ export const criteriaSchema = z
   });
 
 const judgeModelSchema = z.string().trim().min(1);
-const judgesSchema = z
-  .union([judgeModelSchema, z.array(judgeModelSchema).min(1)])
-  .superRefine((judges, context) => {
-    if (Array.isArray(judges) && new Set(judges).size !== judges.length) {
-      context.addIssue({ code: "custom", message: "Judge model IDs must be unique." });
+const judgeModelsSchema = z
+  .array(judgeModelSchema)
+  .min(1)
+  .superRefine((judgeModels, context) => {
+    if (new Set(judgeModels).size !== judgeModels.length) {
+      context.addIssue({ code: "custom", message: "Judge models must be unique." });
     }
   });
 
@@ -97,7 +98,7 @@ export const requestSchema = z.object({
       }),
     )
     .min(1),
-  judges: judgesSchema,
+  judgeModels: judgeModelsSchema,
 });
 
 export const recordedRequestSchema = z.object({
@@ -112,7 +113,7 @@ export const recordedRequestSchema = z.object({
       }),
     )
     .min(1),
-  judges: judgesSchema,
+  judgeModels: judgeModelsSchema,
 });
 
 export type Criterion = z.infer<typeof criterionSchema>;
@@ -124,7 +125,7 @@ export type EvaluationCase<INPUT = unknown> = {
 
 export type EvaluationRequest<INPUT = unknown> = {
   cases: EvaluationCase<INPUT>[];
-  judges: string | string[];
+  judgeModels: string[];
 };
 
 export type RecordedEvaluationCase<INPUT = unknown, OUTPUT = unknown> = EvaluationCase<INPUT> & {
@@ -133,12 +134,12 @@ export type RecordedEvaluationCase<INPUT = unknown, OUTPUT = unknown> = Evaluati
 
 export type RecordedEvaluationRequest<INPUT = unknown, OUTPUT = unknown> = {
   cases: RecordedEvaluationCase<INPUT, OUTPUT>[];
-  judges: string | string[];
+  judgeModels: string[];
 };
 
 export type CriterionEvaluation = {
   criterion: Criterion;
-  judge: string;
+  judgeModel: string;
   value: boolean | number | string;
   comment: string;
   evidence: string[];
@@ -158,17 +159,19 @@ export type EvaluationRun<INPUT = unknown, OUTPUT = unknown> = {
 export async function evaluate<INPUT, OUTPUT>(
   target: Target<INPUT, OUTPUT>,
   request: EvaluationRequest<INPUT>,
+  options: { signal?: AbortSignal } = {},
 ): Promise<EvaluationRun<INPUT, OUTPUT>> {
   const validatedTarget = targetSchema.parse(target) as Target<INPUT, OUTPUT>;
   const validatedRequest = requestSchema.parse(request) as EvaluationRequest<INPUT>;
   return runEvaluation({
     cases: validatedRequest.cases,
-    judges: validatedRequest.judges,
+    judgeModels: validatedRequest.judgeModels,
     target: {
       model: validatedTarget.model,
       invoke: (input: unknown) => validatedTarget.invoke(input as INPUT),
     },
     targetModel: validatedTarget.model,
+    signal: options.signal,
   });
 }
 
@@ -176,6 +179,7 @@ export async function evaluate<INPUT, OUTPUT>(
 export async function evaluateRecorded<INPUT, OUTPUT>(
   targetModel: string,
   request: RecordedEvaluationRequest<INPUT, OUTPUT>,
+  options: { signal?: AbortSignal } = {},
 ): Promise<EvaluationRun<INPUT, OUTPUT>> {
   const model = z.string().trim().min(1).parse(targetModel);
   const validatedRequest = recordedRequestSchema.parse(request) as RecordedEvaluationRequest<
@@ -184,33 +188,38 @@ export async function evaluateRecorded<INPUT, OUTPUT>(
   >;
   return runEvaluation({
     cases: validatedRequest.cases,
-    judges: validatedRequest.judges,
+    judgeModels: validatedRequest.judgeModels,
     targetModel: model,
+    signal: options.signal,
   });
 }
 
 async function runEvaluation<INPUT, OUTPUT>(input: {
   cases: Array<EvaluationCase<INPUT> & { output?: OUTPUT }>;
-  judges: string | string[];
+  judgeModels: string[];
   target?: Target<unknown, unknown>;
   targetModel: string;
+  signal?: AbortSignal;
 }): Promise<EvaluationRun<INPUT, OUTPUT>> {
   const validatedCases = input.cases.map((testCase) => ({
     ...testCase,
     internalCriteria: testCase.criteria.map(toInternalCriterion),
   }));
 
-  const { results } = await evaluatorGraph.invoke({
-    target: input.target,
-    targetModel: input.targetModel,
-    runName: input.targetModel,
-    cases: validatedCases.map(({ input: caseInput, internalCriteria, output }) => ({
-      input: caseInput,
-      output,
-      criteria: internalCriteria,
-    })),
-    judges: { model: input.judges },
-  });
+  const { results } = await evaluatorGraph.invoke(
+    {
+      target: input.target,
+      targetModel: input.targetModel,
+      runName: input.targetModel,
+      cases: validatedCases.map(({ input: caseInput, internalCriteria, output }) => ({
+        input: caseInput,
+        output,
+        criteria: internalCriteria,
+      })),
+      judgeModels: input.judgeModels,
+    },
+    { signal: input.signal },
+  );
 
   const cases = results.map((item, caseIndex) => {
     const validatedCase = validatedCases[caseIndex];
@@ -267,7 +276,7 @@ function projectEvaluation(
   return {
     criterion,
     value: projectValue(criterion, evaluation.value),
-    judge: evaluation.judgeModel,
+    judgeModel: evaluation.judgeModel,
     comment: evaluation.comment,
     evidence: evaluation.evidence,
   };

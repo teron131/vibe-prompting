@@ -11,8 +11,8 @@ export type EvaluationWorkspaceFilters = {
   runId?: string;
   promptId?: string;
   promptRevisionId?: string;
-  targetModelIds?: string[];
-  judgeModelIds?: string[];
+  targetModels?: string[];
+  judgeModels?: string[];
   status?: EvaluationRunStatus;
   dataType?: EvaluationDataType;
   from?: string;
@@ -32,7 +32,7 @@ export type EvaluationResultScore = {
   criterionPosition: number;
   criterion: Criterion;
   dataType: EvaluationDataType;
-  judgeModelId: string;
+  judgeModel: string;
   value: boolean | number | string;
   comment: string;
   evidence: string[];
@@ -45,10 +45,10 @@ export type EvaluationResultItem = {
   promptRevisionId: string;
   promptRevisionNumber: number;
   promptTitle: string;
-  targetModelId: string;
+  targetModel: string;
   targetRunId: string | null;
   targetRunTurnId: string | null;
-  judgeModelIds: string[];
+  judgeModels: string[];
   status: EvaluationRunStatus;
   input: unknown;
   output: unknown | null;
@@ -63,7 +63,7 @@ export type EvaluationWorkspaceFacets = {
   prompts: Array<{ count: number; id: string; label: string }>;
   revisions: Array<{ count: number; value: string }>;
   targetModels: Array<{ count: number; value: string }>;
-  judges: Array<{ count: number; value: string }>;
+  judgeModels: Array<{ count: number; value: string }>;
   statuses: Array<{ count: number; value: EvaluationRunStatus }>;
   dataTypes: Array<{ count: number; value: EvaluationDataType }>;
 };
@@ -130,29 +130,25 @@ export type EvaluationAnalyticsResponse = {
 };
 
 export type EvaluationStructuredQuery =
-  | {
+  | (EvaluationWorkspaceFilters & {
       operation: "count";
       entity: "cases" | "runs" | "scores";
-      filters?: EvaluationWorkspaceFilters;
-    }
-  | {
+    })
+  | (EvaluationWorkspaceFilters & {
       operation: "keyword_count";
       keyword: string;
       field?: "all" | "comment" | "evidence" | "input" | "output";
-      filters?: EvaluationWorkspaceFilters;
-    }
-  | {
+    })
+  | (EvaluationWorkspaceFilters & {
       operation: "group_count";
       groupBy: "dataType" | "judge" | "prompt" | "revision" | "status" | "targetModel";
       limit?: number;
-      filters?: EvaluationWorkspaceFilters;
-    }
-  | {
+    })
+  | (EvaluationWorkspaceFilters & {
       operation: "average";
       groupBy?: "criterion" | "judge" | "prompt" | "revision" | "targetModel";
       limit?: number;
-      filters?: EvaluationWorkspaceFilters;
-    };
+    });
 
 export type EvaluationQueryResponse = {
   operation: EvaluationStructuredQuery["operation"];

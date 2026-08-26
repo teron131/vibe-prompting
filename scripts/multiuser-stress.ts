@@ -33,6 +33,7 @@ type TestSummary = {
   };
   workflows: {
     evaluationStatuses: Record<string, number>;
+    scenarioStatus: string;
     targetStatus: string;
     restartInterrupted: number;
   };
@@ -111,6 +112,7 @@ try {
           criterion: services.criterion,
           evaluations: services.evaluations,
           evaluationResults: services.evaluationResults,
+          scenarios: services.scenarios,
           targetRuns: services.targetRuns,
         },
         () => undefined,
@@ -145,6 +147,7 @@ try {
     conflicts: conflictResult,
     workflows: {
       evaluationStatuses: workflowResult.evaluationStatuses,
+      scenarioStatus: workflowResult.scenarioStatus,
       targetStatus: workflowResult.targetStatus,
       restartInterrupted: restartResult.interrupted,
     },
@@ -225,9 +228,8 @@ function configureTestEnvironment(testDatabaseUrl: string, providerBaseUrl: stri
     "  platform: llm",
   ].join("\n");
   delete process.env.MODEL_SPEND_LIMIT_USD;
-  delete process.env.LANGFUSE_BASE_URL;
-  delete process.env.LANGFUSE_PUBLIC_KEY;
-  delete process.env.LANGFUSE_SECRET_KEY;
+  process.env.LANGFUSE_PUBLIC_KEY = "";
+  process.env.LANGFUSE_SECRET_KEY = "";
 }
 
 function installFakeGeminiEmbeddings(): () => void {
@@ -261,18 +263,10 @@ function installFakeGeminiEmbeddings(): () => void {
 async function resetTestDatabase(databaseUrl: string): Promise<void> {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
-    const tables = await sql<{ tablename: string }[]>`
-      SELECT tablename
-      FROM pg_tables
-      WHERE schemaname = 'public' AND tablename <> 'schema_migrations'
-      ORDER BY tablename
-    `;
-    if (tables.length > 0) {
-      const targets = tables
-        .map(({ tablename }) => `"${tablename.replaceAll('"', '""')}"`)
-        .join(", ");
-      await sql.unsafe(`TRUNCATE TABLE ${targets} RESTART IDENTITY CASCADE`).simple();
-    }
+    await sql.begin(async (transaction) => {
+      await transaction`DROP SCHEMA public CASCADE`;
+      await transaction`CREATE SCHEMA public`;
+    });
   } finally {
     await sql.end({ timeout: 5 });
   }
@@ -559,7 +553,11 @@ async function exerciseWorkflows(
   application: ApplicationServices,
   users: ActiveUser[],
   producingChatId: string,
-): Promise<{ evaluationStatuses: Record<string, number>; targetStatus: string }> {
+): Promise<{
+  evaluationStatuses: Record<string, number>;
+  scenarioStatus: string;
+  targetStatus: string;
+}> {
   const promptV1 = await application.prompts.createPrompt(users[0]!.id, {
     markdown: "Return a short deterministic response.",
     title: "Workflow pressure",
@@ -571,7 +569,7 @@ async function exerciseWorkflows(
       promptId: promptV1.id,
       promptRevisionId: promptV1.revisionId,
       reasoningEffort: "low",
-      targetModelId: MODEL_ID,
+      targetModel: MODEL_ID,
     },
     producingChatId,
   );
@@ -580,8 +578,8 @@ async function exerciseWorkflows(
     {
       promptId: promptV1.id,
       promptRevisionId: promptV1.revisionId,
-      targetModelId: MODEL_ID,
-      judges: [MODEL_ID],
+      targetModel: MODEL_ID,
+      judgeModels: [MODEL_ID],
       cases: [
         {
           input: "Evaluate the pinned response.",
@@ -617,12 +615,48 @@ async function exerciseWorkflows(
   assert.ok(!("startedByUserId" in completedEvaluation));
   assert.equal(completedEvaluation.startedByName, "Active User 1");
 
+  const scenario = await application.scenarios.startAgentRun(
+    users[0]!.id,
+    {
+      promptId: promptV1.id,
+      promptRevisionId: promptV1.revisionId,
+      targetModel: MODEL_ID,
+      reasoningEffort: "low",
+      mode: "static",
+      messages: ["First deterministic turn.", "Second deterministic turn."],
+      evaluationPlan: {
+        configurations: [
+          {
+            name: "Scenario determinism",
+            criteria: [
+              {
+                name: "Determinism",
+                type: "boolean",
+                instruction: "The response is deterministic.",
+              },
+            ],
+          },
+        ],
+        judgeModels: [MODEL_ID],
+      },
+    },
+    producingChatId,
+  );
+  const completedScenario = await waitForScenario(application, users[0]!.id, scenario.scenario.id);
+  assert.equal(completedScenario.scenario.status, "completed");
+  assert.equal(completedScenario.scenario.stopReason, "static-complete");
+  assert.equal(completedScenario.target?.turns.length, 2);
+  assert.equal(completedScenario.evaluations.length, 1);
+  assert.equal(completedScenario.evaluations[0]?.status, "completed");
+  assert.ok(!("targetRunId" in completedScenario.scenario));
+  assert.ok(!("evaluationPlan" in completedScenario.scenario));
+
   const promptV2 = await application.prompts.getPrompt(promptV1.id);
   const batch = await application.evaluations.startHumanBatch(users[1]!.id, {
     promptId: promptV2.id,
     promptRevisionId: promptV2.revisionId,
-    targetModelIds: [MODEL_ID],
-    judges: [MODEL_ID],
+    targetModels: [MODEL_ID],
+    judgeModels: [MODEL_ID],
     configurations: Array.from({ length: 6 }, (_, index) => ({
       id: `configuration-${index + 1}`,
       name: `Configuration ${index + 1}`,
@@ -649,7 +683,11 @@ async function exerciseWorkflows(
   assert.equal(evaluationStatuses.completed, 16);
   assert.equal(evaluationStatuses.cancelled, 8);
   assert.equal(evaluationStatuses.failed ?? 0, 0);
-  return { evaluationStatuses, targetStatus: completedTarget.latestStatus };
+  return {
+    evaluationStatuses,
+    scenarioStatus: completedScenario.scenario.status,
+    targetStatus: completedTarget.latestStatus,
+  };
 }
 
 async function exerciseRestartReconciliation(
@@ -731,11 +769,13 @@ async function readInvariants(databaseUrl: string): Promise<Record<string, numbe
         (SELECT count(*)::integer FROM prompt_revisions WHERE created_by_user_id IS NULL) AS actorless_prompt_revisions,
         (SELECT count(*)::integer FROM target_profile_revisions WHERE created_by_user_id IS NULL) AS actorless_target_revisions,
         (SELECT count(*)::integer FROM evaluation_runs WHERE started_by_user_id IS NULL) AS actorless_evaluations,
+        (SELECT count(*)::integer FROM scenario_runs WHERE started_by_user_id IS NULL) AS actorless_scenarios,
         (SELECT count(*)::integer FROM target_runs WHERE started_by_user_id IS NULL) AS actorless_target_runs,
         (SELECT count(*)::integer FROM target_run_turns WHERE created_by_user_id IS NULL) AS actorless_target_turns,
         (SELECT count(*)::integer FROM evaluation_criteria WHERE created_by_user_id IS NULL OR updated_by_user_id IS NULL) AS actorless_criteria,
         (SELECT count(*)::integer FROM evaluation_criterion WHERE created_by_user_id IS NULL OR updated_by_user_id IS NULL) AS actorless_criterion,
         (SELECT count(*)::integer FROM evaluation_runs WHERE status IN ('queued', 'running')) AS nonterminal_evaluations,
+        (SELECT count(*)::integer FROM scenario_runs WHERE status IN ('queued', 'running')) AS nonterminal_scenarios,
         (SELECT count(*)::integer FROM target_run_turns WHERE status = 'running') AS running_target_turns,
         (SELECT count(*)::integer FROM (SELECT prompt_id, revision_number FROM prompt_revisions GROUP BY prompt_id, revision_number HAVING count(*) > 1) duplicates) AS duplicate_prompt_revisions,
         (SELECT count(*)::integer FROM (SELECT target_profile_id, revision_number FROM target_profile_revisions GROUP BY target_profile_id, revision_number HAVING count(*) > 1) duplicates) AS duplicate_target_revisions,
@@ -769,6 +809,20 @@ async function waitForTarget(
     () => application.targetRuns.getRun(viewerUserId, runId),
     (run) => TERMINAL_TARGET_STATUSES.has(run.latestStatus),
     `Target Run ${runId}`,
+  );
+}
+
+async function waitForScenario(
+  application: ApplicationServices,
+  viewerUserId: string,
+  runId: string,
+) {
+  return poll(
+    () => application.scenarios.getRunResponse(viewerUserId, runId),
+    ({ evaluations, scenario }) =>
+      TERMINAL_EVALUATION_STATUSES.has(scenario.status) &&
+      evaluations.every(({ status }) => TERMINAL_EVALUATION_STATUSES.has(status)),
+    `Scenario Run ${runId}`,
   );
 }
 

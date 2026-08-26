@@ -580,9 +580,9 @@ function ResultFiltersPanel({
           className="w-full"
           label="Target Model"
           onValuesChange={(values) =>
-            updateFilter("targetModelIds", values.length ? values : undefined)
+            updateFilter("targetModels", values.length ? values : undefined)
           }
-          values={filters.targetModelIds ?? []}
+          values={filters.targetModels ?? []}
         >
           {facets.targetModels.map((facet) => (
             <option key={facet.value} value={facet.value}>
@@ -595,11 +595,11 @@ function ResultFiltersPanel({
           className="w-full"
           label="Judge"
           onValuesChange={(values) =>
-            updateFilter("judgeModelIds", values.length ? values : undefined)
+            updateFilter("judgeModels", values.length ? values : undefined)
           }
-          values={filters.judgeModelIds ?? []}
+          values={filters.judgeModels ?? []}
         >
-          {facets.judges.map((facet) => (
+          {facets.judgeModels.map((facet) => (
             <option key={facet.value} value={facet.value}>
               <ModelFacetLabel count={facet.count} modelId={facet.value} />
             </option>
@@ -692,8 +692,8 @@ function resultFilterCount(filters: ResultFilters): number {
   return [
     filters.promptId,
     filters.promptRevisionId,
-    filters.targetModelIds?.length,
-    filters.judgeModelIds?.length,
+    filters.targetModels?.length,
+    filters.judgeModels?.length,
     filters.status,
     filters.dataType,
     filters.criterion,
@@ -859,12 +859,12 @@ function ResultDetailPane({
           <Status status={item.status} />
         </div>
         <dl className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs">
-          <ModelMetadata label="Target" modelIds={[item.targetModelId]} />
+          <ModelMetadata label="Target" models={[item.targetModel]} />
           <Metadata
             label="Revision"
             value={`v${item.promptRevisionNumber} · ${item.promptRevisionId.slice(0, 8)}`}
           />
-          <ModelMetadata label="Judges" modelIds={item.judgeModelIds} />
+          <ModelMetadata label="Judges" models={item.judgeModels} />
           <Metadata
             label="Completed"
             value={item.completedAt ? formatDateTime(item.completedAt) : "—"}
@@ -983,7 +983,7 @@ function ResultDetailPane({
                       <ModelIdentityLabel
                         className="text-muted-foreground"
                         labelClassName="font-mono text-[11px]"
-                        modelId={score.judgeModelId}
+                        modelId={score.judgeModel}
                         variant="short-id"
                       />
                     </td>
@@ -1050,12 +1050,12 @@ function Metadata({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ModelMetadata({ label, modelIds }: { label: string; modelIds: string[] }) {
+function ModelMetadata({ label, models }: { label: string; models: string[] }) {
   return (
     <div className="flex min-w-0 items-center gap-1.5">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="flex min-w-0 flex-wrap gap-x-2 gap-y-1">
-        {[...new Set(modelIds)].map((modelId) => (
+        {[...new Set(models)].map((modelId) => (
           <ModelIdentityLabel
             className="max-w-full text-foreground"
             key={modelId}
@@ -1203,7 +1203,7 @@ function escapeRegExp(value: string): string {
 
 const emptyFacets: EvaluationWorkspaceFacets = {
   dataTypes: [],
-  judges: [],
+  judgeModels: [],
   prompts: [],
   revisions: [],
   statuses: [],

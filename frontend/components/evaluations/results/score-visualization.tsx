@@ -24,8 +24,8 @@ export function RunScoreOverview({ run }: { run: EvaluationRun }) {
           </p>
         </div>
         <p className="font-mono text-[11px] text-muted-foreground">
-          {run.caseCount} {run.caseCount === 1 ? "CASE" : "CASES"} · {run.judgeModelIds.length}{" "}
-          {run.judgeModelIds.length === 1 ? "JUDGE" : "JUDGES"}
+          {run.caseCount} {run.caseCount === 1 ? "CASE" : "CASES"} · {run.judgeModels.length}{" "}
+          {run.judgeModels.length === 1 ? "JUDGE" : "JUDGES"}
           {run.isSyntheticExample ? " · DEFAULT EXAMPLE" : ""}
         </p>
       </header>
@@ -59,7 +59,7 @@ export function RunScoreOverview({ run }: { run: EvaluationRun }) {
                   <OutcomeText outcome={outcome} />
                 </td>
                 <td className="px-3 py-3 text-right align-top font-mono text-[11px] text-muted-foreground">
-                  {new Set(outcome.scores.map(({ judgeModelId }) => judgeModelId)).size} JUDGES ·{" "}
+                  {new Set(outcome.scores.map(({ judgeModel }) => judgeModel)).size} JUDGES ·{" "}
                   {outcome.scores.length} FACTS
                 </td>
               </tr>

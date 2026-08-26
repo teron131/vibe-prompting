@@ -17,13 +17,9 @@ const criterionUpdateSchema = z.object({
   expectedVersion: z.number().int().positive().describe("Current Criterion version."),
   criterion: savedCriterionInputSchema.describe("Complete replacement Criterion definition."),
 });
-const criteriaCreateSchema = z.object({
-  criteria: criteriaInputSchema.describe("Named ordered Criteria definition."),
-});
-const criteriaUpdateSchema = z.object({
+const criteriaUpdateSchema = criteriaInputSchema.extend({
   criteriaId: z.uuid().describe("Criteria ID."),
   expectedVersion: z.number().int().positive().describe("Current Criteria version."),
-  criteria: criteriaInputSchema.describe("Complete replacement Criteria definition."),
 });
 
 /** Keeps agent mutations on the same optimistic-concurrency contracts as the website. */
@@ -83,12 +79,12 @@ export class CriteriaLibraryToolkit extends AgentToolkit {
         name: "create_criteria",
         title: "Create Criteria",
         description: "Create one named ordered Criteria permutation from existing Criterion IDs.",
-        parameters: criteriaCreateSchema,
+        parameters: criteriaInputSchema,
         annotations: { destructiveHint: false, openWorldHint: false },
-        async execute({ criteria }, context) {
+        async execute(input, context) {
           const { actorUserId } = requireAgentActor(context);
           return {
-            criteria: await library.createCriteria(actorUserId, criteria),
+            criteria: await library.createCriteria(actorUserId, input),
             summary: "Created Criteria.",
           };
         },
@@ -100,7 +96,7 @@ export class CriteriaLibraryToolkit extends AgentToolkit {
           "Replace one named ordered Criteria permutation using its expected version for optimistic concurrency.",
         parameters: criteriaUpdateSchema,
         annotations: { destructiveHint: false, openWorldHint: false },
-        async execute({ criteriaId, expectedVersion, criteria }, context) {
+        async execute({ criteriaId, expectedVersion, ...criteria }, context) {
           const { actorUserId } = requireAgentActor(context);
           return {
             criteria: await library.updateCriteria(

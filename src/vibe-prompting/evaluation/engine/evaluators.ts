@@ -12,30 +12,23 @@ import {
   createEvaluationResponseSchema,
   type EvaluationCriteria,
   evaluationCriteriaSchema,
-  type EvaluationReport,
-  evaluationReportSchema,
   type EvaluationResponse,
+  type EvaluationResults,
+  evaluationResultsSchema,
   type EvaluationSubject,
   evaluationSubjectSchema,
   projectEvaluationResponse,
 } from "./schemas.ts";
 
 const judgeModelSchema = z.string().trim().min(1);
-const judgeModelsSchema = z
-  .union([judgeModelSchema, z.array(judgeModelSchema).min(1)])
-  .superRefine((model, context) => {
-    if (Array.isArray(model) && new Set(model).size !== model.length) {
-      context.addIssue({ code: "custom", message: "Judge model IDs must be unique." });
-    }
-  });
-
-export const judgesSchema = z.object({ model: judgeModelsSchema });
-
-export type Judges = z.infer<typeof judgesSchema>;
+export const judgeModelsSchema = z
+  .array(judgeModelSchema)
+  .min(1)
+  .refine((models) => new Set(models).size === models.length, "Judge models must be unique.");
 
 const judgeEvaluationSchema = z.object({
   model: judgeModelSchema,
-  report: evaluationReportSchema,
+  results: evaluationResultsSchema,
 });
 
 export type JudgeEvaluation = z.infer<typeof judgeEvaluationSchema>;
@@ -43,7 +36,7 @@ export type JudgeEvaluation = z.infer<typeof judgeEvaluationSchema>;
 const JudgeInput = new StateSchema({
   subject: evaluationSubjectSchema,
   criteria: evaluationCriteriaSchema,
-  judges: judgesSchema,
+  judgeModels: judgeModelsSchema,
 });
 
 const JudgeOutput = new StateSchema({
@@ -62,8 +55,8 @@ const JudgeState = new StateSchema({
 });
 
 /** Fans one normalized case out to one graph branch per configured judge model. */
-function dispatchJudges(state: typeof JudgeState.State): Send[] {
-  return getJudgeModels(state.judges).map(
+function dispatchJudgeModels(state: typeof JudgeState.State): Send[] {
+  return state.judgeModels.map(
     (judgeModel) =>
       new Send("evaluateJudge", {
         ...state,
@@ -73,16 +66,16 @@ function dispatchJudges(state: typeof JudgeState.State): Send[] {
 }
 
 const evaluateJudge: typeof JudgeState.Node = async (state, config) => {
-  const judgeModelId = state.judgeModel;
-  if (!judgeModelId) throw new Error("Judge model was not dispatched.");
-  const report = await evaluateCriteria(
-    createModel({ model: judgeModelId, reasoningEffort: "low" }),
+  const judgeModel = state.judgeModel;
+  if (!judgeModel) throw new Error("Judge model was not dispatched.");
+  const results = await evaluateCriteria(
+    createModel({ model: judgeModel, reasoningEffort: "high" }),
     state.criteria,
     state.subject,
     config,
   );
   return {
-    evaluations: [{ model: judgeModelId, report }],
+    evaluations: [{ model: judgeModel, results }],
   };
 };
 
@@ -92,23 +85,17 @@ export const judgesGraph = new StateGraph({
   state: JudgeState,
 })
   .addNode("evaluateJudge", evaluateJudge)
-  .addConditionalEdges(START, dispatchJudges, ["evaluateJudge"])
+  .addConditionalEdges(START, dispatchJudgeModels, ["evaluateJudge"])
   .addEdge("evaluateJudge", END)
   .compile();
 
-/** Normalizes the single-model and multi-model judge input accepted by the public contract. */
-export function getJudgeModels(judges: Judges): string[] {
-  const { model } = judgesSchema.parse(judges);
-  return Array.isArray(model) ? model : [model];
-}
-
-/** Runs one low-effort structured judge call against the complete configured criterion set. */
+/** Runs one structured judge call against the complete configured criterion set. */
 async function evaluateCriteria(
   model: BaseChatModel,
   criteria: EvaluationCriteria,
   subject: EvaluationSubject,
   options?: Partial<RunnableConfig>,
-): Promise<EvaluationReport> {
+): Promise<EvaluationResults> {
   const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
   const response = await model
     .withStructuredOutput<EvaluationResponse>(createEvaluationResponseSchema(configuredCriteria))

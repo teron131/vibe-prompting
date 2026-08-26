@@ -29,6 +29,7 @@ export type AgentToolkitId =
   | "criteria-library"
   | "evaluation-runs"
   | "evaluation-results"
+  | "scenario-runs"
   | "target-runs";
 
 /** Owns one ordered capability group and validates toolkit composition before a runtime adapts its tools. */

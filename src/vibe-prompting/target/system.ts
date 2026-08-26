@@ -204,7 +204,7 @@ export class TargetSystem {
     promptRevisionId: string;
     targetProfileId?: string;
     targetProfileRevisionId?: string;
-    targetModelId: string;
+    targetModel: string;
     reasoningEffort?: "high" | "low" | "medium" | "xhigh";
   }): Promise<PinnedTarget> {
     const [profile, prompt] = await Promise.all([
@@ -226,7 +226,7 @@ export class TargetSystem {
     const effectiveInstructionsHash = createHash("sha256")
       .update(effectiveInstructions)
       .digest("hex");
-    const model = createModel(input.targetModelId);
+    const model = createModel(input.targetModel);
     const exa = profile.configuration.tools?.includes("web-search")
       ? await connectAiSdkExaSearch()
       : undefined;
@@ -234,10 +234,10 @@ export class TargetSystem {
       configuration: profile.configuration,
       instructions: effectiveInstructions,
       model,
-      modelId: input.targetModelId,
+      modelId: input.targetModel,
       profileId: profile.id,
       providerOptions: input.reasoningEffort
-        ? createReasoningProviderOptions(input.targetModelId, input.reasoningEffort)
+        ? createReasoningProviderOptions(input.targetModel, input.reasoningEffort)
         : undefined,
       tools: exa?.tools,
     });

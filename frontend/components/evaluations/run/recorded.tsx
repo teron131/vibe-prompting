@@ -37,7 +37,7 @@ export function RecordedEvaluationBuilder({
   const [models, setModels] = useState<ConfiguredModel[]>([]);
   const [criteria, setCriteria] = useState<Criteria[]>([]);
   const [criteriaIds, setCriteriaIds] = useState<string[]>([]);
-  const [judgeIds, setJudgeIds] = useState<string[]>([]);
+  const [judgeModels, setJudgeModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [source, setSource] = useState(false);
@@ -50,7 +50,7 @@ export function RecordedEvaluationBuilder({
     (total, value) => total + value.criterionSequence.length,
     0,
   );
-  const judgeDecisionCount = criterionCount * judgeIds.length;
+  const judgeDecisionCount = criterionCount * judgeModels.length;
   const trace = useMemo(() => projectCompletedTargetTrace(run, turn), [run, turn]);
 
   useEffect(() => {
@@ -69,7 +69,7 @@ export function RecordedEvaluationBuilder({
   }, [targetRunId]);
 
   async function start() {
-    if (!selectedCriteria.length || !judgeIds.length || !turn) return;
+    if (!selectedCriteria.length || !judgeModels.length || !turn) return;
     setStarting(true);
     try {
       const results = await Promise.all(
@@ -80,7 +80,7 @@ export function RecordedEvaluationBuilder({
               criteria: value.criterionSequence.map(
                 ({ id: _id, version: _version, ...criterion }) => criterion,
               ),
-              judges: judgeIds,
+              judgeModels,
               targetRunId,
               targetRunTurnId,
             }),
@@ -146,8 +146,8 @@ export function RecordedEvaluationBuilder({
             <span className="text-muted-foreground">{run.targetProfileName}</span>
             <ModelIdentityLabel
               className="text-muted-foreground"
-              model={models.find(({ id }) => id === run.targetModelId)}
-              modelId={run.targetModelId}
+              model={models.find(({ id }) => id === run.targetModel)}
+              modelId={run.targetModel}
             />
             <div className="ml-auto flex items-center gap-2">
               <Button onClick={() => setSource((value) => !value)} size="sm" variant="ghost">
@@ -188,8 +188,8 @@ export function RecordedEvaluationBuilder({
           className="mt-4"
           label="Judge Models"
           models={models}
-          onChange={setJudgeIds}
-          selected={judgeIds}
+          onChange={setJudgeModels}
+          selected={judgeModels}
         />
         <div className="mt-5 border-t pt-4">
           <h4 className="text-xs font-semibold">Preview</h4>
@@ -204,7 +204,7 @@ export function RecordedEvaluationBuilder({
             </div>
             <div className="flex justify-between gap-3">
               <span>Judges</span>
-              <strong className="font-mono text-foreground">{judgeIds.length}</strong>
+              <strong className="font-mono text-foreground">{judgeModels.length}</strong>
             </div>
           </div>
         </div>
@@ -221,7 +221,10 @@ export function RecordedEvaluationBuilder({
         <Button
           className="mt-5 w-full"
           disabled={
-            !selectedCriteria.length || !judgeIds.length || starting || turn.status !== "completed"
+            !selectedCriteria.length ||
+            !judgeModels.length ||
+            starting ||
+            turn.status !== "completed"
           }
           onClick={() => void start()}
         >
