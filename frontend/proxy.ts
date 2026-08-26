@@ -13,13 +13,8 @@ const SESSION_EXEMPT_PATHS = [
   "/mcp",
   "/provider-icons",
 ];
-const DEV_WARM_HEADER = "x-vibe-dev-warm";
-
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (process.env.NODE_ENV === "development" && request.headers.get(DEV_WARM_HEADER) === "1") {
-    return NextResponse.next();
-  }
   if (SESSION_EXEMPT_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
     return NextResponse.next();
   }

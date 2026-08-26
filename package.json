@@ -11,7 +11,7 @@
   "scripts": {
     "db:seed-example": "node scripts/seed-default-workspace.ts",
     "db:setup": "node --env-file-if-exists=.env src/vibe-prompting/app/setup-db.ts",
-    "dev": "concurrently --kill-others-on-fail --names frontend,api,warm \"pnpm run frontend:dev\" \"pnpm run server:dev\" \"node scripts/warm-next-routes.ts\"",
+    "dev": "concurrently --kill-others-on-fail --names frontend,api \"pnpm run frontend:dev\" \"pnpm run server:dev\"",
     "frontend:build": "pnpm --dir frontend build",
     "frontend:dev": "pnpm --dir frontend dev",
     "frontend:start": "pnpm --dir frontend start",
@@ -24,7 +24,7 @@
     "mcp": "node src/vibe-prompting/app/mcp.ts",
     "mcp:dev": "node --watch-path=src/vibe-prompting --watch-preserve-output src/vibe-prompting/app/mcp.ts",
     "server": "node src/vibe-prompting/app/api.ts",
-    "server:dev": "node --watch-path=src/vibe-prompting --watch-preserve-output src/vibe-prompting/app/api.ts",
+    "server:dev": "API_PORT=${API_PORT:-0} node --watch-path=src/vibe-prompting --watch-preserve-output src/vibe-prompting/app/api.ts",
     "test:multiuser": "node --env-file-if-exists=.env scripts/multiuser-stress.ts",
     "typecheck": "tsc --noEmit"
   },

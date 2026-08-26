@@ -20,6 +20,11 @@ const MIGRATIONS = [
       readFile(new URL("../../../migrations/008_scenario_runs.sql", import.meta.url), "utf8"),
     version: 8,
   },
+  {
+    load: () =>
+      readFile(new URL("../../../migrations/009_named_criteria.sql", import.meta.url), "utf8"),
+    version: 9,
+  },
 ];
 
 export async function applyMigrations(database: postgres.Sql): Promise<void> {
