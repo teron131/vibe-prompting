@@ -1,0 +1,237 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="876" viewBox="0 0 1600 876" role="img" aria-labelledby="title desc">
+  <title id="title">Vibe Prompting architecture</title>
+  <desc id="desc">Read from top to bottom through Interfaces, Tools, and Modules. The application route connects the UI to the Core Agent through the HTTP API, while the external route connects an External Coding Agent through MCP. Both routes reach the shared Agent Tools surface, including scoped filesystem tools and web search, whose dashed ownership lines connect to the Prompt, Target, Evaluation, and Criteria systems.</desc>
+
+  <defs>
+    <pattern id="routing-grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#cbd1d4"/>
+    </pattern>
+    <marker id="arrow-dark" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#151719"/>
+    </marker>
+    <marker id="arrow-relation" viewBox="0 0 14 14" refX="12.5" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 L13 7 L1 13 Z" fill="#151719"/>
+    </marker>
+    <style>
+      text { font-family: "Avenir Next", "Helvetica Neue", ui-sans-serif, system-ui, sans-serif; fill: #151719; }
+      .header-meta { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; }
+      .lane-label { font-size: 12px; font-weight: 800; letter-spacing: 1.55px; }
+      .route-label { font-size: 10.5px; font-weight: 800; letter-spacing: 1.25px; fill: #5d646a; }
+      .node-name { font-size: 23px; font-weight: 760; letter-spacing: -0.35px; }
+      .node-detail { font-size: 12px; font-weight: 650; fill: #5d646a; }
+      .node-detail-inverse { font-size: 12px; font-weight: 650; fill: #d8dde0; }
+      .bus-title { font-size: 31px; font-weight: 800; letter-spacing: -0.6px; fill: #ffffff; }
+      .bus-detail { font-size: 12px; font-weight: 650; fill: #dce3ff; }
+      .tool-item { fill: #f7f8f5; stroke: #151719; stroke-width: 1.5; }
+      .tool-name { font-size: 13px; font-weight: 750; fill: #151719; }
+      .scope-kicker { font-size: 10.5px; font-weight: 800; letter-spacing: 1.25px; fill: #dce3ff; }
+      .module-title { font-size: 23px; font-weight: 800; letter-spacing: -0.35px; }
+      .module-title-inverse { font-size: 23px; font-weight: 800; letter-spacing: -0.35px; fill: #ffffff; }
+      .module-kicker { font-size: 10.5px; font-weight: 800; letter-spacing: 1.25px; }
+      .module-kicker-inverse { font-size: 10.5px; font-weight: 800; letter-spacing: 1.25px; fill: #dce3ff; }
+      .module-detail { font-size: 12px; font-weight: 650; fill: #5d646a; }
+      .item { font-size: 15px; font-weight: 720; }
+      .runtime { font-family: "SFMono-Regular", "Cascadia Mono", Menlo, monospace; font-size: 10.5px; font-weight: 650; letter-spacing: 0.3px; fill: #5d646a; }
+      .edge-label { font-family: "SFMono-Regular", "Cascadia Mono", Menlo, monospace; font-size: 9.5px; font-weight: 750; letter-spacing: 0.45px; fill: #ffffff; }
+      .flow { fill: none; stroke: #151719; stroke-width: 2.5; stroke-linecap: square; stroke-linejoin: miter; marker-end: url(#arrow-dark); }
+      .ownership { fill: none; stroke: #151719; stroke-width: 2.5; stroke-linecap: square; stroke-linejoin: miter; marker-end: url(#arrow-dark); }
+      .relation { fill: none; stroke: #151719; stroke-width: 3; marker-end: url(#arrow-relation); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="876" fill="#f7f8f5"/>
+  <rect width="1600" height="876" fill="url(#routing-grid)" opacity="0.24"/>
+
+  <g id="header" transform="translate(8 -16)">
+    <g id="product-mark" transform="translate(64 62)">
+      <path d="M0 0 H42 V8 H0 Z M0 16 H30 V24 H0 Z M0 32 H22 V40 H0 Z" fill="#151719"/>
+      <circle cx="42" cy="38" r="8" fill="#b9f227" stroke="#151719" stroke-width="2"/>
+    </g>
+    <text x="128" y="78" class="header-meta">VIBE PROMPTING / ARCHITECTURE</text>
+  </g>
+
+  <g id="architecture-map" transform="translate(8 -78)">
+    <g id="access-lane">
+    <text x="64" y="198" class="lane-label">INTERFACES</text>
+
+    <g id="route-labels">
+      <text x="64" y="220" class="route-label">APPLICATION ROUTE</text>
+      <line x1="181" y1="216" x2="906" y2="216" stroke="#c5cbce" stroke-width="1"/>
+      <text x="966" y="220" class="route-label">EXTERNAL AGENT ROUTE</text>
+      <line x1="1112" y1="216" x2="1520" y2="216" stroke="#c5cbce" stroke-width="1"/>
+    </g>
+
+    <g id="access-flows">
+      <path class="flow" d="M272 296 H320"/>
+      <path class="flow" d="M536 296 H584"/>
+      <path class="flow" d="M1288 296 H1330"/>
+      <path class="flow" d="M745 362 V414"/>
+      <path class="flow" d="M1425 344 V414"/>
+    </g>
+
+    <g id="ui">
+      <rect x="64" y="248" width="208" height="96" fill="#ffffff" stroke="#151719" stroke-width="2"/>
+      <text x="94" y="287" class="node-name">UI</text>
+      <text x="94" y="314" class="node-detail">Next.js</text>
+    </g>
+
+    <g id="http-api">
+      <rect x="320" y="248" width="216" height="96" fill="#ffffff" stroke="#151719" stroke-width="2"/>
+      <text x="346" y="287" class="node-name">HTTP API</text>
+      <text x="346" y="314" class="node-detail">Fastify · OpenAPI</text>
+    </g>
+
+    <g id="core-agent">
+      <rect x="584" y="230" width="322" height="132" fill="#151719"/>
+      <circle cx="614" cy="257" r="6" fill="#b9f227"/>
+      <text x="634" y="266" class="module-kicker-inverse">PRIMARY RUNTIME</text>
+      <text x="614" y="304" class="module-title-inverse">Core Agent</text>
+      <text x="614" y="331" class="node-detail-inverse">OpenAI Agents SDK</text>
+    </g>
+
+    <g id="external-coding-agent">
+      <rect x="966" y="230" width="322" height="132" fill="#151719"/>
+      <circle cx="996" cy="257" r="6" fill="#b9f227"/>
+      <text x="1016" y="266" class="module-kicker-inverse">EXTERNAL RUNTIME</text>
+      <text x="996" y="304" class="module-title-inverse">External Coding Agent</text>
+      <text x="996" y="331" class="node-detail-inverse">External runtime</text>
+    </g>
+
+    <g id="mcp">
+      <rect x="1330" y="248" width="190" height="96" fill="#ffffff" stroke="#151719" stroke-width="2"/>
+      <text x="1356" y="287" class="node-name">MCP</text>
+      <text x="1356" y="314" class="node-detail">FastMCP</text>
+    </g>
+    </g>
+
+    <g id="tool-lane">
+    <text x="64" y="396" class="lane-label">TOOLS</text>
+    </g>
+
+    <g id="agent-tools" transform="translate(0 24)">
+    <rect x="64" y="390" width="1456" height="170" fill="#3655d4" stroke="#151719" stroke-width="2"/>
+    <text x="92" y="446" class="bus-title">Agent Tools</text>
+    <text x="92" y="469" class="bus-detail">Shared access to application subsystems</text>
+
+    <g id="runtime-capabilities">
+      <text x="1042" y="421" class="scope-kicker">RUNTIME TOOLS</text>
+      <rect x="1038" y="433" width="218" height="36" class="tool-item"/>
+      <text x="1052" y="456" class="tool-name">Scoped Filesystem Tools</text>
+      <rect x="1270" y="433" width="170" height="36" class="tool-item"/>
+      <text x="1284" y="456" class="tool-name">Web Search</text>
+    </g>
+
+    <g id="tool-ports">
+      <line x1="94" y1="492" x2="1490" y2="492" stroke="#a8b8ff" stroke-width="1"/>
+
+      <g id="prompt-tools">
+        <rect x="104" y="510" width="240" height="50" class="tool-item"/>
+        <text x="224" y="541" class="tool-name" text-anchor="middle">Prompt Tools</text>
+      </g>
+      <g id="target-tools">
+        <rect x="476" y="510" width="240" height="50" class="tool-item"/>
+        <text x="596" y="541" class="tool-name" text-anchor="middle">Target Tools</text>
+      </g>
+      <g id="evaluation-tools">
+        <rect x="868" y="510" width="240" height="50" class="tool-item"/>
+        <text x="988" y="541" class="tool-name" text-anchor="middle">Evaluation Tools</text>
+      </g>
+      <g id="criteria-tools">
+        <rect x="1240" y="510" width="240" height="50" class="tool-item"/>
+        <text x="1360" y="541" class="tool-name" text-anchor="middle">Criteria Tools</text>
+      </g>
+    </g>
+    </g>
+
+    <g id="tool-ownership" transform="translate(0 24)">
+    <path class="ownership" d="M224 560 V638"/>
+    <path class="ownership" d="M596 560 V638"/>
+    <path class="ownership" d="M988 560 V638"/>
+    <path class="ownership" d="M1360 560 V638"/>
+    </g>
+
+    <g id="domain-lane" transform="translate(0 24)">
+    <text x="64" y="607" class="lane-label">MODULES</text>
+
+    <g id="prompt-system">
+      <rect x="64" y="638" width="320" height="246" fill="#ffffff" stroke="#151719" stroke-width="2"/>
+      <rect x="64" y="638" width="320" height="74" fill="#a78bfa" stroke="#151719" stroke-width="2"/>
+      <text x="86" y="660" class="module-kicker">VERSION CONTROL</text>
+      <text x="86" y="691" class="module-title">Prompt System</text>
+      <text x="86" y="742" class="module-detail">Versioned prompt content</text>
+      <line x1="86" y1="760" x2="362" y2="760" stroke="#c8ced1"/>
+      <rect x="86" y="779" width="276" height="30" fill="#eef1f2"/>
+      <text x="100" y="800" class="item">Prompt</text>
+      <rect x="86" y="815" width="276" height="30" fill="#eef1f2"/>
+      <text x="100" y="836" class="item">Prompt Revision</text>
+    </g>
+
+    <g id="target-system">
+      <rect x="416" y="638" width="360" height="246" fill="#ffffff" stroke="#151719" stroke-width="2"/>
+      <rect x="416" y="638" width="360" height="74" fill="#35b8a6" stroke="#151719" stroke-width="2"/>
+      <text x="438" y="660" class="module-kicker">PINNED EXECUTION</text>
+      <text x="438" y="691" class="module-title">Target System</text>
+      <text x="438" y="742" class="module-detail">Execution and scenario orchestration</text>
+      <line x1="438" y1="760" x2="754" y2="760" stroke="#c8ced1"/>
+      <rect x="438" y="779" width="145" height="30" fill="#eef1f2"/>
+      <text x="452" y="800" class="item">Target</text>
+      <rect x="598" y="779" width="156" height="30" fill="#eef1f2"/>
+      <text x="612" y="800" class="item">Target Profile</text>
+      <rect x="438" y="815" width="145" height="30" fill="#eef1f2"/>
+      <text x="452" y="836" class="item">Target Run</text>
+      <rect x="598" y="815" width="156" height="30" fill="#eef1f2"/>
+      <text x="612" y="836" class="item">Scenario Run</text>
+      <text x="438" y="876" class="runtime">VERCEL AI SDK  ·  LANGCHAIN</text>
+    </g>
+
+    <g id="evaluation-system">
+      <rect x="808" y="638" width="360" height="246" fill="#ffffff" stroke="#151719" stroke-width="2"/>
+      <rect x="808" y="638" width="360" height="74" fill="#ff6b57" stroke="#151719" stroke-width="2"/>
+      <text x="830" y="660" class="module-kicker">JUDGING PIPELINE</text>
+      <text x="830" y="691" class="module-title">Evaluation System</text>
+      <text x="830" y="742" class="module-detail">Runs, judging, and results</text>
+      <line x1="830" y1="760" x2="1146" y2="760" stroke="#c8ced1"/>
+      <rect x="830" y="779" width="316" height="30" fill="#eef1f2"/>
+      <text x="844" y="800" class="item">Evaluation Run</text>
+      <rect x="830" y="815" width="156" height="30" fill="#eef1f2"/>
+      <text x="844" y="836" class="item">Judge</text>
+      <rect x="998" y="815" width="148" height="30" fill="#eef1f2"/>
+      <text x="1012" y="836" class="item">Score</text>
+      <text x="830" y="876" class="runtime">LANGGRAPH</text>
+    </g>
+
+    <g id="criteria">
+      <rect x="1200" y="638" width="320" height="246" fill="#ffffff" stroke="#151719" stroke-width="2"/>
+      <rect x="1200" y="638" width="320" height="74" fill="#f7c948" stroke="#151719" stroke-width="2"/>
+      <text x="1222" y="660" class="module-kicker">SCORING CONTRACTS</text>
+      <text x="1222" y="691" class="module-title">Criteria System</text>
+      <text x="1222" y="742" class="module-detail">Reusable judging definitions</text>
+      <line x1="1222" y1="760" x2="1498" y2="760" stroke="#c8ced1"/>
+      <rect x="1222" y="779" width="112" height="30" fill="#eef1f2"/>
+      <text x="1235" y="800" class="item">Boolean</text>
+      <rect x="1344" y="779" width="154" height="30" fill="#eef1f2"/>
+      <text x="1357" y="800" class="item">Categorical</text>
+      <rect x="1222" y="815" width="112" height="30" fill="#eef1f2"/>
+      <text x="1235" y="836" class="item">Numeric</text>
+      <rect x="1344" y="815" width="154" height="30" fill="#eef1f2"/>
+      <text x="1357" y="836" class="item">Text</text>
+      <rect x="1222" y="851" width="276" height="24" fill="#eef1f2"/>
+      <text x="1235" y="868" class="item">Correction</text>
+    </g>
+    </g>
+
+    <g id="domain-relationships" transform="translate(0 24)">
+    <path class="relation" d="M416 790 H384"/>
+    <rect x="377" y="762" width="46" height="18" fill="#151719"/>
+    <text x="400" y="775" class="edge-label" text-anchor="middle">PINS</text>
+
+    <path class="relation" d="M808 790 H776"/>
+    <rect x="756" y="762" width="72" height="18" fill="#151719"/>
+    <text x="792" y="775" class="edge-label" text-anchor="middle">EVALUATES</text>
+
+    <path class="relation" d="M1168 790 H1200"/>
+    <rect x="1161" y="762" width="46" height="18" fill="#151719"/>
+    <text x="1184" y="775" class="edge-label" text-anchor="middle">USES</text>
+    </g>
+  </g>
+</svg>

@@ -1,6 +1,5 @@
 .DS_Store
 .pnpm-store/
-docs/
 .playwright-cli/
 .impeccable/
 *test*

@@ -1,0 +1,361 @@
+<!-- Self-contained architecture map for Vibe Prompting, owning the visual hierarchy between access surfaces, agent capabilities, target execution, scenarios, and evaluation runtime. -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vibe Prompting Architecture</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: #f5f7fa;
+        color: #182235;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+      }
+
+      main {
+        width: min(1500px, 100%);
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin: 0 8px 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+
+      header p {
+        margin: 0;
+        color: #64748b;
+        font-size: 13px;
+      }
+
+      .diagram {
+        display: block;
+        width: 100%;
+        height: auto;
+        overflow: visible;
+        border: 1px solid #dbe3ee;
+        border-radius: 18px;
+        background: #ffffff;
+        box-shadow: 0 18px 45px rgb(15 23 42 / 7%);
+      }
+
+      .boundary {
+        fill: #fbfdff;
+        stroke: #cbd5e1;
+        stroke-width: 1.5;
+      }
+
+      .capability {
+        fill: #ffffff;
+        stroke: #94a3b8;
+        stroke-width: 1.5;
+      }
+
+      .surface {
+        fill: #f8fafc;
+        stroke: #cbd5e1;
+        stroke-width: 1.4;
+      }
+
+      .agent-node {
+        fill: #f6f2ff;
+        stroke: #a78bfa;
+        stroke-width: 1.5;
+      }
+
+      .mode-node {
+        fill: #fff9e8;
+        stroke: #f4b942;
+        stroke-width: 1.5;
+      }
+
+      .detail-node {
+        fill: #f8fafc;
+        stroke: #cbd5e1;
+        stroke-width: 1.25;
+      }
+
+      .outer-arrow,
+      .relation-arrow,
+      .runtime-arrow,
+      .structural-line {
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .outer-arrow {
+        stroke: #60a5fa;
+        stroke-width: 1.8;
+        marker-end: url(#arrow-soft);
+      }
+
+      .relation-arrow {
+        stroke: #2563eb;
+        stroke-width: 2;
+        marker-end: url(#arrow);
+      }
+
+      .runtime-arrow {
+        stroke: #7c3aed;
+        stroke-width: 1.8;
+        marker-end: url(#arrow-violet);
+      }
+
+      .structural-line {
+        stroke: #94a3b8;
+        stroke-width: 1.25;
+      }
+
+      text {
+        font-family: inherit;
+        fill: #182235;
+      }
+
+      .eyebrow {
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.14em;
+      }
+
+      .title {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .node-title {
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .agent-title {
+        fill: #6d28d9;
+      }
+
+      .minor-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        fill: #64748b;
+      }
+
+      .detail {
+        font-size: 11px;
+        fill: #64748b;
+      }
+
+      .relation-label {
+        font-size: 11px;
+        font-weight: 650;
+        fill: #2563eb;
+        paint-order: stroke;
+        stroke: #f7faff;
+        stroke-width: 5px;
+        stroke-linejoin: round;
+      }
+
+      @media (max-width: 760px) {
+        body {
+          padding: 14px;
+        }
+
+        header {
+          align-items: start;
+          flex-direction: column;
+          gap: 4px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Vibe Prompting architecture</h1>
+        <p>Access surfaces, reusable capabilities, and execution flows</p>
+      </header>
+
+      <svg
+        class="diagram"
+        viewBox="0 0 1500 1000"
+        role="img"
+        aria-labelledby="diagram-title diagram-description"
+      >
+        <title id="diagram-title">Vibe Prompting agent architecture</title>
+        <desc id="diagram-description">
+          Access surfaces and agents sit above unbounded resource and execution areas, with Target
+          Runs connecting prompts, targets, scenarios, criteria, and evaluations through explicit
+          relationships.
+        </desc>
+
+        <defs>
+          <marker
+            id="arrow"
+            viewBox="0 0 10 10"
+            refX="8.5"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb" />
+          </marker>
+          <marker
+            id="arrow-soft"
+            viewBox="0 0 10 10"
+            refX="8.5"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#60a5fa" />
+          </marker>
+          <marker
+            id="arrow-violet"
+            viewBox="0 0 10 10"
+            refX="8.5"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed" />
+          </marker>
+        </defs>
+
+        <text class="eyebrow" x="60" y="38">ACCESS</text>
+        <rect class="boundary" x="60" y="52" width="850" height="150" rx="16" />
+        <text class="eyebrow" x="960" y="70">AGENTS</text>
+        <text class="eyebrow" x="80" y="275">RESOURCES</text>
+        <text class="eyebrow" x="575" y="550">EXECUTION</text>
+
+        <!-- Access arrows render behind every component. -->
+        <path class="outer-arrow" d="M 280 130 C 305 130, 322 130, 350 130" />
+        <path class="outer-arrow" d="M 280 106 C 520 18, 780 18, 960 116" />
+        <path class="outer-arrow" d="M 280 96 C 560 0, 960 0, 1200 108" />
+        <path class="runtime-arrow" d="M 1160 130 C 1175 130, 1185 130, 1200 130" />
+
+        <!-- Resource and execution relations render behind their owning boxes. -->
+        <path class="relation-arrow" d="M 575 620 C 470 620, 380 520, 210 390" />
+        <path class="relation-arrow" d="M 885 490 C 885 525, 875 545, 850 575" />
+        <path class="relation-arrow" d="M 550 800 C 610 800, 590 705, 650 695" />
+        <path class="relation-arrow" d="M 1255 475 C 1255 585, 1140 630, 1140 750" />
+        <path class="relation-arrow" d="M 950 795 C 905 770, 955 710, 925 650" />
+
+        <text class="relation-label" x="405" y="548">uses prompt</text>
+        <text class="relation-label" x="895" y="538">pins target</text>
+        <text class="relation-label" x="570" y="750">drives target</text>
+        <text class="relation-label" x="1190" y="615">supplies criteria</text>
+        <text class="relation-label" x="930" y="718">runs target</text>
+
+        <!-- Access surfaces. -->
+        <rect class="surface" x="100" y="94" width="180" height="72" rx="12" />
+        <text class="node-title" x="190" y="136" text-anchor="middle">UI</text>
+
+        <rect class="surface" x="350" y="82" width="240" height="96" rx="12" />
+        <text class="node-title" x="470" y="121" text-anchor="middle">API</text>
+        <text class="detail" x="470" y="146" text-anchor="middle">HTTP tool surface</text>
+
+        <rect class="surface" x="630" y="82" width="240" height="96" rx="12" />
+        <text class="node-title" x="750" y="121" text-anchor="middle">MCP</text>
+        <text class="detail" x="750" y="146" text-anchor="middle">MCP tool surface</text>
+
+        <rect class="agent-node" x="960" y="82" width="200" height="96" rx="12" />
+        <text class="node-title agent-title" x="1060" y="121" text-anchor="middle">Core Agent</text>
+        <text class="detail" x="1060" y="146" text-anchor="middle">OpenAI Agents SDK</text>
+
+        <text class="detail" x="1180" y="116" text-anchor="middle">uses</text>
+        <rect class="agent-node" x="1200" y="82" width="200" height="96" rx="12" />
+        <text class="node-title agent-title" x="1300" y="121" text-anchor="middle">
+          Target Agent
+        </text>
+        <text class="detail" x="1300" y="146" text-anchor="middle">AI SDK | LangChain</text>
+
+        <!-- Reusable resources. -->
+        <rect class="capability" x="80" y="300" width="260" height="90" rx="14" />
+        <text class="title" x="110" y="352">Prompt Library</text>
+
+        <rect class="capability" x="370" y="300" width="310" height="90" rx="14" />
+        <text class="title" x="400" y="352">Scoped Filesystem Tools</text>
+
+        <!-- Targets own the callable target contract and framework adapters. -->
+        <rect class="capability" x="710" y="300" width="350" height="190" rx="14" />
+        <text class="title" x="740" y="340">Targets</text>
+        <text class="minor-title" x="740" y="375">I/O CONTRACTS</text>
+        <rect class="detail-node" x="740" y="390" width="130" height="58" rx="10" />
+        <rect class="detail-node" x="885" y="390" width="145" height="58" rx="10" />
+        <text class="node-title" x="805" y="424" text-anchor="middle">String I/O</text>
+        <text class="node-title" x="957.5" y="424" text-anchor="middle">Messages</text>
+        <text class="minor-title" x="740" y="472">ADAPTERS</text>
+        <text class="detail" x="830" y="472">LangChain Adapter</text>
+        <text class="detail" x="950" y="472">AI SDK Adapter</text>
+
+        <!-- Criteria remain definitions and reusable compositions. -->
+        <rect class="capability" x="1090" y="300" width="330" height="175" rx="14" />
+        <text class="title" x="1120" y="340">Criteria Library</text>
+        <rect class="detail-node" x="1120" y="360" width="270" height="42" rx="9" />
+        <rect class="detail-node" x="1120" y="415" width="270" height="42" rx="9" />
+        <line class="structural-line" x1="1255" y1="402" x2="1255" y2="415" />
+        <text class="node-title" x="1255" y="386" text-anchor="middle">Criterion Definitions</text>
+        <text class="node-title" x="1255" y="441" text-anchor="middle">Criteria Sets</text>
+
+        <!-- Target Runs remains the central execution capability without owning an agent. -->
+        <rect class="capability" x="575" y="575" width="350" height="120" rx="14" />
+        <text class="title" x="750" y="643" text-anchor="middle">Target Runs</text>
+
+        <!-- Scenario Runs owns repeatable and adaptive user-side driving. -->
+        <rect class="capability" x="140" y="750" width="410" height="190" rx="14" />
+        <text class="title" x="170" y="791">Scenario Runs</text>
+        <text class="detail" x="520" y="791" text-anchor="end">orchestration · LangGraph</text>
+        <rect class="mode-node" x="170" y="825" width="155" height="78" rx="12" />
+        <rect class="agent-node" x="345" y="825" width="175" height="78" rx="12" />
+        <text class="node-title" x="247.5" y="858" text-anchor="middle">Static Messages</text>
+        <text class="detail" x="247.5" y="881" text-anchor="middle">predetermined turns</text>
+        <text class="node-title agent-title" x="432.5" y="858" text-anchor="middle">
+          Scenario Driver
+        </text>
+        <text class="detail" x="432.5" y="881" text-anchor="middle">adaptive turns</text>
+
+        <!-- Evaluations own case fan-out and judging. -->
+        <rect class="capability" x="950" y="750" width="380" height="200" rx="14" />
+        <text class="title" x="980" y="791">Evaluations</text>
+        <rect class="detail-node" x="975" y="820" width="155" height="84" rx="12" />
+        <rect class="agent-node" x="1150" y="820" width="155" height="84" rx="12" />
+        <path class="runtime-arrow" d="M 1130 862 C 1138 862, 1142 862, 1150 862" />
+        <text class="node-title" x="1052.5" y="854" text-anchor="middle">Evaluation Runner</text>
+        <text class="detail" x="1052.5" y="877" text-anchor="middle">fan-out · LangGraph</text>
+        <text class="node-title agent-title" x="1227.5" y="854" text-anchor="middle">
+          Judge Agents
+        </text>
+        <text class="detail" x="1227.5" y="877" text-anchor="middle">scoring · LangChain</text>
+      </svg>
+    </main>
+  </body>
+</html>
