@@ -898,7 +898,7 @@
   ],
   "criteria": {
     "id": "50000000-0000-4000-8000-000000000003",
-    "name": "DEFAULT — Quality Gate",
+    "name": "Default Criteria",
     "criterionSequence": [
       {
         "id": "50000000-0000-4000-8000-000000000010",

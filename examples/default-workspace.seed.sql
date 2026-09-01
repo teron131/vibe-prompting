@@ -7,6 +7,7 @@ DECLARE
   case_data jsonb;
   message_data jsonb;
   profile_data jsonb;
+  resolved_criterion_id uuid;
   revision_data jsonb;
   run_data jsonb;
   score_data jsonb;
@@ -25,15 +26,38 @@ BEGIN
 
   FOR revision_data IN SELECT value FROM jsonb_array_elements(fixture #> '{criteria,criterionSequence}')
   LOOP
-    INSERT INTO evaluation_criterion (id, name, definition_json, created_by_user_id, updated_by_user_id)
-    VALUES (
-      (revision_data->>'id')::uuid,
-      revision_data->>'name',
-      revision_data->'definition',
-      actor_id,
-      actor_id
-    )
-    ON CONFLICT (id) DO NOTHING;
+    SELECT id
+    INTO resolved_criterion_id
+    FROM evaluation_criterion
+    WHERE
+      id = (revision_data->>'id')::uuid
+      OR lower(btrim(name)) = lower(btrim(revision_data->>'name'))
+    ORDER BY (lower(btrim(name)) = lower(btrim(revision_data->>'name'))) DESC
+    LIMIT 1;
+
+    IF resolved_criterion_id IS NULL THEN
+      INSERT INTO evaluation_criterion (id, name, definition_json, created_by_user_id, updated_by_user_id)
+      VALUES (
+        (revision_data->>'id')::uuid,
+        revision_data->>'name',
+        revision_data->'definition',
+        actor_id,
+        actor_id
+      );
+    ELSE
+      UPDATE evaluation_criterion
+      SET
+        name = revision_data->>'name',
+        definition_json = revision_data->'definition',
+        version = version + 1,
+        updated_by_user_id = actor_id
+      WHERE
+        id = resolved_criterion_id
+        AND (
+          name IS DISTINCT FROM revision_data->>'name'
+          OR definition_json IS DISTINCT FROM revision_data->'definition'
+        );
+    END IF;
   END LOOP;
 
   INSERT INTO evaluation_criteria (id, name, created_by_user_id, updated_by_user_id)
@@ -43,14 +67,26 @@ BEGIN
     actor_id,
     actor_id
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE
+  SET
+    name = EXCLUDED.name,
+    version = evaluation_criteria.version + 1,
+    updated_by_user_id = EXCLUDED.updated_by_user_id
+  WHERE evaluation_criteria.name IS DISTINCT FROM EXCLUDED.name;
 
   INSERT INTO evaluation_criteria_items (criteria_id, criterion_id, position)
   SELECT
     (fixture #>> '{criteria,id}')::uuid,
-    (item->>'id')::uuid,
+    evaluation_criterion.id,
     ordinality - 1
   FROM jsonb_array_elements(fixture #> '{criteria,criterionSequence}') WITH ORDINALITY AS criterion(item, ordinality)
+  JOIN evaluation_criterion
+    ON lower(btrim(evaluation_criterion.name)) = lower(btrim(item->>'name'))
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM evaluation_criteria_items
+    WHERE criteria_id = (fixture #>> '{criteria,id}')::uuid
+  )
   ON CONFLICT (criteria_id, position) DO NOTHING;
 
   INSERT INTO prompts (id, title, active_revision_id, created_at, updated_at)
