@@ -1,4 +1,4 @@
-/** Owns the framework-neutral structured Hashline editing over supplied text without importing persistence or filesystem access. */
+/** Owns structured Hashline edits and isolated document state over supplied text without persistence or host filesystem access. */
 
 import { createHash } from "node:crypto";
 
@@ -65,6 +65,25 @@ export const hashlineEditsSchema = z
   );
 
 export type HashlineEdit = z.infer<typeof hashlineEditSchema>;
+
+export type ScopedDocument = {
+  applyEdits(edits: HashlineEdit[]): string;
+  read(): string;
+};
+
+/** Creates a private text scope whose failed edit batches leave its content unchanged. */
+export function createScopedDocument(text: string): ScopedDocument {
+  let current = text;
+  return {
+    applyEdits(edits) {
+      current = applyHashlineEdits(current, edits);
+      return current;
+    },
+    read() {
+      return current;
+    },
+  };
+}
 
 type ResolvedEdit = {
   end: number;

@@ -6,7 +6,7 @@ import type postgres from "postgres";
 
 import type { Database, DatabaseClient } from "../database/index.ts";
 import type { PromptSystem } from "../prompt-system/index.ts";
-import { type TargetConfiguration, targetConfigurationSchema } from "./configuration.ts";
+import { type TargetConfiguration, targetConfigurationSchema } from "./schemas.ts";
 
 export type TargetProfile = {
   configuration: TargetConfiguration;

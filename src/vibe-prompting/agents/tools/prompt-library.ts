@@ -8,8 +8,12 @@ import {
   type StoredPrompt,
 } from "../../prompt-system/index.ts";
 import { type AgentTool, AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
-import { applyHashlineEdits, formatHashlines, hashlineEditsSchema } from "./hashline.ts";
-import type { ScopedDocument } from "./scoped-fs.ts";
+import {
+  applyHashlineEdits,
+  formatHashlines,
+  hashlineEditsSchema,
+  type ScopedDocument,
+} from "./hashline.ts";
 
 const promptEditRequestSchema = z.object({
   promptId: z.uuid().describe("Saved prompt ID."),

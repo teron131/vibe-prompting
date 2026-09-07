@@ -1,8 +1,8 @@
 /** Authenticates browser chat commands and encodes backend-owned run events as NDJSON. */
-import { type ChatRun, getApplicationServices } from "vibe-prompting/server";
+import { type ChatRun, getApplicationServices, projectServerError } from "vibe-prompting/server";
 
 import { requireActiveSessionUser } from "@/auth/session";
-import { NO_STORE_HEADERS, projectServerError } from "@/server/errors";
+import { NO_STORE_HEADERS } from "@/server/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

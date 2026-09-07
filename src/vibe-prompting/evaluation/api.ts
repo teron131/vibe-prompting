@@ -3,7 +3,7 @@
 import { z } from "zod";
 
 import { criteriaSchema, type Criterion } from "../criteria/schemas.ts";
-import { type Target, targetSchema } from "../target/api.ts";
+import { type Target, targetSchema } from "../target/schemas.ts";
 import {
   createEvaluationEngine,
   type EvaluationEngine,

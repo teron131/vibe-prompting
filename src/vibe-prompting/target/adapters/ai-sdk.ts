@@ -24,9 +24,12 @@ import {
 
 import { createAiSdkAgent } from "../../agents/ai-sdk/runtime.ts";
 import { readGeminiThoughtSignature } from "../../clients/llm/gemini.ts";
-import type { TargetActivityPart, TargetRuntimeEvent } from "../activity.ts";
-import type { Target } from "../api.ts";
-import type { TargetConfiguration } from "../configuration.ts";
+import type {
+  Target,
+  TargetActivityPart,
+  TargetConfiguration,
+  TargetRuntimeEvent,
+} from "../schemas.ts";
 
 type ResponseMessage = Extract<ModelMessage, { role: "assistant" | "tool" }>;
 

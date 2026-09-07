@@ -1,6 +1,11 @@
 /** Publishes the opaque Target contract, framework adapters, vanilla AI SDK runtime, and database-backed profiles as a peer application capability. */
 
-export { type Target, targetSchema } from "./api.ts";
+export {
+  type Target,
+  targetSchema,
+  targetConfigurationSchema,
+  type TargetConfiguration,
+} from "./schemas.ts";
 export {
   AiSdkAdapter,
   type AiSdkInput,
@@ -30,4 +35,3 @@ export {
   type TargetPinInput,
   type TargetProfile,
 } from "./system.ts";
-export { targetConfigurationSchema, type TargetConfiguration } from "./configuration.ts";

@@ -3,8 +3,8 @@
 import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
 import type { ModelConfig } from "../../config/index.ts";
 import { createExaSearchTool } from "../tools/exa.ts";
+import { createScopedDocument } from "../tools/hashline.ts";
 import { createPromptEditTools } from "../tools/prompt-library.ts";
-import { createScopedDocument } from "../tools/scoped-fs.ts";
 import { type AgentStreamEvent, projectEvent } from "./events.ts";
 import { adaptTools, createAgentRuntime } from "./runtime.ts";
 

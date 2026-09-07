@@ -1,10 +1,10 @@
 /** Exposes prompt-bound target profile availability without leaking runtime construction into the browser. */
 
-import { getApplicationServices } from "vibe-prompting/server";
+import { getApplicationServices, projectServerError } from "vibe-prompting/server";
 
 import { requireActiveSessionUser } from "@/auth/session";
 import type { TargetProfileResponse } from "@/contracts/targets";
-import { NO_STORE_HEADERS, projectServerError } from "@/server/errors";
+import { NO_STORE_HEADERS } from "@/server/errors";
 import { requireUuid } from "@/server/request";
 
 export const dynamic = "force-dynamic";

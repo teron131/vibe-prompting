@@ -12,13 +12,8 @@ import {
   ScenarioRunsToolkit,
   TargetRunsToolkit,
 } from "../agents/tools/index.ts";
-import {
-  type ApplicationServices,
-  closeApplicationServices,
-  type ConfiguredModel,
-  getApplicationServices,
-  registerShutdown,
-} from "../server.ts";
+import type { ApplicationServices, ConfiguredModel } from "./application.ts";
+import { closeApplicationServices, getApplicationServices, registerShutdown } from "./runtime.ts";
 
 export type McpAuthInfo = AuthInfo;
 

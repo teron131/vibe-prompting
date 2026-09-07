@@ -1,6 +1,8 @@
 /** Owns prompt-specific viewer projection and conflict-aware browser error responses. */
 
-import { NO_STORE_HEADERS, projectServerError } from "@/server/errors";
+import { projectServerError } from "vibe-prompting/server";
+
+import { NO_STORE_HEADERS } from "@/server/errors";
 
 /** Replaces the stored user identifier with the only viewer-relative identity signal the browser needs. */
 export function projectPromptRevisionForViewer<Revision extends { createdByUserId: string }>(

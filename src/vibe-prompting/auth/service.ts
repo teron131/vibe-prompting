@@ -1,9 +1,8 @@
 /** Owns Google identities, invitation activation, and revocable opaque application sessions. */
 
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 
 import type { Database } from "../database/index.ts";
-import { validateInvitationCode } from "./invitation.ts";
 
 const INVITATION_LOCK_MINUTES = 15;
 const MAX_INVITATION_ATTEMPTS = 5;
@@ -161,4 +160,15 @@ export class AuthService {
 
 function hashSessionToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+type InvitationCodeResult = "invalid" | "missing-configuration" | "valid";
+
+/** Compares the supplied invitation secret in constant time after hashing both values to equal lengths. */
+function validateInvitationCode(value: string): InvitationCodeResult {
+  const expected = process.env.INVITATION_CODE;
+  if (!expected) return "missing-configuration";
+  const expectedDigest = createHash("sha256").update(expected, "utf8").digest();
+  const suppliedDigest = createHash("sha256").update(value, "utf8").digest();
+  return timingSafeEqual(expectedDigest, suppliedDigest) ? "valid" : "invalid";
 }

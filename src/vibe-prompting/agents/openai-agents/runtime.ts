@@ -6,8 +6,12 @@ import { type ModelContext, standaloneModelContext } from "../../clients/llm/con
 import type { ModelConfig } from "../../config/index.ts";
 import type { ChatReasoningEffort } from "../../conversations/schemas.ts";
 import type { AgentTool, AgentToolExecutionContext } from "../tools/api.ts";
-import { AGENT_INSTRUCTIONS } from "./instructions.ts";
 import { createModel } from "./model.ts";
+
+const AGENT_INSTRUCTIONS = [
+  "You are the Vibe Prompting assistant, a general-purpose collaborator for creating, running, inspecting, and evaluating prompts.",
+  "Answer ordinary questions directly. Use available tools where they materially improve the result, and represent returned records, statuses, and provenance accurately.",
+].join("\n");
 
 export type AgentRuntime = {
   model: ModelConfig;

@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import type { TargetActivityPart, TargetRuntimeEvent } from "../activity.ts";
+import type { TargetActivityPart, TargetRuntimeEvent } from "../schemas.ts";
 
 export type TargetRunSource = "ai" | "human";
 export type TargetRunTurnStatus = "running" | "completed" | "failed" | "cancelled" | "interrupted";

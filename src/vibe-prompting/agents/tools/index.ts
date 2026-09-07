@@ -16,4 +16,4 @@ export { EvaluationResultsToolkit } from "./evaluation-search.ts";
 export { ScenarioRunsToolkit } from "./scenario-runs.ts";
 export { TargetRunsToolkit } from "./target-runs.ts";
 export { createExaSearchTool } from "./exa.ts";
-export { createScopedDocument, type ScopedDocument } from "./scoped-fs.ts";
+export { createScopedDocument, type ScopedDocument } from "./hashline.ts";

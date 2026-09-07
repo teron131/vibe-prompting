@@ -11,7 +11,7 @@ import {
 } from "../../clients/langfuse.ts";
 import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
 import { criteriaSchema } from "../../criteria/schemas.ts";
-import { targetSchema } from "../../target/api.ts";
+import { targetSchema } from "../../target/schemas.ts";
 import { LangfuseExperimentRunner } from "../experiments.ts";
 import { createJudgesGraph, type JudgeEvaluation, judgeModelsSchema } from "./evaluators.ts";
 import { evaluationSubjectSchema, type EvaluatorScore } from "./schemas.ts";

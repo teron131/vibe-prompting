@@ -13,6 +13,7 @@ export {
   isConfiguredModelId,
   registerShutdown,
 } from "./app/runtime.ts";
+export { projectServerError } from "./app/errors.ts";
 export type { ModelContext } from "./clients/llm/context.ts";
 export { CHAT_TOOL_IDS, streamChatRun } from "./agents/openai-agents/chat.ts";
 export { streamPromptEdit } from "./agents/openai-agents/prompt-edit.ts";
