@@ -6,7 +6,8 @@ import { type ModelContext, standaloneModelContext } from "../../clients/llm/con
 import type { Database } from "../../database/index.ts";
 import type { PromptSystem } from "../../prompt-system/index.ts";
 import { sanitizeAiSdkHistory } from "../adapters/ai-sdk.ts";
-import type { PinnedTarget, TargetSystem } from "../system.ts";
+import type { PinnedTarget } from "../runtime.ts";
+import type { TargetSystem } from "../system.ts";
 import { type TargetRunClaim, TargetRunRegistry } from "./registry.ts";
 import {
   type StoredTargetRun,

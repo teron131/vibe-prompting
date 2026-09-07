@@ -5,6 +5,9 @@ export {
   targetSchema,
   targetConfigurationSchema,
   type TargetConfiguration,
+  type TargetProfile,
+  type PinnedTargetDefinition,
+  type TargetPinInput,
 } from "./schemas.ts";
 export {
   AiSdkAdapter,
@@ -27,11 +30,6 @@ export {
   type LangChainRunResult,
   type LangChainStructuredRunResult,
 } from "./adapters/langchain.ts";
-export {
-  TargetProfileNotFoundError,
-  TargetSystem,
-  type PinnedTarget,
-  type PinnedTargetDefinition,
-  type TargetPinInput,
-  type TargetProfile,
-} from "./system.ts";
+export { TargetSystem } from "./system.ts";
+export { TargetProfileNotFoundError } from "./profiles.ts";
+export type { PinnedTarget } from "./runtime.ts";

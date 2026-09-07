@@ -7,9 +7,7 @@ import { createModel, createReasoningProviderOptions } from "../agents/ai-sdk/mo
 import { EXA_WEB_SEARCH_TOOL, getExaMcpConnection } from "../clients/exa.ts";
 import { type ModelContext, standaloneModelContext } from "../clients/llm/context.ts";
 import { type AiSdkTargetRuntime, createAiSdkTargetRuntime } from "./adapters/ai-sdk.ts";
-import type { PinnedTargetDefinition } from "./pinning.ts";
-import type { TargetProfile } from "./profiles.ts";
-import type { Target } from "./schemas.ts";
+import type { PinnedTargetDefinition, Target, TargetProfile } from "./schemas.ts";
 
 export type PinnedTarget = {
   close(): Promise<void>;

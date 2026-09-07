@@ -6,29 +6,12 @@ import type postgres from "postgres";
 
 import type { Database, DatabaseClient } from "../database/index.ts";
 import type { PromptSystem } from "../prompt-system/index.ts";
-import { type TargetConfiguration, targetConfigurationSchema } from "./schemas.ts";
-
-export type TargetProfile = {
-  configuration: TargetConfiguration;
-  id: string;
-  instructions: string;
-  name: string;
-  revisionId: string;
-};
-
-export type CreateProfileInput = {
-  configuration: TargetConfiguration;
-  instructions: string;
-  name: string;
-  promptId: string;
-};
-
-export type ProfileRevisionInput = {
-  configuration: TargetConfiguration;
-  expectedRevisionId: string;
-  instructions: string;
-  profileId: string;
-};
+import {
+  type CreateProfileInput,
+  type ProfileRevisionInput,
+  targetConfigurationSchema,
+  type TargetProfile,
+} from "./schemas.ts";
 
 /** Reports target-profile validation and lifecycle failures with an HTTP-safe status code. */
 export class TargetProfileError extends Error {

@@ -1029,12 +1029,33 @@ async function exerciseEvaluationHistory(
   assert.equal(listed.items[0]?.caseId, report.cases[0]?.id);
   const analytics = await application.evaluationResults.getAnalytics({ runId: second.id });
   assert.deepEqual(analytics.totals, { runs: 1, cases: 1, scores: 1 });
-  const counted = await application.evaluationResults.query({
-    operation: "count",
-    entity: "cases",
+  for (const entity of ["cases", "runs", "scores"] as const) {
+    const counted = await application.evaluationResults.query({
+      operation: "count",
+      entity,
+      runId: second.id,
+    });
+    assert.equal(counted.value, analytics.totals[entity]);
+  }
+  const grouped = await application.evaluationResults.query({
+    operation: "group_count",
+    groupBy: "targetModel",
     runId: second.id,
+    limit: 1,
   });
-  assert.equal(counted.value, 1);
+  assert.deepEqual(grouped.rows, [{ label: input.targetModel, value: 1 }]);
+  const firstPage = await application.evaluationResults.listResults({
+    promptId: prompt.id,
+    limit: 1,
+  });
+  assert.ok(firstPage.nextCursor);
+  const nextPage = await application.evaluationResults.listResults({
+    promptId: prompt.id,
+    limit: 1,
+    cursor: firstPage.nextCursor,
+  });
+  assert.deepEqual([firstPage.items[0]?.runId, nextPage.items[0]?.runId], [second.id, first.id]);
+  assert.equal(nextPage.nextCursor, null);
   const { Database } = await import("../src/vibe-prompting/database/index.ts");
   const { EvaluationRunStore } = await import("../src/vibe-prompting/evaluation/runs/store.ts");
   const { EvaluationPreparation } =

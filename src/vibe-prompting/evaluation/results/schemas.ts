@@ -1,4 +1,4 @@
-/** Owns the public evaluation result contracts and the validation and normalization rules shared by result workflows. */
+/** Owns evaluation request and response schemas, typed failures, and the data shapes shared by result reads. */
 
 import { z } from "zod";
 
@@ -7,20 +7,7 @@ import type { EvaluationRunStatus, EvaluationRunSummary } from "../runs/schemas.
 
 export type EvaluationDataType = Uppercase<Criterion["type"]>;
 
-export type ResultFilters = {
-  search?: string;
-  searchField?: "all" | "comment" | "evidence" | "input" | "output";
-  criterion?: string;
-  runId?: string;
-  promptId?: string;
-  promptRevisionId?: string;
-  targetModels?: string[];
-  judgeModels?: string[];
-  status?: EvaluationRunStatus;
-  dataType?: EvaluationDataType;
-  from?: string;
-  to?: string;
-};
+export type ResultFilters = z.infer<typeof evaluationFiltersSchema>;
 
 export type ResultScore = {
   id: string;
@@ -190,13 +177,6 @@ export const evaluationFiltersSchema = z
     ({ from, to }) => !from || !to || Date.parse(from) <= Date.parse(to),
     "The from date must not be after the to date.",
   );
-const cursorSchema = z.object({
-  runId: z.uuid(),
-  position: z.number().int().nonnegative(),
-  createdAt: z
-    .string()
-    .refine((value) => !Number.isNaN(Date.parse(value)), "Result cursor timestamp is invalid."),
-});
 export const evaluationResultListInputSchema = evaluationFiltersSchema.extend({
   cursor: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -224,11 +204,6 @@ export const evaluationStructuredQuerySchema = z.discriminatedUnion("operation",
 ]);
 export type EvaluationStructuredQuery = z.infer<typeof evaluationStructuredQuerySchema>;
 
-/** Projects the shared top-level filter fields out of one operation-specific query. */
-export function projectEvaluationQueryFilters(query: EvaluationStructuredQuery): ResultFilters {
-  return evaluationFiltersSchema.strip().parse(query);
-}
-
 export class EvaluationResultNotFoundError extends Error {
   readonly statusCode = 404;
 
@@ -245,61 +220,6 @@ export class EvaluationQueryRequestError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "EvaluationQueryRequestError";
-  }
-}
-
-/** Parses untrusted result input into a validated value and preserves one stable public error type. */
-export function parseQueryInput<T>(schema: z.ZodType<T>, input: unknown): T {
-  const result = schema.safeParse(input);
-  if (!result.success)
-    throw new EvaluationQueryRequestError(
-      result.error.issues[0]?.message ?? "Invalid evaluation query.",
-    );
-  return result.data;
-}
-
-/** Removes pagination controls before returning the filter shape echoed by result responses. */
-export function projectFilters(
-  input: z.infer<typeof evaluationResultListInputSchema>,
-): ResultFilters {
-  const { cursor: _cursor, limit: _limit, ...filters } = input;
-  return filters;
-}
-
-/** Converts transport strings into SQL-ready values while keeping search membership separate. */
-export function normalizeFilters(filters: ResultFilters): NormalizedFilters {
-  return {
-    search: filters.search ?? null,
-    searchField: filters.searchField ?? "all",
-    caseIds: null,
-    criterion: filters.criterion ?? null,
-    runId: filters.runId ?? null,
-    promptId: filters.promptId ?? null,
-    promptRevisionId: filters.promptRevisionId ?? null,
-    targetModels: filters.targetModels?.length ? filters.targetModels : null,
-    judgeModels: filters.judgeModels?.length ? filters.judgeModels : null,
-    status: filters.status ?? null,
-    dataType: filters.dataType ?? null,
-    from: filters.from ? new Date(filters.from) : null,
-    to: filters.to ? new Date(filters.to) : null,
-  };
-}
-
-/** Encodes the chronological result keyset cursor for a URL-safe API response. */
-export function encodeResultCursor(cursor: ResultCursor): string {
-  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
-}
-
-/** Decodes and validates a client cursor without exposing JSON or base64 parsing errors. */
-export function decodeResultCursor(value: string): ResultCursor {
-  try {
-    return parseQueryInput(
-      cursorSchema,
-      JSON.parse(Buffer.from(value, "base64url").toString("utf8")),
-    );
-  } catch (error) {
-    if (error instanceof EvaluationQueryRequestError) throw error;
-    throw new EvaluationQueryRequestError("Result cursor is invalid.");
   }
 }
 

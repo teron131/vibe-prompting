@@ -24,10 +24,9 @@ import {
   selectTotals,
 } from "./queries.ts";
 import {
-  decodeResultCursor,
-  encodeResultCursor,
   type EvaluationAnalyticsResponse,
   evaluationFiltersSchema,
+  EvaluationQueryRequestError,
   type EvaluationQueryResponse,
   evaluationResultListInputSchema,
   EvaluationResultNotFoundError,
@@ -36,13 +35,18 @@ import {
   evaluationStructuredQuerySchema,
   type EvaluationWorkspaceProvenance,
   type NormalizedFilters,
-  normalizeFilters,
-  parseQueryInput,
-  projectEvaluationQueryFilters,
-  projectFilters,
+  type ResultCursor,
   type ResultFilters,
   type ResultListItem,
 } from "./schemas.ts";
+
+const cursorSchema = z.object({
+  runId: z.uuid(),
+  position: z.number().int().nonnegative(),
+  createdAt: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), "Result cursor timestamp is invalid."),
+});
 
 /** Reads result cases and score facts while applying one consistent filter set to every view. */
 export class EvaluationResults {
@@ -66,13 +70,16 @@ export class EvaluationResults {
 
   /** Lists cases in chronological keyset order, preserving the same search membership used by facets and totals. */
   async listResults(rawInput: unknown = {}): Promise<EvaluationResultsResponse> {
-    const input = parseQueryInput(evaluationResultListInputSchema, rawInput);
-    const appliedFilters = projectFilters(input);
+    const {
+      cursor: rawCursor,
+      limit,
+      ...appliedFilters
+    } = parseQueryInput(evaluationResultListInputSchema, rawInput);
     const filters = await this.#resolveFilters(appliedFilters);
-    const cursor = input.cursor ? decodeResultCursor(input.cursor) : null;
+    const cursor = rawCursor ? decodeResultCursor(rawCursor) : null;
     return this.#database.run(async (sql) => {
-      const rows = await selectResultRows(sql, filters, cursor, input.limit + 1);
-      const page = rows.slice(0, input.limit);
+      const rows = await selectResultRows(sql, filters, cursor, limit + 1);
+      const page = rows.slice(0, limit);
       const [scores, [count], facets] = await Promise.all([
         selectScoresForCases(
           sql,
@@ -87,7 +94,7 @@ export class EvaluationResults {
         items,
         total: count?.count ?? 0,
         nextCursor:
-          rows.length > input.limit && last
+          rows.length > limit && last
             ? encodeResultCursor({
                 runId: last.runId,
                 position: last.position,
@@ -161,14 +168,12 @@ export class EvaluationResults {
 
   /** Executes only the allowlisted aggregate operations represented by the structured-query schema. */
   async query(rawQuery: unknown): Promise<EvaluationQueryResponse> {
-    const query = parseQueryInput(
-      evaluationStructuredQuerySchema,
-      rawQuery,
-    ) as EvaluationStructuredQuery;
-    const appliedFilters = projectEvaluationQueryFilters(query);
+    const query = parseQueryInput(evaluationStructuredQuerySchema, rawQuery);
+    const appliedFilters = evaluationFiltersSchema.strip().parse(query);
     if (query.operation === "count") {
-      const analytics = await this.getAnalytics(appliedFilters);
-      const value = analytics.totals[query.entity];
+      const filters = await this.#resolveFilters(appliedFilters);
+      const [totals] = await this.#database.run((sql) => selectTotals(sql, filters));
+      const value = totals?.[query.entity] ?? 0;
       return buildQueryResponse(
         query,
         appliedFilters,
@@ -195,8 +200,9 @@ export class EvaluationResults {
       );
     }
     if (query.operation === "group_count") {
-      const analytics = await this.getAnalytics(appliedFilters);
-      const rows = selectGroupedRows(analytics.facets, query.groupBy).slice(0, query.limit ?? 20);
+      const filters = await this.#resolveFilters(appliedFilters);
+      const facets = await this.#database.run((sql) => selectFacets(sql, filters));
+      const rows = selectGroupedRows(facets, query.groupBy).slice(0, query.limit ?? 20);
       const matchedCount = rows.reduce((sum, row) => sum + row.value, 0);
       return buildQueryResponse(
         query,
@@ -292,4 +298,51 @@ function buildQueryResponse(
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("en", { maximumFractionDigits: 2 }).format(value);
+}
+
+/** Parses untrusted result input into a validated value and preserves one stable public error type. */
+function parseQueryInput<T>(schema: z.ZodType<T>, input: unknown): T {
+  const result = schema.safeParse(input);
+  if (!result.success)
+    throw new EvaluationQueryRequestError(
+      result.error.issues[0]?.message ?? "Invalid evaluation query.",
+    );
+  return result.data;
+}
+
+/** Converts transport strings into SQL-ready values while keeping search membership separate. */
+function normalizeFilters(filters: ResultFilters): NormalizedFilters {
+  return {
+    search: filters.search ?? null,
+    searchField: filters.searchField ?? "all",
+    caseIds: null,
+    criterion: filters.criterion ?? null,
+    runId: filters.runId ?? null,
+    promptId: filters.promptId ?? null,
+    promptRevisionId: filters.promptRevisionId ?? null,
+    targetModels: filters.targetModels?.length ? filters.targetModels : null,
+    judgeModels: filters.judgeModels?.length ? filters.judgeModels : null,
+    status: filters.status ?? null,
+    dataType: filters.dataType ?? null,
+    from: filters.from ? new Date(filters.from) : null,
+    to: filters.to ? new Date(filters.to) : null,
+  };
+}
+
+/** Encodes the chronological result keyset cursor for a URL-safe API response. */
+function encodeResultCursor(cursor: ResultCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
+}
+
+/** Decodes and validates a client cursor without exposing JSON or base64 parsing errors. */
+function decodeResultCursor(value: string): ResultCursor {
+  try {
+    return parseQueryInput(
+      cursorSchema,
+      JSON.parse(Buffer.from(value, "base64url").toString("utf8")),
+    );
+  } catch (error) {
+    if (error instanceof EvaluationQueryRequestError) throw error;
+    throw new EvaluationQueryRequestError("Result cursor is invalid.");
+  }
 }

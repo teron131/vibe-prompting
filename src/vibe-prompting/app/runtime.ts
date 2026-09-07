@@ -17,7 +17,7 @@ const shared = globalThis as typeof globalThis & {
   vibePromptingServices?: Promise<ApplicationServices>;
   vibePromptingRuntimeStopping?: boolean;
 };
-const RUNTIME_VERSION = 38;
+const RUNTIME_VERSION = 39;
 
 /** Initializes one shared runtime and clears failed attempts so corrected configuration can be retried. */
 export function getApplicationServices(): Promise<ApplicationServices> {

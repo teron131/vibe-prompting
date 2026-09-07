@@ -5,7 +5,7 @@ import { after, beforeEach, mock, test } from "node:test";
 
 import { createModelContext } from "../src/vibe-prompting/clients/llm/context.ts";
 import { loadRuntimeConfig } from "../src/vibe-prompting/config/index.ts";
-import type { PinnedTargetDefinition } from "../src/vibe-prompting/target/pinning.ts";
+import type { PinnedTargetDefinition } from "../src/vibe-prompting/target/schemas.ts";
 
 type Failure = "none" | "discovery" | "missing-tool" | "adaptation" | "runtime";
 

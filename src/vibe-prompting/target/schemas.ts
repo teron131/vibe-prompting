@@ -50,3 +50,45 @@ export type TargetRuntimeEvent =
   | { type: "reasoning-start" }
   | { delta: string; type: "reasoning-delta" }
   | TargetActivityPart;
+
+export type TargetProfile = {
+  configuration: TargetConfiguration;
+  id: string;
+  instructions: string;
+  name: string;
+  revisionId: string;
+};
+
+export type CreateProfileInput = {
+  configuration: TargetConfiguration;
+  instructions: string;
+  name: string;
+  promptId: string;
+};
+
+export type ProfileRevisionInput = {
+  configuration: TargetConfiguration;
+  expectedRevisionId: string;
+  instructions: string;
+  profileId: string;
+};
+
+export type TargetPinInput = {
+  actorUserId: string;
+  promptId: string;
+  promptRevisionId: string;
+  targetProfileId?: string;
+  targetProfileRevisionId?: string;
+  targetModel: string;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+};
+
+export type PinnedTargetDefinition = {
+  promptId: string;
+  promptRevisionId: string;
+  targetModel: string;
+  reasoningEffort?: TargetPinInput["reasoningEffort"];
+  profile: TargetProfile;
+  effectiveInstructions: string;
+  effectiveInstructionsHash: string;
+};
