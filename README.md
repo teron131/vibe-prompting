@@ -8,7 +8,7 @@ It keeps four concerns separate: the Prompt System owns versioned prompt content
 
 ![Vibe Prompting architecture](./architecture.svg)
 
-The browser and external coding-agent routes share one Agent Tools surface. Each tool group connects to the module that owns its data and behavior, while evaluation invokes the Target System and uses definitions from the Criteria System.
+Browser routes and the local HTTP API call shared application services directly, while the built-in agent and external agents use application toolkits, with external access through MCP. Evaluation judges target outputs using reusable criteria and can score recorded turns without rerunning the target; scenario plans can explicitly request evaluation as part of execution.
 
 ## Run locally
 
