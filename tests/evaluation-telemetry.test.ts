@@ -57,3 +57,60 @@ function activeProvider() {
   const provider = trace.getTracerProvider();
   return provider instanceof ProxyTracerProvider ? provider.getDelegate() : provider;
 }
+
+test("canonical criteria retain Langfuse score names, data types, and Boolean conversion", async () => {
+  let exported: unknown;
+  const runner = new LangfuseExperimentRunner({
+    telemetry: new NodeTracerProvider(),
+    client: {
+      experiment: {
+        run: async (input: {
+          data: Array<{ metadata: unknown }>;
+          evaluators: Array<(input: { metadata: unknown }) => Promise<unknown>>;
+        }) => {
+          exported = await input.evaluators[0]!({ metadata: input.data[0]!.metadata });
+        },
+      },
+      flush: async () => {},
+      shutdown: async () => {},
+    } as unknown as LangfuseClient,
+  });
+  try {
+    await runner.persist({
+      name: "canonical",
+      cases: [
+        {
+          input: "question",
+          output: "answer",
+          criteria: [{ name: "Helpful", type: "boolean", instruction: "Check helpfulness." }],
+          scores: [
+            {
+              criterionName: "Helpful",
+              dataType: "BOOLEAN",
+              judgeModel: "judge",
+              value: true,
+              comment: "Supported",
+              evidence: ["answer"],
+            },
+          ],
+        },
+      ],
+    });
+    assert.deepEqual(exported, [
+      {
+        name: "Helpful@judge",
+        dataType: "BOOLEAN",
+        value: 1,
+        comment: "Supported",
+        metadata: {
+          criterionName: "Helpful",
+          criterion: "Check helpfulness.",
+          judgeModel: "judge",
+          evidence: ["answer"],
+        },
+      },
+    ]);
+  } finally {
+    await runner.close();
+  }
+});

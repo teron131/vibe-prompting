@@ -10,14 +10,11 @@ import {
   loadOptionalLangfuseConfig,
 } from "../../clients/langfuse.ts";
 import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
+import { criteriaSchema } from "../../criteria/schemas.ts";
 import { targetSchema } from "../../target/api.ts";
 import { LangfuseExperimentRunner } from "../experiments.ts";
 import { createJudgesGraph, type JudgeEvaluation, judgeModelsSchema } from "./evaluators.ts";
-import {
-  evaluationCriteriaSchema,
-  evaluationSubjectSchema,
-  type EvaluatorScore,
-} from "./schemas.ts";
+import { evaluationSubjectSchema, type EvaluatorScore } from "./schemas.ts";
 
 export type { EvaluatorScore } from "./schemas.ts";
 
@@ -25,7 +22,7 @@ const DEFAULT_MAX_CONCURRENCY = 10;
 
 const evaluatorCaseSchema = z.object({
   input: z.unknown().refine((input) => input !== undefined, "Case input is required."),
-  criteria: evaluationCriteriaSchema,
+  criteria: criteriaSchema,
   expectedOutput: z.unknown().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   output: z.unknown().optional(),
@@ -76,7 +73,7 @@ const EvaluationCaseInput = new StateSchema({
   input: z.unknown().refine((input) => input !== undefined, "Case input is required."),
   expectedOutput: z.unknown().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-  criteria: evaluationCriteriaSchema,
+  criteria: criteriaSchema,
   judgeModels: judgeModelsSchema,
   output: z.unknown().optional(),
 });

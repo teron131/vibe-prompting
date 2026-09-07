@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 
+import type { EvaluationResults } from "../../evaluation/results/index.ts";
 import { evaluationBatchInputSchema, type EvaluationRuns } from "../../evaluation/runs/index.ts";
 import { AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
 import { type ConfiguredModelReference, createEvaluationTool } from "./evaluation.ts";
@@ -16,6 +17,7 @@ const runSchema = z.object({ runId: z.uuid().describe("Evaluation Run ID.") });
 export class EvaluationRunsToolkit extends AgentToolkit {
   constructor(
     evaluations: EvaluationRuns,
+    results: EvaluationResults,
     loadModels: () => Promise<readonly ConfiguredModelReference[]>,
   ) {
     super("evaluation-runs", [
@@ -52,8 +54,8 @@ export class EvaluationRunsToolkit extends AgentToolkit {
         annotations: { readOnlyHint: true, openWorldHint: false },
         async execute({ runId }, context) {
           const { actorUserId } = requireAgentActor(context);
-          const run = await evaluations.getRun(actorUserId, runId);
-          const booleanTrend = await evaluations.getCompatibleBooleanTrend(runId);
+          const run = await results.getRun(actorUserId, runId);
+          const booleanTrend = await results.getCompatibleBooleanTrend(runId);
           return {
             artifact: { id: run.id, kind: "evaluation", href: `/evaluations/${run.id}` },
             run,

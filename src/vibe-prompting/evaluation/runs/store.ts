@@ -1,4 +1,4 @@
-/** Owns durable evaluation run persistence, terminal state transitions, report projection, and trend aggregation. */
+/** Owns durable evaluation run persistence, terminal state transitions, execution reads, and lifecycle summaries. */
 
 import { randomUUID } from "node:crypto";
 
@@ -7,89 +7,20 @@ import type postgres from "postgres";
 import type { Criterion } from "../../criteria/schemas.ts";
 import type { Database, DatabaseClient } from "../../database/index.ts";
 import { type CriterionEvaluation, type EvaluationCase, type EvaluationRun } from "../api.ts";
+import type { StoredEvaluationScore } from "../results/schemas.ts";
 import {
-  type BooleanTrendPoint,
+  projectRunSummary,
+  requireRunRow,
+  selectCases,
+  selectRunRows,
+  selectRunRowsForPrompt,
+} from "./queries.ts";
+import {
   EvaluationRunNotFoundError,
   type EvaluationRunSource,
   type EvaluationRunStatus,
   type EvaluationRunSummary,
-  type StoredEvaluationRun,
-  type StoredEvaluationScore,
 } from "./schemas.ts";
-
-type RunSummaryRow = {
-  id: string;
-  promptId: string;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
-  targetProfileId: string | null;
-  targetProfileRevisionId: string | null;
-  targetProfileName: string | null;
-  targetModel: string;
-  targetRunId: string | null;
-  targetRunTurnId: string | null;
-  judgeModels: string[];
-  caseCount: number;
-  configurationFingerprint: string;
-  effectiveInstructionsHash: string | null;
-  source: EvaluationRunSource;
-  startedByUserId: string;
-  startedByName: string | null;
-  chatId: string | null;
-  chatOwnerUserId: string | null;
-  isSyntheticExample: boolean;
-  status: EvaluationRunStatus;
-  errorMessage: string | null;
-  createdAt: Date;
-  completedAt: Date | null;
-};
-
-type RunRow = RunSummaryRow & {
-  promptMarkdown: string;
-  targetConfiguration: Record<string, unknown> | null;
-};
-
-type CaseRow = {
-  id: string;
-  position: number;
-  input: unknown;
-  criteria: Criterion[];
-  output: unknown | null;
-};
-
-type ScoreRow = {
-  id: string;
-  caseId: string;
-  criterionPosition: number;
-  criterion: Criterion;
-  dataType: StoredEvaluationScore["dataType"];
-  judgeModel: string;
-  value: boolean | number | string;
-  comment: string;
-  evidence: string[];
-};
-
-type TrendSourceRow = {
-  id: string;
-  promptId: string;
-  promptRevisionId: string;
-  configurationFingerprint: string;
-  status: EvaluationRunStatus;
-  booleanOnly: boolean;
-};
-
-type BooleanTrendRow = {
-  id: string;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  completedAt: Date | null;
-  createdAt: Date;
-  criterionPosition: number | null;
-  criterion: string | null;
-  passed: number | null;
-  total: number | null;
-};
 
 /** Carries the complete immutable configuration required before a running record can become visible. */
 export type NewEvaluationRun = {
@@ -226,42 +157,6 @@ export class EvaluationRunStore {
     );
   }
 
-  async get(runId: string, viewerUserId: string): Promise<StoredEvaluationRun> {
-    return this.#database.run(async (sql) => {
-      const row = await requireRunRow(sql, runId);
-      const cases = await selectCases(sql, runId);
-      const scores = await selectScores(sql, runId);
-      const scoresByCase = new Map<string, ScoreRow[]>();
-      for (const score of scores) {
-        const grouped = scoresByCase.get(score.caseId) ?? [];
-        grouped.push(score);
-        scoresByCase.set(score.caseId, grouped);
-      }
-      return {
-        ...projectRunSummary(row, viewerUserId),
-        promptMarkdown: row.promptMarkdown,
-        targetConfiguration: row.targetConfiguration,
-        cases: cases.map((testCase) => ({
-          id: testCase.id,
-          position: testCase.position,
-          input: testCase.input,
-          criteria: testCase.criteria,
-          output: testCase.output,
-          scores: (scoresByCase.get(testCase.id) ?? []).map((score) => ({
-            id: score.id,
-            criterionPosition: score.criterionPosition,
-            criterion: score.criterion,
-            dataType: score.dataType,
-            judgeModel: score.judgeModel,
-            value: score.value,
-            comment: score.comment,
-            evidence: score.evidence,
-          })),
-        })),
-      };
-    });
-  }
-
   async getExecution(runId: string): Promise<EvaluationExecution> {
     return this.#database.run(async (sql) => {
       const row = await requireRunRow(sql, runId);
@@ -300,81 +195,6 @@ export class EvaluationRunStore {
         : await selectRunRows(sql, limit);
       return rows.map((row) => projectRunSummary(row, viewerUserId));
     });
-  }
-
-  /** Returns compatible Boolean history with two bounded aggregate queries instead of loading full reports. */
-  async getBooleanTrend(runId: string): Promise<BooleanTrendPoint[]> {
-    const source = await this.#database.run(async (sql) => {
-      const [row] = await sql<TrendSourceRow[]>`
-        SELECT
-          evaluation_runs.id,
-          evaluation_runs.prompt_id,
-          evaluation_runs.prompt_revision_id,
-          evaluation_runs.configuration_fingerprint,
-          evaluation_runs.status,
-          NOT EXISTS (
-            SELECT 1
-            FROM evaluation_cases
-            CROSS JOIN LATERAL jsonb_array_elements(evaluation_cases.criteria_json) AS criterion(item)
-            WHERE evaluation_cases.run_id = evaluation_runs.id
-              AND criterion.item->>'type' IS DISTINCT FROM 'boolean'
-          ) AS boolean_only
-        FROM evaluation_runs
-        WHERE evaluation_runs.id = ${runId}
-      `;
-      if (!row) throw new EvaluationRunNotFoundError(runId);
-      return row;
-    });
-    if (source.status !== "completed" || !source.booleanOnly) return [];
-
-    const rows = await this.#database.run(
-      (sql) => sql<BooleanTrendRow[]>`
-        WITH compatible_runs AS (
-          SELECT
-            evaluation_runs.id,
-            evaluation_runs.prompt_revision_id,
-            prompt_revisions.revision_number AS prompt_revision_number,
-            evaluation_runs.created_at,
-            evaluation_runs.completed_at
-          FROM evaluation_runs
-          JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
-          WHERE evaluation_runs.prompt_id = ${source.promptId}
-            AND evaluation_runs.configuration_fingerprint = ${source.configurationFingerprint}
-            AND evaluation_runs.status = 'completed'
-        ), boolean_scores AS (
-          SELECT
-            evaluation_cases.run_id,
-            evaluation_scores.criterion_position,
-            evaluation_scores.criterion_json->>'name' AS criterion,
-            count(*)::integer AS total,
-            count(*) FILTER (WHERE evaluation_scores.value_json #>> '{}' = 'true')::integer AS passed
-          FROM evaluation_scores
-          JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
-          WHERE evaluation_cases.run_id IN (SELECT id FROM compatible_runs)
-            AND evaluation_scores.data_type = 'BOOLEAN'
-            AND jsonb_typeof(evaluation_scores.value_json) = 'boolean'
-          GROUP BY
-            evaluation_cases.run_id,
-            evaluation_scores.criterion_position,
-            evaluation_scores.criterion_json->>'name'
-        )
-        SELECT
-          compatible_runs.id,
-          compatible_runs.prompt_revision_id,
-          compatible_runs.prompt_revision_number,
-          compatible_runs.created_at,
-          compatible_runs.completed_at,
-          boolean_scores.criterion_position,
-          boolean_scores.criterion,
-          boolean_scores.passed,
-          boolean_scores.total
-        FROM compatible_runs
-        LEFT JOIN boolean_scores ON boolean_scores.run_id = compatible_runs.id
-        ORDER BY compatible_runs.completed_at, compatible_runs.id,
-          boolean_scores.criterion_position, boolean_scores.criterion
-      `,
-    );
-    return projectBooleanTrendRows(rows);
   }
 }
 
@@ -475,211 +295,4 @@ async function insertScore(
       ${sql.json(evaluation.evidence)}
     )
   `;
-}
-
-async function requireRunRow(sql: DatabaseClient, runId: string): Promise<RunRow> {
-  const [row] = await selectRunRow(sql, runId);
-  if (!row) throw new EvaluationRunNotFoundError(runId);
-  return row;
-}
-
-function selectRunRow(sql: DatabaseClient, runId: string) {
-  return sql<RunRow[]>`
-    SELECT
-      evaluation_runs.id, evaluation_runs.prompt_id,
-      evaluation_runs.prompt_revision_id,
-      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
-      starter.name AS started_by_name,
-      evaluation_runs.target_model_id AS target_model,
-      evaluation_runs.judge_model_ids AS judge_models, evaluation_runs.status,
-      evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
-      evaluation_runs.is_synthetic_example,
-      evaluation_runs.effective_instructions_hash,
-      evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
-      evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
-      target_profile_revisions.configuration AS target_configuration,
-      evaluation_runs.created_at, evaluation_runs.completed_at,
-      chats.owner_user_id AS chat_owner_user_id,
-      target_profiles.name AS target_profile_name,
-      prompts.title AS prompt_title,
-      prompt_revisions.revision_number AS prompt_revision_number,
-      prompt_revisions.markdown AS prompt_markdown,
-      count(evaluation_cases.id)::integer AS case_count
-    FROM evaluation_runs
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
-    JOIN auth_users AS starter ON starter.id = evaluation_runs.started_by_user_id
-    LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
-    LEFT JOIN target_profile_revisions
-      ON target_profile_revisions.target_profile_id = evaluation_runs.target_profile_id
-      AND target_profile_revisions.id = evaluation_runs.target_profile_revision_id
-    LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
-    LEFT JOIN chats ON chats.id = evaluation_runs.chat_id
-    WHERE evaluation_runs.id = ${runId}
-    GROUP BY
-      evaluation_runs.id, prompts.title, prompt_revisions.revision_number, prompt_revisions.markdown,
-      target_profiles.name, target_profile_revisions.configuration, chats.owner_user_id,
-      starter.name
-  `;
-}
-
-function selectRunRows(sql: DatabaseClient, limit: number) {
-  return sql<RunSummaryRow[]>`
-    SELECT
-      evaluation_runs.id, evaluation_runs.prompt_id,
-      evaluation_runs.prompt_revision_id,
-      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
-      starter.name AS started_by_name,
-      evaluation_runs.target_model_id AS target_model,
-      evaluation_runs.judge_model_ids AS judge_models, evaluation_runs.status,
-      evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
-      evaluation_runs.is_synthetic_example,
-      evaluation_runs.effective_instructions_hash,
-      evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
-      evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
-      evaluation_runs.created_at, evaluation_runs.completed_at,
-      chats.owner_user_id AS chat_owner_user_id,
-      target_profiles.name AS target_profile_name,
-      prompts.title AS prompt_title, prompt_revisions.revision_number AS prompt_revision_number,
-      count(evaluation_cases.id)::integer AS case_count
-    FROM evaluation_runs
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
-    JOIN auth_users AS starter ON starter.id = evaluation_runs.started_by_user_id
-    LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
-    LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
-    LEFT JOIN chats ON chats.id = evaluation_runs.chat_id
-    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.revision_number, target_profiles.name, chats.owner_user_id, starter.name
-    ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
-    LIMIT ${limit}
-  `;
-}
-
-function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, limit: number) {
-  return sql<RunSummaryRow[]>`
-    SELECT
-      evaluation_runs.id, evaluation_runs.prompt_id,
-      evaluation_runs.prompt_revision_id,
-      evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
-      starter.name AS started_by_name,
-      evaluation_runs.target_model_id AS target_model,
-      evaluation_runs.judge_model_ids AS judge_models, evaluation_runs.status,
-      evaluation_runs.configuration_fingerprint, evaluation_runs.error_message,
-      evaluation_runs.is_synthetic_example,
-      evaluation_runs.effective_instructions_hash,
-      evaluation_runs.target_profile_id, evaluation_runs.target_profile_revision_id,
-      evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
-      evaluation_runs.created_at, evaluation_runs.completed_at,
-      chats.owner_user_id AS chat_owner_user_id,
-      target_profiles.name AS target_profile_name,
-      prompts.title AS prompt_title, prompt_revisions.revision_number AS prompt_revision_number,
-      count(evaluation_cases.id)::integer AS case_count
-    FROM evaluation_runs
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
-    JOIN auth_users AS starter ON starter.id = evaluation_runs.started_by_user_id
-    LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
-    LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
-    LEFT JOIN chats ON chats.id = evaluation_runs.chat_id
-    WHERE evaluation_runs.prompt_id = ${promptId}
-    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.revision_number, target_profiles.name, chats.owner_user_id, starter.name
-    ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
-    LIMIT ${limit}
-  `;
-}
-
-function selectCases(sql: DatabaseClient, runId: string) {
-  return sql<CaseRow[]>`
-    SELECT id, position, input_json AS input, criteria_json AS criteria, output_json AS output
-    FROM evaluation_cases
-    WHERE run_id = ${runId}
-    ORDER BY position
-  `;
-}
-
-function selectScores(sql: DatabaseClient, runId: string) {
-  return sql<ScoreRow[]>`
-    SELECT
-      evaluation_scores.id, evaluation_scores.case_id,
-      evaluation_scores.criterion_position, evaluation_scores.data_type,
-      evaluation_scores.criterion_json AS criterion,
-      evaluation_scores.judge_model_id AS judge_model, evaluation_scores.value_json AS value,
-      evaluation_scores.comment, evaluation_scores.evidence_json AS evidence
-    FROM evaluation_scores
-    JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
-    WHERE evaluation_cases.run_id = ${runId}
-    ORDER BY evaluation_cases.position, evaluation_scores.criterion_position, evaluation_scores.judge_model_id
-  `;
-}
-
-function projectRunSummary(row: RunSummaryRow, viewerUserId: string): EvaluationRunSummary {
-  return {
-    id: row.id,
-    promptId: row.promptId,
-    promptRevisionId: row.promptRevisionId,
-    promptRevisionNumber: row.promptRevisionNumber,
-    promptTitle: row.promptTitle,
-    targetProfileId: row.targetProfileId,
-    targetProfileRevisionId: row.targetProfileRevisionId,
-    targetProfileName: row.targetProfileName,
-    targetModel: row.targetModel,
-    targetRunId: row.targetRunId,
-    targetRunTurnId: row.targetRunTurnId,
-    judgeModels: row.judgeModels,
-    caseCount: row.caseCount,
-    configurationFingerprint: row.configurationFingerprint,
-    effectiveInstructionsHash: row.effectiveInstructionsHash,
-    source: row.source,
-    startedByName: row.startedByName,
-    chatId: row.chatOwnerUserId === viewerUserId ? row.chatId : null,
-    isSyntheticExample: row.isSyntheticExample,
-    status: row.status,
-    errorMessage: row.errorMessage,
-    createdAt: row.createdAt.toISOString(),
-    completedAt: row.completedAt?.toISOString() ?? null,
-  };
-}
-
-/** Reassembles SQL aggregates into the public chronological trend shape. */
-function projectBooleanTrendRows(rows: BooleanTrendRow[]): BooleanTrendPoint[] {
-  const points = new Map<
-    string,
-    {
-      runId: string;
-      revisionId: string;
-      revisionNumber: number;
-      completedAt: string;
-      rates: Map<number, { criterion: string; passed: number; total: number }>;
-    }
-  >();
-  for (const row of rows) {
-    const point = points.get(row.id) ?? {
-      runId: row.id,
-      revisionId: row.promptRevisionId,
-      revisionNumber: row.promptRevisionNumber,
-      completedAt: (row.completedAt ?? row.createdAt).toISOString(),
-      rates: new Map(),
-    };
-    points.set(row.id, point);
-    if (row.criterionPosition === null || row.criterion === null) continue;
-    const rate = point.rates.get(row.criterionPosition) ?? {
-      criterion: row.criterion,
-      passed: 0,
-      total: 0,
-    };
-    rate.passed += row.passed ?? 0;
-    rate.total += row.total ?? 0;
-    point.rates.set(row.criterionPosition, rate);
-  }
-  if (points.size < 2) return [];
-  return [...points.values()].map(({ runId, revisionId, revisionNumber, completedAt, rates }) => ({
-    runId,
-    revisionId,
-    revisionNumber,
-    completedAt,
-    rates: [...rates.entries()].map(([criterionPosition, value]) => ({
-      criterionPosition,
-      ...value,
-    })),
-  }));
 }

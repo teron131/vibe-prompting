@@ -5,11 +5,8 @@ import { ProxyTracerProvider, trace } from "@opentelemetry/api";
 import type { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 
 import { createLangfuseClient, createLangfuseTelemetry } from "../clients/langfuse.ts";
-import {
-  type EvaluationCriteria,
-  evaluationCriteriaSchema,
-  type EvaluatorScore,
-} from "./engine/schemas.ts";
+import { criteriaSchema, type Criterion } from "../criteria/schemas.ts";
+import { type EvaluatorScore, scoreDataType } from "./engine/schemas.ts";
 
 type EvaluatedCase<
   INPUT = unknown,
@@ -21,7 +18,7 @@ type EvaluatedCase<
   output: OUTPUT;
   expectedOutput?: EXPECTED_OUTPUT;
   metadata?: METADATA;
-  criteria: EvaluationCriteria;
+  criteria: Criterion[];
   scores: EvaluatorScore[];
 };
 
@@ -84,7 +81,7 @@ export class LangfuseExperimentRunner {
     this.startTracing();
     const evaluatedCases = cases.map((evaluatedCase, caseIndex) => ({
       ...evaluatedCase,
-      criteria: evaluationCriteriaSchema.parse(evaluatedCase.criteria),
+      criteria: criteriaSchema.parse(evaluatedCase.criteria),
       metadata: { ...evaluatedCase.metadata, caseIndex },
     }));
     const judgeModels = [
@@ -147,11 +144,8 @@ export class LangfuseExperimentRunner {
   }
 }
 
-function toLangfuseEvaluations(
-  scores: EvaluatorScore[],
-  criteria: EvaluationCriteria,
-): Evaluation[] {
-  const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
+function toLangfuseEvaluations(scores: EvaluatorScore[], criteria: Criterion[]): Evaluation[] {
+  const configuredCriteria = criteriaSchema.parse(criteria);
   const criteriaByName = new Map(
     configuredCriteria.map((criterion) => [criterion.name, criterion]),
   );
@@ -159,7 +153,7 @@ function toLangfuseEvaluations(
   return scores.map((score): Evaluation => {
     const criterion = criteriaByName.get(score.criterionName);
     if (!criterion) throw new Error(`Unknown criterion: ${score.criterionName}.`);
-    if (criterion.dataType !== score.dataType) {
+    if (scoreDataType(criterion.type) !== score.dataType) {
       throw new Error(`Criterion data type changed: ${score.criterionName}.`);
     }
     return {

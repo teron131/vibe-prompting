@@ -1,6 +1,8 @@
-/** Defines the evaluation engine's normalized subjects, criteria, reports, and attributed scores. */
+/** Validates judge subjects and responses against canonical Criteria definitions while retaining attributed score output shapes. */
 
 import { z } from "zod";
+
+import { criteriaSchema, type Criterion } from "../../criteria/schemas.ts";
 
 export const evaluationSubjectSchema = z.object({
   input: z.unknown(),
@@ -10,7 +12,7 @@ export const evaluationSubjectSchema = z.object({
 });
 
 export type EvaluationSubject = z.infer<typeof evaluationSubjectSchema>;
-type JudgeScoreType = "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
+type JudgeScoreType = Uppercase<Criterion["type"]>;
 
 export type EvaluatorScore = {
   criterionName: string;
@@ -33,72 +35,6 @@ const resultDetails = {
   comment: commentSchema,
   evidence: evidenceSchema,
 };
-
-const criterionNameSchema = z.string().trim().min(1);
-const criterionInstructionSchema = z.string().trim().min(1);
-
-const criterionSchema = z.discriminatedUnion("dataType", [
-  z.object({
-    name: criterionNameSchema,
-    dataType: z.literal("BOOLEAN"),
-    instruction: criterionInstructionSchema,
-  }),
-  z.object({
-    name: criterionNameSchema,
-    dataType: z.literal("CATEGORICAL"),
-    instruction: criterionInstructionSchema,
-    categories: z.array(z.string().trim().min(1)).min(2),
-  }),
-  z.object({
-    name: criterionNameSchema,
-    dataType: z.literal("NUMERIC"),
-    instruction: criterionInstructionSchema,
-    minValue: z.number(),
-    maxValue: z.number(),
-  }),
-  z.object({
-    name: criterionNameSchema,
-    dataType: z.literal("TEXT"),
-    instruction: criterionInstructionSchema,
-  }),
-  z.object({
-    name: criterionNameSchema,
-    dataType: z.literal("CORRECTION"),
-    instruction: criterionInstructionSchema,
-  }),
-]);
-
-export const evaluationCriteriaSchema = z
-  .array(criterionSchema)
-  .min(1)
-  .superRefine((criteria, context) => {
-    if (new Set(criteria.map(({ name }) => name)).size !== criteria.length) {
-      context.addIssue({
-        code: "custom",
-        message: "Criterion names must be unique.",
-      });
-    }
-
-    criteria.forEach((criterion, index) => {
-      if (
-        criterion.dataType === "CATEGORICAL" &&
-        new Set(criterion.categories).size !== criterion.categories.length
-      ) {
-        context.addIssue({
-          code: "custom",
-          message: "Criterion categories must be unique.",
-          path: [index, "categories"],
-        });
-      }
-      if (criterion.dataType === "NUMERIC" && criterion.minValue >= criterion.maxValue) {
-        context.addIssue({
-          code: "custom",
-          message: "Criterion minValue must be below maxValue.",
-          path: [index, "minValue"],
-        });
-      }
-    });
-  });
 
 const resultNameSchema = z
   .string()
@@ -150,8 +86,6 @@ const evaluationResultSchema = z.discriminatedUnion("dataType", [
 
 export const evaluationResultsSchema = z.array(evaluationResultSchema).min(1);
 
-export type EvaluationCriterion = z.infer<typeof criterionSchema>;
-export type EvaluationCriteria = z.infer<typeof evaluationCriteriaSchema>;
 export type EvaluationResults = z.infer<typeof evaluationResultsSchema>;
 
 export type EvaluationResponse = Record<
@@ -165,9 +99,9 @@ export type EvaluationResponse = Record<
 
 /** Builds a strict object-shaped response contract because provider structured outputs reject unions inside arrays. */
 export function createEvaluationResponseSchema(
-  criteria: EvaluationCriteria,
+  criteria: Criterion[],
 ): z.ZodType<EvaluationResponse> {
-  const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
+  const configuredCriteria = criteriaSchema.parse(criteria);
   const resultShape = Object.fromEntries(
     configuredCriteria.map((criterion) => [
       criterion.name,
@@ -185,28 +119,33 @@ export function createEvaluationResponseSchema(
 
 export function projectEvaluationResponse(
   response: EvaluationResponse,
-  criteria: EvaluationCriteria,
+  criteria: Criterion[],
 ): EvaluationResults {
   return evaluationResultsSchema.parse(
     criteria.map((criterion) => ({
       ...response[criterion.name],
-      dataType: criterion.dataType,
+      dataType: scoreDataType(criterion.type),
       name: criterion.name,
     })),
   );
 }
 
-function criterionValueSchema(criterion: EvaluationCriterion): z.ZodType {
-  switch (criterion.dataType) {
-    case "BOOLEAN":
+function criterionValueSchema(criterion: Criterion): z.ZodType {
+  switch (criterion.type) {
+    case "boolean":
       return z.boolean();
-    case "CATEGORICAL":
+    case "categorical":
       return z.enum(criterion.categories as [string, ...string[]]);
-    case "CORRECTION":
+    case "correction":
       return z.string().trim().min(1);
-    case "NUMERIC":
-      return z.number().min(criterion.minValue).max(criterion.maxValue);
-    case "TEXT":
+    case "numeric":
+      return z.number().min(criterion.min).max(criterion.max);
+    case "text":
       return z.string().trim().min(1).max(500);
   }
+}
+
+/** Projects the canonical Criterion type into the existing graph and Langfuse score vocabulary. */
+export function scoreDataType(type: Criterion["type"]): JudgeScoreType {
+  return type.toUpperCase() as JudgeScoreType;
 }

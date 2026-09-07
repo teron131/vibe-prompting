@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import type { Database } from "../../database/index.ts";
 import type { HybridSearch } from "../../search.ts";
+import { readBooleanTrend, readRunReport } from "./history.ts";
 import {
   countFilteredCases,
   projectCaseResults,
@@ -51,6 +52,16 @@ export class EvaluationResults {
   constructor(database: Database, search: HybridSearch) {
     this.#database = database;
     this.#search = search;
+  }
+
+  /** Reads a complete stored report while suppressing links to another user's private chat. */
+  getRun(viewerUserId: string, runId: string) {
+    return readRunReport(this.#database, runId, viewerUserId);
+  }
+
+  /** Returns only completed Boolean runs with the same immutable configuration fingerprint. */
+  getCompatibleBooleanTrend(runId: string) {
+    return readBooleanTrend(this.#database, runId);
   }
 
   /** Lists cases in chronological keyset order, preserving the same search membership used by facets and totals. */

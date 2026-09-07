@@ -137,8 +137,10 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 - `criteria/` owns canonical Criterion definitions, named reusable rules, and ordered Criteria compositions; started evaluations retain their own resolved snapshots.
 - `scenarios/` owns static and generative workflow progression, the Scenario graph, stopping, and optional recorded-evaluation handoff across Target Runs and Evaluation Runs.
 - `evaluation/api.ts` and `evaluation/engine/` own the transport-neutral evaluator contract, judge orchestration, and optional Langfuse tracing while consuming the Criteria System's definitions.
-- `evaluation/runs/` owns durable run schemas, target preparation and detached lifecycle orchestration, PostgreSQL state transitions, report projection, and compatible revision trends.
-- `evaluation/results/` owns result filters, per-domain search projection, paginated PostgreSQL queries, aggregate analytics, and the helper-model translation into allowlisted read operations.
+- `evaluation/runs/preparation.ts` owns immutable request preparation, target pinning, batch expansion, and configuration fingerprints; `runs/service.ts` owns queue and execution lifecycle, while `runs/store.ts` owns atomic writes and guarded PostgreSQL transitions.
+- `evaluation/runs/queries.ts` owns shared run-snapshot reads used by execution, lifecycle summaries, and historical reports.
+- `evaluation/results/` owns complete historical reports, compatible Boolean trends, result filters, per-domain search projection, paginated PostgreSQL queries, aggregate analytics, and the helper-model translation into allowlisted read operations.
+- Evaluators consume the Criteria System's canonical definitions directly; conversion to the existing judge prompt format and Langfuse score vocabulary occurs only at those boundaries.
 - `agents/tools/` owns framework-neutral agent tool definitions over direct clients and public system operations, `agents/ai-sdk/` and `agents/openai-agents/` own agent runtime integration, and each runtime usage owns its tool adaptation.
 - `auth/` owns Google-backed identity upsert, pending and active membership, invitation throttling, and opaque application-session lifecycle.
 - `conversations/service.ts` owns private chat sending and replacement, quote resolution, history preparation, metadata cadence, steering, stopping, deletion, and inspection; adapters call complete operations rather than combining stores with run claims.

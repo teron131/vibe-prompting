@@ -35,7 +35,11 @@ export function createMcpServer(
   const toolkits = [
     new PromptLibraryToolkit(services.prompts),
     new CriteriaLibraryToolkit(services.criterion),
-    new EvaluationRunsToolkit(services.evaluations, loadModelReferences),
+    new EvaluationRunsToolkit(
+      services.evaluations,
+      services.evaluationResults,
+      loadModelReferences,
+    ),
     new EvaluationResultsToolkit(services.evaluationResults),
     new ScenarioRunsToolkit(services.scenarios, loadModelReferences),
     new TargetRunsToolkit(services.targetRuns, loadModelReferences),

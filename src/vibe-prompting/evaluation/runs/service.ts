@@ -1,35 +1,22 @@
 /** Owns evaluation run validation, target preparation, atomic batch launch, and detached execution. */
 
-import { createHash } from "node:crypto";
-
 import { RunQueue } from "../../app/queue.ts";
 import type { ModelContext } from "../../clients/llm/context.ts";
 import type { Database } from "../../database/index.ts";
-import { PromptConflictError, type PromptSystem } from "../../prompt-system/index.ts";
+import type { PromptSystem } from "../../prompt-system/index.ts";
 import type { TargetSystem } from "../../target/index.ts";
 import type { TargetRuns } from "../../target/runs/index.ts";
-import { evaluate, evaluateRecorded, type EvaluationCase, requestSchema } from "../api.ts";
+import { evaluate, evaluateRecorded } from "../api.ts";
 import type { EvaluationEngine } from "../engine/graph.ts";
+import { EvaluationPreparation } from "./preparation.ts";
 import {
-  type BooleanTrendPoint,
-  type EvaluationBatchInput,
-  evaluationBatchInputSchema,
-  type EvaluationBatchJob,
   type EvaluationBatchPreview,
   type EvaluationBatchStart,
-  EvaluationRequestError,
-  evaluationRunInputSchema,
   type EvaluationRunSource,
   type EvaluationRunStatus,
   type EvaluationRunSummary,
-  recordedEvaluationRunInputSchema,
-  type StoredEvaluationRun,
 } from "./schemas.ts";
-import { EvaluationRunStore, type NewEvaluationRun } from "./store.ts";
-
-type PreparedRun = {
-  record: NewEvaluationRun;
-};
+import { EvaluationRunStore } from "./store.ts";
 
 type RunCompletion = {
   promise: Promise<void>;
@@ -42,12 +29,10 @@ const MAX_ACTIVE_EVALUATION_JOBS = 2;
 export class EvaluationRuns {
   readonly #completions = new Map<string, RunCompletion>();
   readonly #queue: RunQueue;
-  readonly #models: ModelContext;
+  readonly #preparation: EvaluationPreparation;
   readonly #engine: EvaluationEngine;
-  readonly #prompts: PromptSystem;
   readonly #store: EvaluationRunStore;
   readonly #targets: TargetSystem;
-  readonly #targetRuns: TargetRuns;
 
   constructor(
     database: Database,
@@ -57,11 +42,9 @@ export class EvaluationRuns {
     models: ModelContext,
     engine: EvaluationEngine,
   ) {
-    this.#prompts = prompts;
     this.#store = new EvaluationRunStore(database);
     this.#targets = targets;
-    this.#targetRuns = targetRuns;
-    this.#models = models;
+    this.#preparation = new EvaluationPreparation(prompts, targets, targetRuns, models);
     this.#engine = engine;
     this.#queue = new RunQueue({
       name: "Evaluation",
@@ -114,59 +97,7 @@ export class EvaluationRuns {
     chatId: string | null,
   ): Promise<EvaluationRunSummary> {
     return this.#queue.prepare(async () => {
-      const parsed = recordedEvaluationRunInputSchema.safeParse(rawInput);
-      if (!parsed.success) {
-        throw new EvaluationRequestError(
-          parsed.error.issues[0]?.message ?? "Invalid recorded evaluation request.",
-        );
-      }
-      const input = parsed.data;
-      requireConfiguredModels(input.judgeModels, this.#models);
-      const targetRun = await this.#targetRuns.getRun(actorUserId, input.targetRunId);
-      const selectedTurn = targetRun.turns.find(({ id }) => id === input.targetRunTurnId);
-      if (!selectedTurn)
-        throw new EvaluationRequestError(`Target Run turn ${input.targetRunTurnId} was not found.`);
-      if (selectedTurn.status !== "completed" || selectedTurn.output === null) {
-        throw new EvaluationRequestError("Only a completed Target Run turn can be evaluated.");
-      }
-      const trace = {
-        messages: targetRun.turns
-          .filter(
-            ({ position, status }) => position <= selectedTurn.position && status === "completed",
-          )
-          .flatMap((turn) => [
-            { content: turn.input, role: "user" as const },
-            ...(turn.position < selectedTurn.position && turn.output !== null
-              ? [{ content: turn.output, role: "assistant" as const }]
-              : []),
-          ]),
-      };
-      const cases = [{ input: trace, criteria: input.criteria }];
-      const record: NewEvaluationRun = {
-        cases,
-        chatId,
-        configurationFingerprint: createConfigurationFingerprint({
-          cases,
-          effectiveInstructionsHash: targetRun.effectiveInstructionsHash,
-          judgeModels: input.judgeModels,
-          targetConfiguration: targetRun.targetConfiguration,
-          targetModel: targetRun.targetModel,
-          targetProfileRevisionId: targetRun.targetProfileRevisionId,
-        }),
-        effectiveInstructionsHash: targetRun.effectiveInstructionsHash,
-        isSyntheticExample: false,
-        judgeModels: input.judgeModels,
-        promptId: targetRun.promptId,
-        promptRevisionId: targetRun.promptRevisionId,
-        source,
-        targetModel: targetRun.targetModel,
-        targetProfileId: targetRun.targetProfileId,
-        targetProfileRevisionId: targetRun.targetProfileRevisionId,
-        targetRunId: targetRun.id,
-        targetRunTurnId: selectedTurn.id,
-        startedByUserId: actorUserId,
-        recordedOutputs: [selectedTurn.output],
-      };
+      const record = await this.#preparation.recorded(actorUserId, rawInput, source, chatId);
       const runId = await this.#store.create(record);
       this.#trackCompletion(runId);
       this.#queue.wake();
@@ -176,8 +107,7 @@ export class EvaluationRuns {
 
   /** Validates a batch and reports its execution fan-out without creating run records. */
   async previewBatch(rawInput: unknown): Promise<EvaluationBatchPreview> {
-    const input = await this.#requireBatchInput(rawInput);
-    return expandBatch(input);
+    return this.#preparation.preview(rawInput);
   }
 
   /** Pins every batch target, commits all run records together, and then starts detached execution. */
@@ -202,60 +132,18 @@ export class EvaluationRuns {
     chatId: string | null,
   ): Promise<EvaluationBatchStart> {
     return this.#queue.prepare(async () => {
-      const input = await this.#requireBatchInput(rawInput);
-      const preview = expandBatch(input);
-      const configurations = new Map(
-        input.configurations.map((configuration) => [configuration.id, configuration]),
+      const { preview, records } = await this.#preparation.batch(
+        actorUserId,
+        rawInput,
+        source,
+        chatId,
       );
-      const preparedRuns: PreparedRun[] = [];
-      for (const job of preview.jobs) {
-        const configuration = configurations.get(job.configurationId);
-        if (!configuration) {
-          throw new EvaluationRequestError(
-            `Unknown evaluation configuration: ${job.configurationId}.`,
-          );
-        }
-        preparedRuns.push(
-          await this.#prepareRun(
-            actorUserId,
-            {
-              promptId: input.promptId,
-              promptRevisionId: input.promptRevisionId,
-              targetModel: job.targetModel,
-              judgeModels: input.judgeModels,
-              cases: input.cases.map(({ input: caseInput }) => ({
-                input: caseInput,
-                criteria: configuration.criteria,
-              })),
-              isSyntheticExample: input.isSyntheticExample,
-            },
-            source,
-            chatId,
-          ),
-        );
-      }
-      const runIds = await this.#store.createBatch(preparedRuns.map(({ record }) => record));
+      const runIds = await this.#store.createBatch(records);
       for (const runId of runIds) this.#trackCompletion(runId);
       this.#queue.wake();
       const runs = await Promise.all(runIds.map((runId) => this.getRunSummary(actorUserId, runId)));
       return { preview, runs };
     });
-  }
-
-  /** Parses batch input and checks its models and pinned prompt revision before execution. */
-  async #requireBatchInput(rawInput: unknown): Promise<EvaluationBatchInput> {
-    const parsed = evaluationBatchInputSchema.safeParse(rawInput);
-    if (!parsed.success)
-      throw new EvaluationRequestError(
-        parsed.error.issues[0]?.message ?? "Invalid evaluation batch request.",
-      );
-    const input = parsed.data;
-    requireConfiguredModels([...input.targetModels, ...input.judgeModels], this.#models);
-    const prompt = await this.#prompts.getPrompt(input.promptId);
-    if (prompt.revisionId !== input.promptRevisionId) {
-      throw new PromptConflictError(prompt.activeRevisionId);
-    }
-    return input;
   }
 
   /** Pins the target, persists a running record, and schedules execution outside the request. */
@@ -266,75 +154,14 @@ export class EvaluationRuns {
     chatId: string | null,
   ): Promise<EvaluationRunSummary> {
     return this.#queue.prepare(async () => {
-      const prepared = await this.#prepareRun(actorUserId, rawInput, source, chatId);
-      const runId = await this.#store.create(prepared.record);
+      const record = await this.#preparation.run(actorUserId, rawInput, source, chatId);
+      const runId = await this.#store.create(record);
       this.#trackCompletion(runId);
       this.#queue.wake();
       return this.getRunSummary(actorUserId, runId);
     });
   }
 
-  /** Pins every external dependency needed by one run before its durable record exists. */
-  async #prepareRun(
-    actorUserId: string,
-    rawInput: unknown,
-    source: EvaluationRunSource,
-    chatId: string | null,
-  ): Promise<PreparedRun> {
-    const parsed = evaluationRunInputSchema.safeParse(rawInput);
-    if (!parsed.success)
-      throw new EvaluationRequestError(
-        parsed.error.issues[0]?.message ?? "Invalid evaluation request.",
-      );
-    const input = parsed.data;
-    const request = requestSchema.parse({ cases: input.cases, judgeModels: input.judgeModels });
-    const judgeModels = request.judgeModels;
-    requireConfiguredModels([input.targetModel, ...judgeModels], this.#models);
-    const prompt = await this.#prompts.getPrompt(input.promptId);
-    if (prompt.revisionId !== input.promptRevisionId) {
-      throw new PromptConflictError(prompt.activeRevisionId);
-    }
-    const { profile, effectiveInstructionsHash } = await this.#targets.resolveDefinition({
-      actorUserId,
-      promptId: prompt.id,
-      promptRevisionId: prompt.revisionId,
-      targetModel: input.targetModel,
-    });
-    const configurationFingerprint = createConfigurationFingerprint({
-      targetModel: input.targetModel,
-      targetProfileRevisionId: profile.revisionId,
-      targetConfiguration: profile.configuration,
-      effectiveInstructionsHash,
-      judgeModels,
-      cases: request.cases,
-    });
-    return {
-      record: {
-        promptId: prompt.id,
-        promptRevisionId: prompt.revisionId,
-        targetProfileId: profile.id,
-        targetProfileRevisionId: profile.revisionId,
-        targetModel: input.targetModel,
-        judgeModels,
-        cases: request.cases,
-        effectiveInstructionsHash,
-        configurationFingerprint,
-        source,
-        chatId,
-        isSyntheticExample: input.isSyntheticExample,
-        targetRunId: null,
-        targetRunTurnId: null,
-        startedByUserId: actorUserId,
-      },
-    };
-  }
-
-  /** Loads one complete immutable report with its cases and judge-attributed score facts. */
-  async getRun(viewerUserId: string, runId: string): Promise<StoredEvaluationRun> {
-    return this.#store.get(runId, viewerUserId);
-  }
-
-  /** Loads lightweight status and provenance for progress polling. */
   async getRunSummary(viewerUserId: string, runId: string): Promise<EvaluationRunSummary> {
     return this.#store.getSummary(runId, viewerUserId);
   }
@@ -368,11 +195,6 @@ export class EvaluationRuns {
     if (!isTerminalStatus(completed.status))
       throw new Error("The evaluation runtime closed before this run reached a terminal state.");
     return completed;
-  }
-
-  /** Returns chronological compatible runs from SQL aggregates when the selected configuration is Boolean-only. */
-  async getCompatibleBooleanTrend(runId: string): Promise<BooleanTrendPoint[]> {
-    return this.#store.getBooleanTrend(runId);
   }
 
   /** Activates draining only after the application has reconciled every durable workflow. */
@@ -468,61 +290,6 @@ async function invokeUntilAborted<T>(result: PromiseLike<T>, signal: AbortSignal
       signal.addEventListener("abort", () => reject(signal.reason), { once: true });
     }),
   ]);
-}
-
-/** Validates all target and judge models against the current runtime configuration. */
-function requireConfiguredModels(models: readonly string[], context: ModelContext): void {
-  const configuredModels = new Set(context.readConfig().models.map(({ id }) => id));
-  const unknownModel = models.find((id) => !configuredModels.has(id));
-  if (unknownModel) throw new EvaluationRequestError(`Model is not configured: ${unknownModel}.`);
-}
-
-/** Expands configuration, target, and repetition axes into the exact detached jobs to create. */
-function expandBatch(input: EvaluationBatchInput): EvaluationBatchPreview {
-  const jobs: EvaluationBatchJob[] = [];
-  for (const configuration of input.configurations) {
-    for (const targetModel of input.targetModels) {
-      for (let repetition = 1; repetition <= input.repetitions; repetition += 1) {
-        jobs.push({
-          id: `${configuration.id}:${targetModel}:${repetition}`,
-          executionNumber: jobs.length + 1,
-          configurationId: configuration.id,
-          configurationName: configuration.name,
-          targetModel,
-          repetition,
-          caseCount: input.cases.length,
-          judgeScoreDecisions:
-            input.cases.length * configuration.criteria.length * input.judgeModels.length,
-        });
-      }
-    }
-  }
-  return {
-    jobs,
-    executionCount: jobs.length,
-    targetCaseInvocations: jobs.reduce((total, job) => total + job.caseCount, 0),
-    judgeScoreDecisions: jobs.reduce((total, job) => total + job.judgeScoreDecisions, 0),
-  };
-}
-
-function createConfigurationFingerprint(input: {
-  targetModel: string;
-  targetProfileRevisionId: string;
-  targetConfiguration: Record<string, unknown>;
-  effectiveInstructionsHash: string;
-  judgeModels: string[];
-  cases: EvaluationCase<unknown>[];
-}): string {
-  // These canonical keys are persisted through the hash and must remain stable across API naming changes.
-  const canonical = JSON.stringify({
-    targetModelId: input.targetModel,
-    targetProfileRevisionId: input.targetProfileRevisionId,
-    targetConfiguration: input.targetConfiguration,
-    effectiveInstructionsHash: input.effectiveInstructionsHash,
-    judges: input.judgeModels.toSorted(),
-    cases: input.cases,
-  });
-  return createHash("sha256").update(canonical).digest("hex");
 }
 
 function safeExecutionError(error: unknown): string {

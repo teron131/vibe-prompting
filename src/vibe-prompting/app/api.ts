@@ -619,8 +619,8 @@ export async function createApiServer(application?: ApplicationServices): Promis
     },
     async (request, reply) => {
       const [run, trend] = await Promise.all([
-        services.evaluations.getRun(request.query.viewerUserId, request.params.runId),
-        services.evaluations.getCompatibleBooleanTrend(request.params.runId),
+        services.evaluationResults.getRun(request.query.viewerUserId, request.params.runId),
+        services.evaluationResults.getCompatibleBooleanTrend(request.params.runId),
       ]);
       return reply.header("cache-control", "no-store").send({ run, trend });
     },

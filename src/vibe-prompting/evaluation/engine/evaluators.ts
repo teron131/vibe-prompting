@@ -8,11 +8,10 @@ import { z } from "zod";
 
 import { type ModelContext } from "../../clients/llm/context.ts";
 import { createModel } from "../../clients/llm/langchain.ts";
+import { criteriaSchema, type Criterion } from "../../criteria/schemas.ts";
 import { buildCriteriaPrompt, buildCriteriaSystemPrompt } from "./prompts.ts";
 import {
   createEvaluationResponseSchema,
-  type EvaluationCriteria,
-  evaluationCriteriaSchema,
   type EvaluationResponse,
   type EvaluationResults,
   evaluationResultsSchema,
@@ -36,7 +35,7 @@ export type JudgeEvaluation = z.infer<typeof judgeEvaluationSchema>;
 
 const JudgeInput = new StateSchema({
   subject: evaluationSubjectSchema,
-  criteria: evaluationCriteriaSchema,
+  criteria: criteriaSchema,
   judgeModels: judgeModelsSchema,
 });
 
@@ -96,11 +95,11 @@ export function createJudgesGraph(models: ModelContext) {
 /** Runs one structured judge call against the complete configured criterion set. */
 async function evaluateCriteria(
   model: BaseChatModel,
-  criteria: EvaluationCriteria,
+  criteria: Criterion[],
   subject: EvaluationSubject,
   options?: Partial<RunnableConfig>,
 ): Promise<EvaluationResults> {
-  const configuredCriteria = evaluationCriteriaSchema.parse(criteria);
+  const configuredCriteria = criteriaSchema.parse(criteria);
   const response = await model
     .withStructuredOutput<EvaluationResponse>(createEvaluationResponseSchema(configuredCriteria))
     .invoke(

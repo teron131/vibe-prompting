@@ -9,11 +9,6 @@ import {
   type EvaluationEngine,
   type EvaluatorScore,
 } from "./engine/graph.ts";
-import type {
-  EvaluationCriteria as InternalCriteria,
-  EvaluationCriterion as InternalCriterion,
-} from "./engine/schemas.ts";
-
 const judgeModelSchema = z.string().trim().min(1);
 const judgeModelsSchema = z
   .array(judgeModelSchema)
@@ -137,11 +132,6 @@ async function runEvaluation<INPUT, OUTPUT>(input: {
   signal?: AbortSignal;
   engine?: EvaluationEngine;
 }): Promise<EvaluationRun<INPUT, OUTPUT>> {
-  const validatedCases = input.cases.map((testCase) => ({
-    ...testCase,
-    internalCriteria: testCase.criteria.map(toInternalCriterion),
-  }));
-
   const engine = input.engine ?? createEvaluationEngine();
   try {
     const { results } = await engine.invoke(
@@ -149,10 +139,10 @@ async function runEvaluation<INPUT, OUTPUT>(input: {
         target: input.target,
         targetModel: input.targetModel,
         runName: input.targetModel,
-        cases: validatedCases.map(({ input: caseInput, internalCriteria, output }) => ({
+        cases: input.cases.map(({ input: caseInput, criteria, output }) => ({
           input: caseInput,
           output,
-          criteria: internalCriteria,
+          criteria,
         })),
         judgeModels: input.judgeModels,
       },
@@ -160,13 +150,13 @@ async function runEvaluation<INPUT, OUTPUT>(input: {
     );
 
     const cases = results.map((item, caseIndex) => {
-      const validatedCase = validatedCases[caseIndex];
+      const validatedCase = input.cases[caseIndex];
       if (!validatedCase) throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
       return {
         input: validatedCase.input,
         output: item.output as OUTPUT,
         evaluations: item.evaluations.map((evaluation) =>
-          projectEvaluation(evaluation, validatedCase.criteria, validatedCase.internalCriteria),
+          projectEvaluation(evaluation, validatedCase.criteria),
         ),
       };
     });
@@ -177,42 +167,12 @@ async function runEvaluation<INPUT, OUTPUT>(input: {
   }
 }
 
-/** Projects the public Criterion into the engine contract while preserving its human name. */
-function toInternalCriterion(criterion: Criterion): InternalCriterion {
-  const { name } = criterion;
-  switch (criterion.type) {
-    case "boolean":
-      return { name, dataType: "BOOLEAN", instruction: criterion.instruction };
-    case "categorical":
-      return {
-        name,
-        dataType: "CATEGORICAL",
-        categories: criterion.categories,
-        instruction: criterion.instruction,
-      };
-    case "numeric":
-      return {
-        name,
-        dataType: "NUMERIC",
-        minValue: criterion.min,
-        maxValue: criterion.max,
-        instruction: criterion.instruction,
-      };
-    case "text":
-      return { name, dataType: "TEXT", instruction: criterion.instruction };
-    case "correction":
-      return { name, dataType: "CORRECTION", instruction: criterion.instruction };
-  }
-}
-
 /** Converts one engine score back to the public criterion and validates its typed value. */
 function projectEvaluation(
   evaluation: EvaluatorScore,
   publicCriteria: Criterion[],
-  engineCriteria: InternalCriteria,
 ): CriterionEvaluation {
-  const criterionIndex = engineCriteria.findIndex(({ name }) => name === evaluation.criterionName);
-  const criterion = publicCriteria[criterionIndex];
+  const criterion = publicCriteria.find(({ name }) => name === evaluation.criterionName);
   if (!criterion) throw new Error(`Unknown evaluated criterion: ${evaluation.criterionName}.`);
   return {
     criterion,

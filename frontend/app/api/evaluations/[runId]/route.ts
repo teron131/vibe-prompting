@@ -17,8 +17,8 @@ export async function GET(_request: Request, context: { params: Promise<{ runId:
     requireUuid(runId, "Evaluation run ID");
     const services = await getApplicationServices();
     const [run, trend] = await Promise.all([
-      services.evaluations.getRun(user.id, runId),
-      services.evaluations.getCompatibleBooleanTrend(runId),
+      services.evaluationResults.getRun(user.id, runId),
+      services.evaluationResults.getCompatibleBooleanTrend(runId),
     ]);
     return Response.json({ run, trend } satisfies EvaluationRunResponse, {
       headers: { "cache-control": "no-store" },

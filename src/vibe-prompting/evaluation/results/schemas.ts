@@ -3,9 +3,9 @@
 import { z } from "zod";
 
 import type { Criterion } from "../../criteria/schemas.ts";
-import type { EvaluationRunStatus, StoredEvaluationScore } from "../runs/index.ts";
+import type { EvaluationRunStatus, EvaluationRunSummary } from "../runs/schemas.ts";
 
-export type EvaluationDataType = StoredEvaluationScore["dataType"];
+export type EvaluationDataType = Uppercase<Criterion["type"]>;
 
 export type ResultFilters = {
   search?: string;
@@ -302,3 +302,28 @@ export function decodeResultCursor(value: string): ResultCursor {
     throw new EvaluationQueryRequestError("Result cursor is invalid.");
   }
 }
+
+export type StoredEvaluationScore = ResultScore;
+
+type StoredEvaluationCase = {
+  id: string;
+  position: number;
+  input: unknown;
+  criteria: Criterion[];
+  output: unknown | null;
+  scores: StoredEvaluationScore[];
+};
+
+export type StoredEvaluationRun = EvaluationRunSummary & {
+  promptMarkdown: string;
+  targetConfiguration: Record<string, unknown> | null;
+  cases: StoredEvaluationCase[];
+};
+
+export type BooleanTrendPoint = {
+  runId: string;
+  revisionId: string;
+  revisionNumber: number;
+  completedAt: string;
+  rates: Array<{ criterionPosition: number; criterion: string; passed: number; total: number }>;
+};

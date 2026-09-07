@@ -1,8 +1,8 @@
-/** Owns durable evaluation run schemas, public result shapes, limits, and request-safe errors. */
+/** Owns durable run requests, lifecycle summaries, batch limits, and request-safe errors. */
 
 import { z } from "zod";
 
-import { criteriaSchema, type Criterion } from "../../criteria/schemas.ts";
+import { criteriaSchema } from "../../criteria/schemas.ts";
 import { requestSchema } from "../api.ts";
 
 export type EvaluationRunStatus =
@@ -61,40 +61,6 @@ export type EvaluationRunSummary = {
   errorMessage: string | null;
   createdAt: string;
   completedAt: string | null;
-};
-
-export type StoredEvaluationScore = {
-  id: string;
-  criterionPosition: number;
-  criterion: Criterion;
-  dataType: "BOOLEAN" | "CATEGORICAL" | "CORRECTION" | "NUMERIC" | "TEXT";
-  judgeModel: string;
-  value: boolean | number | string;
-  comment: string;
-  evidence: string[];
-};
-
-type StoredEvaluationCase = {
-  id: string;
-  position: number;
-  input: unknown;
-  criteria: Criterion[];
-  output: unknown | null;
-  scores: StoredEvaluationScore[];
-};
-
-export type StoredEvaluationRun = EvaluationRunSummary & {
-  promptMarkdown: string;
-  targetConfiguration: Record<string, unknown> | null;
-  cases: StoredEvaluationCase[];
-};
-
-export type BooleanTrendPoint = {
-  runId: string;
-  revisionId: string;
-  revisionNumber: number;
-  completedAt: string;
-  rates: Array<{ criterionPosition: number; criterion: string; passed: number; total: number }>;
 };
 
 /** Validates one durable run request and its exact prompt, model, and provenance pins. */

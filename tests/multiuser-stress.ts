@@ -143,6 +143,7 @@ try {
     chatResult.chatIdsByUser[0]![0]!,
   );
   await exerciseCriteriaSnapshots(services, activeUsers[0]!.id);
+  await exerciseEvaluationHistory(services, activeUsers[0]!.id, testDatabaseUrl);
   await exerciseGenerativeScenarios(services, activeUsers[0]!.id);
   await exerciseRuntimeShutdown(services, activeUsers[0]!.id, testDatabaseUrl);
   const restartResult = await exerciseRestartReconciliation(
@@ -813,6 +814,14 @@ async function exerciseWorkflows(
     (await application.evaluations.getRunSummary(users[1]!.id, evaluation.id)).chatId,
     null,
   );
+  assert.equal(
+    (await application.evaluationResults.getRun(users[1]!.id, evaluation.id)).chatId,
+    null,
+  );
+  assert.equal(
+    (await application.evaluationResults.getRun(users[0]!.id, evaluation.id)).chatId,
+    producingChatId,
+  );
   assert.ok(!("startedByUserId" in completedTarget));
   assert.ok(completedTarget.turns.every((turn) => !("createdByUserId" in turn)));
   assert.equal(completedTarget.startedByName, "Active User 1");
@@ -933,7 +942,7 @@ async function exerciseCriteriaSnapshots(
     cases: [{ input: "Check the original rules.", criteria: composition.criterionSequence }],
   });
   assert.equal((await waitForEvaluation(application, actorUserId, run.id)).status, "completed");
-  const original = await application.evaluations.getRun(actorUserId, run.id);
+  const original = await application.evaluationResults.getRun(actorUserId, run.id);
   const updated = await application.criterion.updateCriterion(
     actorUserId,
     first.id,
@@ -968,11 +977,88 @@ async function exerciseCriteriaSnapshots(
     [second.id],
   );
   await assertRejectsWithStatus(() => application.criterion.getCriteria(emptied.id), 404);
-  const historical = await application.evaluations.getRun(actorUserId, run.id);
+  const historical = await application.evaluationResults.getRun(actorUserId, run.id);
   assert.deepEqual(historical.cases, original.cases);
   assert.equal(historical.configurationFingerprint, original.configurationFingerprint);
   await application.criterion.deleteCriteria(survivor.id, survivor.version);
   assert.equal((await application.criterion.getCriterion(second.id)).id, second.id);
+}
+
+/** Proves atomic batch rollback and agreement between historical reports, compatible trends, and filtered results. */
+async function exerciseEvaluationHistory(
+  application: ApplicationServices,
+  actorUserId: string,
+  databaseUrl: string,
+): Promise<void> {
+  const prompt = await application.prompts.createPrompt(actorUserId, {
+    title: "Historical report parity",
+    markdown: "Return a deterministic response.",
+  });
+  const input = {
+    promptId: prompt.id,
+    promptRevisionId: prompt.revisionId,
+    targetModel: MODEL_ID,
+    judgeModels: [MODEL_ID],
+    cases: [
+      {
+        input: "Same historical case",
+        criteria: [{ name: "Consistent", type: "boolean", instruction: "Check the response." }],
+      },
+    ],
+  };
+  const first = await application.evaluations.startHumanRun(actorUserId, input);
+  await waitForEvaluation(application, actorUserId, first.id);
+  const second = await application.evaluations.startHumanRun(actorUserId, input);
+  await waitForEvaluation(application, actorUserId, second.id);
+  const report = await application.evaluationResults.getRun(actorUserId, second.id);
+  assert.equal(report.configurationFingerprint, first.configurationFingerprint);
+  assert.equal(report.promptMarkdown, prompt.markdown);
+  assert.equal(report.cases[0]?.scores[0]?.value, true);
+  const trend = await application.evaluationResults.getCompatibleBooleanTrend(second.id);
+  assert.deepEqual(
+    trend.map((point) => point.runId),
+    [first.id, second.id],
+  );
+  assert.ok(
+    trend.every(
+      (point) =>
+        point.rates.length === 1 && point.rates[0]?.passed === 1 && point.rates[0]?.total === 1,
+    ),
+  );
+  const listed = await application.evaluationResults.listResults({ runId: second.id });
+  assert.equal(listed.items[0]?.caseId, report.cases[0]?.id);
+  const analytics = await application.evaluationResults.getAnalytics({ runId: second.id });
+  assert.deepEqual(analytics.totals, { runs: 1, cases: 1, scores: 1 });
+  const counted = await application.evaluationResults.query({
+    operation: "count",
+    entity: "cases",
+    runId: second.id,
+  });
+  assert.equal(counted.value, 1);
+  const { Database } = await import("../src/vibe-prompting/database/index.ts");
+  const { EvaluationRunStore } = await import("../src/vibe-prompting/evaluation/runs/store.ts");
+  const { EvaluationPreparation } =
+    await import("../src/vibe-prompting/evaluation/runs/preparation.ts");
+  const database = new Database(databaseUrl);
+  try {
+    const store = new EvaluationRunStore(database);
+    const preparation = new EvaluationPreparation(
+      application.prompts,
+      application.targets,
+      application.targetRuns,
+      application.models,
+    );
+    const record = await preparation.run(actorUserId, input, "human", null);
+    await assert.rejects(
+      store.createBatch([record, { ...record, promptRevisionId: randomUUID() }]),
+    );
+    assert.equal(
+      (await application.evaluations.listRuns(actorUserId, { promptId: prompt.id })).length,
+      2,
+    );
+  } finally {
+    await database.close();
+  }
 }
 
 /** Exercises natural Driver completion, the hard turn limit, and cancellation of attached Target work. */

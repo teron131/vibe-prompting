@@ -12,7 +12,6 @@ export {
   evaluationBatchInputSchema,
   evaluationRunInputSchema,
   recordedEvaluationRunInputSchema,
-  type BooleanTrendPoint,
   type EvaluationBatchInput,
   type EvaluationBatchJob,
   type EvaluationBatchPreview,
@@ -23,10 +22,11 @@ export {
   type EvaluationRunStatus,
   type EvaluationRunSummary,
   EvaluationRuns,
-  type StoredEvaluationRun,
-  type StoredEvaluationScore,
 } from "./runs/index.ts";
 export {
+  type BooleanTrendPoint,
+  type StoredEvaluationRun,
+  type StoredEvaluationScore,
   decodeResultCursor,
   encodeResultCursor,
   evaluationExplorerQuestionSchema,

@@ -222,7 +222,7 @@ export async function streamChatRun(
   if (evaluationsEnabled)
     toolkits.push(
       new CriteriaLibraryToolkit(input.criterion),
-      new EvaluationRunsToolkit(input.evaluations, () =>
+      new EvaluationRunsToolkit(input.evaluations, input.evaluationResults, () =>
         getEvaluationModelReferences(modelContext),
       ),
       new EvaluationResultsToolkit(input.evaluationResults),
