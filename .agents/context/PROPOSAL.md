@@ -134,10 +134,11 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 - `prompt-system/` owns prompt identity, immutable revisions, history navigation, derived search, and its persistence rules.
 - `target/` owns the small Target contract, revisioned Target Profiles, pinned runtime construction, and AI SDK or LangChain interoperability adapters.
 - `target/runs/` owns durable multi-turn Target Run lifecycle, pinned history replay, event snapshots, and PostgreSQL trace persistence.
-- `evaluation/api.ts` and `evaluation/engine/` own the transport-neutral evaluator contract, typed criteria, judge orchestration, and optional Langfuse tracing.
+- `criteria/` owns canonical Criterion definitions, named reusable rules, and ordered Criteria compositions; started evaluations retain their own resolved snapshots.
+- `scenarios/` owns static and generative workflow progression, the Scenario graph, stopping, and optional recorded-evaluation handoff across Target Runs and Evaluation Runs.
+- `evaluation/api.ts` and `evaluation/engine/` own the transport-neutral evaluator contract, judge orchestration, and optional Langfuse tracing while consuming the Criteria System's definitions.
 - `evaluation/runs/` owns durable run schemas, target preparation and detached lifecycle orchestration, PostgreSQL state transitions, report projection, and compatible revision trends.
 - `evaluation/results/` owns result filters, per-domain search projection, paginated PostgreSQL queries, aggregate analytics, and the helper-model translation into allowlisted read operations.
-- `evaluation/criteria.ts` owns reusable named Criterion and ordered Criteria composition without becoming the source of truth for historical run snapshots.
 - `agents/tools/` owns framework-neutral agent tool definitions over direct clients and public system operations, `agents/ai-sdk/` and `agents/openai-agents/` own agent runtime integration, and each runtime usage owns its tool adaptation.
 - `auth/` owns Google-backed identity upsert, pending and active membership, invitation throttling, and opaque application-session lifecycle.
 - `conversations/` owns private durable general-chat history, owner scoping, and detached assistant-run reconciliation rather than prompt or evaluation records.

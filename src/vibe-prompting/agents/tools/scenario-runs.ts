@@ -2,8 +2,8 @@
 
 import { z } from "zod";
 
-import { criteriaSchema } from "../../evaluation/api.ts";
-import { MAX_SCENARIO_TURNS, type ScenarioRuns } from "../../target/scenarios/index.ts";
+import { criteriaSchema } from "../../criteria/index.ts";
+import { MAX_SCENARIO_TURNS, type ScenarioRuns } from "../../scenarios/index.ts";
 import { AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
 import { type ConfiguredModelReference, resolveConfiguredModelId } from "./evaluation.ts";
 

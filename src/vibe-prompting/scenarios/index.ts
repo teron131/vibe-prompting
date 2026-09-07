@@ -1,4 +1,4 @@
-/** Publishes the Scenario request, response, limits, errors, and lifecycle facade within Target execution. */
+/** Publishes the Scenario request, response, limits, errors, and lifecycle facade as a peer application capability. */
 
 export {
   MAX_SCENARIO_TURNS,

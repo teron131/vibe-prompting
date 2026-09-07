@@ -1,4 +1,4 @@
-/** Defines Target execution with optional Scenario turns and recorded-evaluation handoff as one LangGraph. */
+/** Owns the Scenario graph that sequences static or generative Target turns and optional recorded evaluation. */
 
 import {
   END,
@@ -10,43 +10,43 @@ import {
 import { z } from "zod";
 
 import type { EvaluationRuns } from "../evaluation/runs/index.ts";
-import type { StoredTargetRun, TargetRuns } from "./runs/index.ts";
+import type { StoredTargetRun, TargetRuns } from "../target/runs/index.ts";
 import {
   decideScenarioTurn,
   initializeScenarioDriver,
   type ScenarioTranscriptMessage,
-} from "./scenarios/driver.ts";
+} from "./driver.ts";
 import {
   MAX_SCENARIO_TURNS,
   type ScenarioDecision,
   type ScenarioEvaluationReference,
   type ScenarioStopReason,
   scenarioStopReasonSchema,
-} from "./scenarios/schemas.ts";
-import { type ScenarioExecution, ScenarioRunStore } from "./scenarios/store.ts";
+} from "./schemas.ts";
+import { type ScenarioExecution, ScenarioRunStore } from "./store.ts";
 
-export type TargetGraphDependencies = {
+export type ScenarioGraphDependencies = {
   scenarioStore: ScenarioRunStore;
   targetRuns: TargetRuns;
   evaluations: EvaluationRuns;
 };
 
-const TargetGraphContext = z.object({
+const ScenarioGraphContext = z.object({
   evaluations: z.custom<EvaluationRuns>(),
   scenarioStore: z.custom<ScenarioRunStore>(),
   targetRuns: z.custom<TargetRuns>(),
 });
 
-const TargetGraphInput = new StateSchema({
+const ScenarioGraphInput = new StateSchema({
   runId: z.uuid(),
 });
 
-const TargetGraphOutput = new StateSchema({
+const ScenarioGraphOutput = new StateSchema({
   runId: z.uuid(),
 });
 
-const TargetGraphState = new StateSchema({
-  ...TargetGraphInput.fields,
+const ScenarioGraphState = new StateSchema({
+  ...ScenarioGraphInput.fields,
   execution: z.custom<ScenarioExecution>().optional(),
   brief: z.string().trim().min(1).optional(),
   decision: z.custom<ScenarioDecision>().optional(),
@@ -54,18 +54,18 @@ const TargetGraphState = new StateSchema({
   stopReason: scenarioStopReasonSchema.optional(),
 });
 
-type GraphState = typeof TargetGraphState.State;
+type GraphState = typeof ScenarioGraphState.State;
 
-const TARGET_GRAPH_RECURSION_LIMIT = MAX_SCENARIO_TURNS * 2 + 8;
+const SCENARIO_GRAPH_RECURSION_LIMIT = MAX_SCENARIO_TURNS * 2 + 8;
 
-function createTargetGraph() {
-  const loadScenario: typeof TargetGraphState.Node = async (state, config) => {
+function createScenarioGraph() {
+  const loadScenario: typeof ScenarioGraphState.Node = async (state, config) => {
     const { scenarioStore } = requireGraphDependencies(config);
     const execution = await scenarioStore.getExecution(state.runId);
     return { execution };
   };
 
-  const runScenario: typeof TargetGraphState.Node = async (state, config) => {
+  const runScenario: typeof ScenarioGraphState.Node = async (state, config) => {
     const execution = requireGenerativeExecution(state);
     const targetRun = state.targetRun;
     if (!targetRun) {
@@ -101,7 +101,7 @@ function createTargetGraph() {
     };
   };
 
-  const advanceStaticScenario: typeof TargetGraphState.Node = (state) => {
+  const advanceStaticScenario: typeof ScenarioGraphState.Node = (state) => {
     const execution = requireStaticExecution(state);
     const sentTurns = state.targetRun?.turns.length ?? 0;
     const message = execution.messages[sentTurns];
@@ -110,7 +110,7 @@ function createTargetGraph() {
       : { stopReason: "static-complete" as const };
   };
 
-  const runTarget: typeof TargetGraphState.Node = async (state, config) => {
+  const runTarget: typeof ScenarioGraphState.Node = async (state, config) => {
     const { scenarioStore, targetRuns } = requireGraphDependencies(config);
     const execution = requireExecution(state);
     const decision = requireDecision(state);
@@ -144,7 +144,7 @@ function createTargetGraph() {
     return { targetRun };
   };
 
-  const evaluateTarget: typeof TargetGraphState.Node = async (state, config) => {
+  const evaluateTarget: typeof ScenarioGraphState.Node = async (state, config) => {
     const { evaluations, scenarioStore } = requireGraphDependencies(config);
     const execution = requireExecution(state);
     const evaluationRuns: ScenarioEvaluationReference[] = [];
@@ -216,17 +216,17 @@ function createTargetGraph() {
     return {};
   };
 
-  const completeScenario: typeof TargetGraphState.Node = async (state, config) => {
+  const completeScenario: typeof ScenarioGraphState.Node = async (state, config) => {
     const { scenarioStore } = requireGraphDependencies(config);
     await scenarioStore.complete(state.runId, requireStopReason(state));
     return {};
   };
 
   return new StateGraph({
-    context: TargetGraphContext,
-    input: TargetGraphInput,
-    output: TargetGraphOutput,
-    state: TargetGraphState,
+    context: ScenarioGraphContext,
+    input: ScenarioGraphInput,
+    output: ScenarioGraphOutput,
+    state: ScenarioGraphState,
   })
     .addNode("loadScenario", loadScenario)
     .addNode("runScenario", runScenario)
@@ -255,22 +255,22 @@ function createTargetGraph() {
     .compile();
 }
 
-export const targetGraph = createTargetGraph();
+export const scenarioGraph = createScenarioGraph();
 
-/** Runs Target execution with the optional Scenario branch and evaluation handoff enabled. */
-export async function runTargetGraph(
+/** Runs a Scenario through its existing turn sequence and optional recorded-evaluation handoff. */
+export async function runScenarioGraph(
   runId: string,
-  dependencies: TargetGraphDependencies,
+  dependencies: ScenarioGraphDependencies,
   signal: AbortSignal,
 ): Promise<void> {
-  await targetGraph.invoke(
+  await scenarioGraph.invoke(
     { runId },
-    { context: dependencies, recursionLimit: TARGET_GRAPH_RECURSION_LIMIT, signal },
+    { context: dependencies, recursionLimit: SCENARIO_GRAPH_RECURSION_LIMIT, signal },
   );
 }
 
-function requireGraphDependencies(config: LangGraphRunnableConfig): TargetGraphDependencies {
-  const parsed = TargetGraphContext.safeParse(config.context);
+function requireGraphDependencies(config: LangGraphRunnableConfig): ScenarioGraphDependencies {
+  const parsed = ScenarioGraphContext.safeParse(config.context);
   if (!parsed.success) {
     throw new Error(
       "Target graph execution requires Scenario, Target Run, and Evaluation services.",

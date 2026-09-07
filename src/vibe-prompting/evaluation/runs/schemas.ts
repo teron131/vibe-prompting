@@ -2,7 +2,8 @@
 
 import { z } from "zod";
 
-import { criteriaSchema, type Criterion, requestSchema } from "../api.ts";
+import { criteriaSchema, type Criterion } from "../../criteria/schemas.ts";
+import { requestSchema } from "../api.ts";
 
 export type EvaluationRunStatus =
   | "queued"

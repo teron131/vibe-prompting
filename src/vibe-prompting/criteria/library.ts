@@ -6,22 +6,16 @@ import type postgres from "postgres";
 import { z } from "zod";
 
 import type { Database, DatabaseClient } from "../database/index.ts";
-import { type Criterion, criterionSchema } from "./api.ts";
-
-const resourceNameSchema = z.string().trim().min(1).max(120);
-const savedCriterionSchema = criterionSchema.and(
-  z.object({ id: z.uuid(), version: z.number().int().positive() }),
-);
-
-export const savedCriterionInputSchema = criterionSchema;
-export const criteriaInputSchema = z.object({
-  name: resourceNameSchema,
-  criterionIds: z
-    .array(z.uuid())
-    .min(1)
-    .max(10)
-    .refine((ids) => new Set(ids).size === ids.length, "Criteria cannot repeat a Criterion."),
-});
+import {
+  type Criteria,
+  type CriteriaInput,
+  criteriaInputSchema,
+  type CriterionDeletion,
+  type SavedCriterion,
+  type SavedCriterionInput,
+  savedCriterionInputSchema,
+  savedCriterionSchema,
+} from "./schemas.ts";
 
 type CriterionRow = {
   definition: unknown;
@@ -40,27 +34,6 @@ type CriteriaRow = {
 type CriteriaRemainderRow = {
   criterionIds: string[];
   id: string;
-};
-
-export type SavedCriterion = Criterion & {
-  id: string;
-  version: number;
-};
-
-export type SavedCriterionInput = z.infer<typeof savedCriterionInputSchema>;
-
-export type Criteria = {
-  id: string;
-  name: string;
-  criterionSequence: SavedCriterion[];
-  version: number;
-};
-
-export type CriteriaInput = z.infer<typeof criteriaInputSchema>;
-
-export type CriterionDeletion = {
-  affectedCriteriaCount: number;
-  criteria: Criteria[];
 };
 
 /** Reports Criterion and Criteria validation or lifecycle failures with an HTTP-safe status code. */
@@ -99,6 +72,7 @@ export class CriterionLibrary {
     return this.#database.run((sql) => requireCriterion(sql, id));
   }
 
+  /** Creates a shared scoring rule with a unique workspace name and contributor attribution. */
   async createCriterion(actorUserId: string, value: unknown): Promise<SavedCriterion> {
     const input = parseCriterionInput(value);
     return this.#database.run(async (sql) => {
@@ -126,6 +100,7 @@ export class CriterionLibrary {
     });
   }
 
+  /** Changes future uses of a shared rule while preserving snapshots already stored on evaluation runs. */
   async updateCriterion(
     actorUserId: string,
     id: string,
@@ -151,6 +126,7 @@ export class CriterionLibrary {
     });
   }
 
+  /** Atomically removes a rule, deletes emptied compositions, and returns the authoritative surviving library. */
   async deleteCriterion(
     actorUserId: string,
     id: string,
@@ -244,6 +220,7 @@ export class CriterionLibrary {
     return this.#database.run((sql) => requireCriteria(sql, id));
   }
 
+  /** Stores an ordered composition of existing rule references without copying their definitions. */
   async createCriteria(actorUserId: string, value: unknown): Promise<Criteria> {
     const input = parseCriteriaInput(value);
     return this.#database.transaction(async (sql) => {
@@ -264,6 +241,7 @@ export class CriterionLibrary {
     });
   }
 
+  /** Replaces the ordered references only when the caller still holds the current composition version. */
   async updateCriteria(
     actorUserId: string,
     id: string,
@@ -290,6 +268,7 @@ export class CriterionLibrary {
     });
   }
 
+  /** Deletes one version-matched composition while retaining its independently reusable rules. */
   async deleteCriteria(id: string, expectedVersion: number): Promise<void> {
     await this.#database.transaction(async (sql) => {
       const [deleted] = await sql<{ id: string }[]>`

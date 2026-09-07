@@ -2,24 +2,12 @@
 
 export {
   evaluate,
-  type Criterion,
   type CriterionEvaluation,
   type EvaluatedCase,
   type EvaluationCase,
   type EvaluationRequest,
   type EvaluationRun,
 } from "./api.ts";
-export {
-  criteriaInputSchema,
-  CriterionError,
-  type CriterionDeletion,
-  CriterionLibrary,
-  type Criteria,
-  type CriteriaInput,
-  savedCriterionInputSchema,
-  type SavedCriterion,
-  type SavedCriterionInput,
-} from "./criteria.ts";
 export {
   evaluationBatchInputSchema,
   evaluationRunInputSchema,

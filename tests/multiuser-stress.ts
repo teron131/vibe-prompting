@@ -128,6 +128,8 @@ try {
     activeUsers,
     chatResult.chatIdsByUser[0]![0]!,
   );
+  await exerciseCriteriaSnapshots(services, activeUsers[0]!.id);
+  await exerciseGenerativeScenarios(services, activeUsers[0]!.id);
   const restartResult = await exerciseRestartReconciliation(
     testDatabaseUrl,
     services,
@@ -738,6 +740,10 @@ async function exerciseWorkflows(
   assert.equal(completedScenario.scenario.status, "completed");
   assert.equal(completedScenario.scenario.stopReason, "static-complete");
   assert.equal(completedScenario.target?.turns.length, 2);
+  assert.deepEqual(
+    completedScenario.target?.turns.map(({ input }) => input),
+    ["First deterministic turn.", "Second deterministic turn."],
+  );
   assert.equal(completedScenario.evaluations.length, 1);
   assert.equal(completedScenario.evaluations[0]?.status, "completed");
   assert.ok(!("targetRunId" in completedScenario.scenario));
@@ -780,6 +786,137 @@ async function exerciseWorkflows(
     scenarioStatus: completedScenario.scenario.status,
     targetStatus: completedTarget.latestStatus,
   };
+}
+
+/** Verifies shared rule updates and composition cascades without changing historical evaluation facts. */
+async function exerciseCriteriaSnapshots(
+  application: ApplicationServices,
+  actorUserId: string,
+): Promise<void> {
+  const first = await application.criterion.createCriterion(actorUserId, {
+    name: "Snapshot first",
+    type: "boolean",
+    instruction: "Original shared rule.",
+  });
+  const second = await application.criterion.createCriterion(actorUserId, {
+    name: "Snapshot second",
+    type: "boolean",
+    instruction: "Surviving shared rule.",
+  });
+  const composition = await application.criterion.createCriteria(actorUserId, {
+    name: "Snapshot composition",
+    criterionIds: [first.id, second.id],
+  });
+  const emptied = await application.criterion.createCriteria(actorUserId, {
+    name: "Single-rule composition",
+    criterionIds: [first.id],
+  });
+  const prompt = await application.prompts.createPrompt(actorUserId, {
+    title: "Criteria snapshots",
+    markdown: "Return a deterministic response.",
+  });
+  const run = await application.evaluations.startHumanRun(actorUserId, {
+    promptId: prompt.id,
+    promptRevisionId: prompt.revisionId,
+    targetModel: MODEL_ID,
+    judgeModels: [MODEL_ID],
+    cases: [{ input: "Check the original rules.", criteria: composition.criterionSequence }],
+  });
+  assert.equal((await waitForEvaluation(application, actorUserId, run.id)).status, "completed");
+  const original = await application.evaluations.getRun(actorUserId, run.id);
+  const updated = await application.criterion.updateCriterion(
+    actorUserId,
+    first.id,
+    first.version,
+    {
+      name: first.name,
+      type: "boolean",
+      instruction: "Updated shared rule for future runs.",
+    },
+  );
+  const current = await application.criterion.getCriteria(composition.id);
+  assert.deepEqual(
+    current.criterionSequence.map(({ id }) => id),
+    [first.id, second.id],
+  );
+  assert.equal(current.criterionSequence[0]?.instruction, updated.instruction);
+  await assertRejectsWithStatus(
+    () => application.criterion.deleteCriterion(actorUserId, first.id, first.version),
+    409,
+  );
+  const deletion = await application.criterion.deleteCriterion(
+    actorUserId,
+    first.id,
+    updated.version,
+  );
+  assert.equal(deletion.affectedCriteriaCount, 2);
+  const survivor = deletion.criteria.find(({ id }) => id === composition.id);
+  assert.ok(survivor);
+  assert.equal(survivor.version, current.version + 1);
+  assert.deepEqual(
+    survivor.criterionSequence.map(({ id }) => id),
+    [second.id],
+  );
+  await assertRejectsWithStatus(() => application.criterion.getCriteria(emptied.id), 404);
+  const historical = await application.evaluations.getRun(actorUserId, run.id);
+  assert.deepEqual(historical.cases, original.cases);
+  assert.equal(historical.configurationFingerprint, original.configurationFingerprint);
+  await application.criterion.deleteCriteria(survivor.id, survivor.version);
+  assert.equal((await application.criterion.getCriterion(second.id)).id, second.id);
+}
+
+/** Exercises natural Driver completion, the hard turn limit, and cancellation of attached Target work. */
+async function exerciseGenerativeScenarios(
+  application: ApplicationServices,
+  actorUserId: string,
+): Promise<void> {
+  const prompt = await application.prompts.createPrompt(actorUserId, {
+    title: "Generative Scenario checks",
+    markdown: "Respond to the user's question.",
+  });
+  const input = {
+    promptId: prompt.id,
+    promptRevisionId: prompt.revisionId,
+    targetModel: MODEL_ID,
+    mode: "generative",
+    instruction: "Ask one question, then finish.",
+  };
+  const natural = await application.scenarios.startHumanRun(actorUserId, { ...input, maxTurns: 3 });
+  const ended = await waitForScenario(application, actorUserId, natural.scenario.id);
+  assert.equal(ended.scenario.status, "completed");
+  assert.equal(ended.scenario.stopReason, "driver-ended");
+  assert.equal(ended.scenario.mode, "generative");
+  if (ended.scenario.mode !== "generative") throw new Error("Expected a generative Scenario.");
+  assert.equal(ended.scenario.driverModel, MODEL_ID);
+  assert.equal(ended.scenario.driverBrief, "Ask once and finish.");
+  assert.deepEqual(
+    ended.target?.turns.map(({ input }) => input),
+    ["First generated user turn."],
+  );
+  assert.deepEqual(ended.evaluations, []);
+
+  const bounded = await application.scenarios.startHumanRun(actorUserId, { ...input, maxTurns: 1 });
+  const limited = await waitForScenario(application, actorUserId, bounded.scenario.id);
+  assert.equal(limited.scenario.status, "completed");
+  assert.equal(limited.scenario.stopReason, "maximum-turns");
+  assert.equal(limited.target?.turns.length, 1);
+
+  const started = await application.scenarios.startHumanRun(actorUserId, {
+    promptId: prompt.id,
+    promptRevisionId: prompt.revisionId,
+    targetModel: MODEL_ID,
+    mode: "static",
+    messages: Array.from({ length: 10 }, (_value, index) => `Cancellation turn ${index + 1}.`),
+  });
+  await poll(
+    () => application.scenarios.getRunResponse(actorUserId, started.scenario.id),
+    ({ target }) => Boolean(target?.turns.some(({ status }) => status === "running")),
+    "Scenario with an active Target turn",
+  );
+  const cancelled = await application.scenarios.cancel(actorUserId, started.scenario.id);
+  assert.equal(cancelled.scenario.status, "cancelled");
+  assert.ok(cancelled.target?.turns.some(({ status }) => status === "cancelled"));
+  assert.deepEqual(cancelled.evaluations, []);
 }
 
 async function exerciseRestartReconciliation(
@@ -1069,18 +1206,33 @@ function writeChatResponse(response: ServerResponse, body: Record<string, unknow
         };
       }
     | undefined;
-  const structuredResultNames = Object.keys(responseFormat?.json_schema?.schema?.properties ?? {});
+  const structuredProperties = responseFormat?.json_schema?.schema?.properties ?? {};
+  const structuredResultNames = Object.keys(structuredProperties);
+  // The compatible AI SDK client uses JSON mode and places the Driver contract in messages.
+  const requestMessages = JSON.stringify(body.messages ?? []);
+  const initialDriver = requestMessages.includes("<scenario_instruction>");
+  const continuingDriver = requestMessages.includes("<public_transcript>");
   const structuredContent =
-    structuredResultNames.length > 0
+    initialDriver || continuingDriver
       ? JSON.stringify(
-          Object.fromEntries(
-            structuredResultNames.map((name) => [
-              name,
-              { value: true, comment: "Deterministic pass.", evidence: [] },
-            ]),
-          ),
+          initialDriver
+            ? {
+                action: "send",
+                message: "First generated user turn.",
+                driverBrief: "Ask once and finish.",
+              }
+            : { action: "end", message: null },
         )
-      : undefined;
+      : structuredResultNames.length > 0
+        ? JSON.stringify(
+            Object.fromEntries(
+              structuredResultNames.map((name) => [
+                name,
+                { value: true, comment: "Deterministic pass.", evidence: [] },
+              ]),
+            ),
+          )
+        : undefined;
   const toolCall = toolName
     ? [
         {

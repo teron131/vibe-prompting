@@ -2,82 +2,13 @@
 
 import { z } from "zod";
 
+import { criteriaSchema, type Criterion } from "../criteria/schemas.ts";
 import { type Target, targetSchema } from "../target/api.ts";
 import { evaluatorGraph, type EvaluatorScore } from "./engine/graph.ts";
 import type {
   EvaluationCriteria as InternalCriteria,
   EvaluationCriterion as InternalCriterion,
 } from "./engine/schemas.ts";
-
-const instructionSchema = z.string().trim().min(1);
-const criterionNameSchema = z.string().trim().min(1).max(120);
-const categoriesSchema = z
-  .array(z.string().trim().min(1))
-  .min(2)
-  .refine((categories) => new Set(categories).size === categories.length, {
-    message: "Criterion categories must be unique.",
-  });
-
-export const criterionSchema = z.discriminatedUnion("type", [
-  z.object({
-    name: criterionNameSchema,
-    type: z.literal("boolean"),
-    instruction: instructionSchema,
-  }),
-  z.object({
-    name: criterionNameSchema,
-    type: z.literal("categorical"),
-    instruction: instructionSchema,
-    categories: categoriesSchema,
-  }),
-  z.object({
-    name: criterionNameSchema,
-    type: z.literal("numeric"),
-    instruction: instructionSchema,
-    min: z.number(),
-    max: z.number(),
-  }),
-  z.object({
-    name: criterionNameSchema,
-    type: z.literal("text"),
-    instruction: instructionSchema,
-  }),
-  z.object({
-    name: criterionNameSchema,
-    type: z.literal("correction"),
-    instruction: instructionSchema,
-  }),
-]);
-
-export const criteriaSchema = z
-  .array(criterionSchema)
-  .min(1)
-  .max(10)
-  .superRefine((criteria, context) => {
-    if (new Set(criteria.map(({ name }) => name.toLocaleLowerCase())).size !== criteria.length) {
-      context.addIssue({
-        code: "custom",
-        message: "Criterion names must be unique within a case.",
-      });
-    }
-
-    criteria.forEach((criterion, index) => {
-      if (criterion.type === "numeric" && criterion.min >= criterion.max) {
-        context.addIssue({
-          code: "custom",
-          message: "Criterion min must be below max.",
-          path: [index, "min"],
-        });
-      }
-    });
-
-    if (criteria.filter(({ type }) => type === "correction").length > 1) {
-      context.addIssue({
-        code: "custom",
-        message: "A case may contain at most one correction criterion.",
-      });
-    }
-  });
 
 const judgeModelSchema = z.string().trim().min(1);
 const judgeModelsSchema = z
@@ -115,8 +46,6 @@ export const recordedRequestSchema = z.object({
     .min(1),
   judgeModels: judgeModelsSchema,
 });
-
-export type Criterion = z.infer<typeof criterionSchema>;
 
 export type EvaluationCase<INPUT = unknown> = {
   input: INPUT;

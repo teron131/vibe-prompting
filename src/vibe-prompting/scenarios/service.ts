@@ -1,11 +1,11 @@
-/** Exposes optional Scenario operations while Target execution owns graph sequencing. */
+/** Owns Scenario launch, cancellation, and lifecycle coordination across Target and Evaluation runs. */
 
-import { loadRuntimeConfig } from "../../config/index.ts";
-import type { Database } from "../../database/index.ts";
-import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
-import type { PromptSystem } from "../../prompt-system/index.ts";
-import { runTargetGraph, type TargetGraphDependencies } from "../graph.ts";
-import type { TargetRuns, TargetRunSource } from "../runs/index.ts";
+import { loadRuntimeConfig } from "../config/index.ts";
+import type { Database } from "../database/index.ts";
+import type { EvaluationRuns } from "../evaluation/runs/index.ts";
+import type { PromptSystem } from "../prompt-system/index.ts";
+import type { TargetRuns, TargetRunSource } from "../target/runs/index.ts";
+import { runScenarioGraph, type ScenarioGraphDependencies } from "./graph.ts";
 import {
   scenarioRunCreateInputSchema,
   ScenarioRunRequestError,
@@ -16,13 +16,14 @@ import { type NewScenarioRun, ScenarioRunStore } from "./store.ts";
 // Bounds whole workflows because Driver calls run outside the Target and Evaluation inner queues.
 const MAX_ACTIVE_SCENARIO_RUNS = 2;
 
+/** Coordinates durable Scenario workflows while Target Runs retain transcripts and Evaluation Runs retain scores. */
 export class ScenarioRuns {
   readonly #controllers = new Map<string, AbortController>();
   readonly #evaluations: EvaluationRuns;
   readonly #prompts: PromptSystem;
   readonly #store: ScenarioRunStore;
   readonly #targetRuns: TargetRuns;
-  readonly #graphDependencies: TargetGraphDependencies;
+  readonly #graphDependencies: ScenarioGraphDependencies;
   #activeRuns = 0;
   #draining = false;
   #drainRequested = false;
@@ -46,10 +47,12 @@ export class ScenarioRuns {
     return interrupted;
   }
 
+  /** Persists a human-requested Scenario before scheduling its graph outside the request. */
   async startHumanRun(actorUserId: string, rawInput: unknown): Promise<ScenarioRunResponse> {
     return this.#startRun(actorUserId, rawInput, "human", null);
   }
 
+  /** Starts the same workflow with AI authorship and optional originating-chat attribution. */
   async startAgentRun(
     actorUserId: string,
     rawInput: unknown,
@@ -78,6 +81,7 @@ export class ScenarioRuns {
     };
   }
 
+  /** Cancels the Scenario and propagates cancellation to its attached Target and Evaluation runs. */
   async cancel(actorUserId: string, runId: string): Promise<ScenarioRunResponse> {
     const { evaluationRunIds, targetRunId } = await this.#store.cancel(runId, actorUserId);
     this.#controllers
@@ -170,12 +174,12 @@ export class ScenarioRuns {
     }
   }
 
-  /** Invokes Target execution while the facade owns Scenario failure projection and cancellation handles. */
+  /** Invokes the Scenario graph while the service owns failure projection and cancellation handles. */
   async #executeClaimed(runId: string): Promise<void> {
     const controller = new AbortController();
     this.#controllers.set(runId, controller);
     try {
-      await runTargetGraph(runId, this.#graphDependencies, controller.signal);
+      await runScenarioGraph(runId, this.#graphDependencies, controller.signal);
     } catch (error) {
       if (await this.#store.isRunning(runId)) {
         await this.#store.fail(runId, safeExecutionError(error));

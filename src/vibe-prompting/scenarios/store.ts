@@ -4,8 +4,8 @@ import { randomUUID } from "node:crypto";
 
 import type postgres from "postgres";
 
-import type { Database, DatabaseClient } from "../../database/index.ts";
-import type { TargetReasoningEffort, TargetRunSource } from "../runs/index.ts";
+import type { Database, DatabaseClient } from "../database/index.ts";
+import type { TargetReasoningEffort, TargetRunSource } from "../target/runs/index.ts";
 import {
   type ScenarioEvaluationPlan,
   type ScenarioEvaluationReference,

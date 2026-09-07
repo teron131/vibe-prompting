@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { criteriaSchema } from "../../evaluation/api.ts";
+import { criteriaSchema } from "../../criteria/index.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
 import { type AgentTool, defineAgentTool, requireAgentActor } from "./api.ts";
 

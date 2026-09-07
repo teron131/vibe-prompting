@@ -1,8 +1,8 @@
 /** Owns PostgreSQL reads and projections for evaluation results, facets, aggregates, and structured query rows. */
 
+import type { Criterion } from "../../criteria/schemas.ts";
 import type { DatabaseClient } from "../../database/index.ts";
 import type { SearchDocument } from "../../search.ts";
-import type { Criterion } from "../api.ts";
 import type { EvaluationRunStatus } from "../runs/index.ts";
 import type {
   EvaluationDataType,

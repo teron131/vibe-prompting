@@ -5,12 +5,12 @@ import { z } from "zod";
 import {
   type EvaluationRunStatus,
   recordedEvaluationRunInputSchema,
-} from "../../evaluation/runs/index.ts";
+} from "../evaluation/runs/index.ts";
 import {
   type StoredTargetRun,
   type TargetReasoningEffort,
   targetRunCreateInputSchema,
-} from "../runs/index.ts";
+} from "../target/runs/index.ts";
 
 export const MAX_SCENARIO_TURNS = 10;
 

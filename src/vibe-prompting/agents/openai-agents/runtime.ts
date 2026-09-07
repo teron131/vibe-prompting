@@ -12,12 +12,12 @@ import {
 import { resolveModelIdentities } from "../../clients/llm/models-dev.ts";
 import { startModelCostEstimate } from "../../clients/llm/pricing.ts";
 import { loadRuntimeConfig, type ModelConfig } from "../../config/index.ts";
-import type { CriterionLibrary } from "../../evaluation/criteria.ts";
+import type { CriterionLibrary } from "../../criteria/index.ts";
 import type { EvaluationResults } from "../../evaluation/results/index.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
 import type { PromptSystem } from "../../prompt-system/index.ts";
+import type { ScenarioRuns } from "../../scenarios/index.ts";
 import type { TargetRuns } from "../../target/runs/index.ts";
-import type { ScenarioRuns } from "../../target/scenarios/index.ts";
 import {
   type AgentTool,
   type AgentToolExecutionContext,

@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import type { Criterion } from "../api.ts";
+import type { Criterion } from "../../criteria/schemas.ts";
 import type { EvaluationRunStatus, StoredEvaluationScore } from "../runs/index.ts";
 
 export type EvaluationDataType = StoredEvaluationScore["dataType"];

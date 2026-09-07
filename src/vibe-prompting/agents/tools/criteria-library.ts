@@ -6,7 +6,7 @@ import {
   criteriaInputSchema,
   type CriterionLibrary,
   savedCriterionInputSchema,
-} from "../../evaluation/criteria.ts";
+} from "../../criteria/index.ts";
 import { AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
 
 const criterionCreateSchema = z.object({

@@ -4,6 +4,6 @@
   "env": ".env",
   "graphs": {
     "evaluator": "./src/vibe-prompting/evaluation/engine/graph.ts:evaluatorGraph",
-    "target": "./src/vibe-prompting/target/graph.ts:targetGraph"
+    "target": "./src/vibe-prompting/scenarios/graph.ts:scenarioGraph"
   }
 }

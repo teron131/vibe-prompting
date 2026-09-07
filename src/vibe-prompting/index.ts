@@ -17,3 +17,5 @@ export {
 export * from "./prompt-system/index.ts";
 export * from "./evaluation/index.ts";
 export * from "./target/index.ts";
+export * from "./criteria/index.ts";
+export * from "./scenarios/index.ts";

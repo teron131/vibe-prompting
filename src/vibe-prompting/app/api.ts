@@ -14,8 +14,8 @@ import { z } from "zod";
 
 import { editPrompt } from "../agents/openai-agents/runtime.ts";
 import { createModel } from "../clients/llm/langchain.ts";
+import { criteriaInputSchema, savedCriterionInputSchema } from "../criteria/index.ts";
 import { evaluate, requestSchema } from "../evaluation/api.ts";
-import { criteriaInputSchema, savedCriterionInputSchema } from "../evaluation/criteria.ts";
 import {
   evaluationExplorerQuestionSchema,
   evaluationFiltersSchema,

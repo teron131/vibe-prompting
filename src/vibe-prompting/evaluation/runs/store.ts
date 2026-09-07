@@ -4,13 +4,9 @@ import { randomUUID } from "node:crypto";
 
 import type postgres from "postgres";
 
+import type { Criterion } from "../../criteria/schemas.ts";
 import type { Database, DatabaseClient } from "../../database/index.ts";
-import {
-  type Criterion,
-  type CriterionEvaluation,
-  type EvaluationCase,
-  type EvaluationRun,
-} from "../api.ts";
+import { type CriterionEvaluation, type EvaluationCase, type EvaluationRun } from "../api.ts";
 import {
   type BooleanTrendPoint,
   EvaluationRunNotFoundError,
