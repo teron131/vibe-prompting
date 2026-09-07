@@ -32,6 +32,8 @@ type ActiveRun = {
   events: ConversationRunEvent[];
   listeners: Set<RunListener>;
   settled: boolean;
+  started: boolean;
+  release?: () => void;
   steering: string[];
   steeringClosed: boolean;
   steeringHandler?: (instruction: string) => boolean;
@@ -77,9 +79,12 @@ export type ConversationSteering = {
 };
 
 export class ConversationRunRegistry {
+  #closed = false;
+  #closing: Promise<void> | undefined;
   readonly #runs = new Map<string, ActiveRun>();
 
   claim(chatId: string): ClaimedConversationRun {
+    if (this.#closed) throw new Error("Conversation Run registry is closed.");
     if (this.#runs.has(chatId)) throw new ActiveChatRunError(chatId);
     if (this.#runs.size >= MAX_ACTIVE_RUNS) throw new ChatRunCapacityError();
 
@@ -93,6 +98,7 @@ export class ConversationRunRegistry {
       events: [],
       listeners: new Set(),
       settled: false,
+      started: false,
       steering: [],
       steeringClosed: false,
     };
@@ -124,16 +130,21 @@ export class ConversationRunRegistry {
       resolveDone();
     };
 
+    run.release = release;
     return {
       publish,
       release,
       signal: controller.signal,
       start(operation) {
-        void operation().then(release, (error) => {
-          if (controller.signal.aborted) publish({ type: "stopped" });
-          else publish({ type: "error", message: safeErrorMessage(error) });
-          release();
-        });
+        if (run.settled) throw new Error("Conversation Run claim is closed.");
+        run.started = true;
+        void Promise.resolve()
+          .then(operation)
+          .then(release, (error) => {
+            if (controller.signal.aborted) publish({ type: "stopped" });
+            else publish({ type: "error", message: safeErrorMessage(error) });
+            release();
+          });
       },
       steering: {
         close() {
@@ -161,6 +172,22 @@ export class ConversationRunRegistry {
         return () => run.listeners.delete(listener);
       },
     };
+  }
+
+  /** Stops accepting claims and waits until detached assistant work releases every active claim. */
+  close(): Promise<void> {
+    this.#closing ??= this.#close();
+    return this.#closing;
+  }
+
+  async #close(): Promise<void> {
+    this.#closed = true;
+    const runs = [...this.#runs.entries()];
+    for (const [id, run] of runs) {
+      this.stop(id);
+      if (!run.started) run.release?.();
+    }
+    await Promise.all(runs.map(([, run]) => run.done));
   }
 
   snapshot(chatId: string): ConversationRunSnapshot {

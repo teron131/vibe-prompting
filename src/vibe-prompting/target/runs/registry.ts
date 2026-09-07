@@ -31,6 +31,7 @@ export class TargetRunCapacityError extends Error {
 }
 
 export class TargetRunRegistry {
+  #closed = false;
   readonly #maxActiveRuns: number;
   readonly #runs = new Map<string, ActiveRun>();
   readonly #waiting: WaitingRun[] = [];
@@ -92,9 +93,18 @@ export class TargetRunRegistry {
   }
 
   #requireAvailableRunId(runId: string): void {
+    if (this.#closed) throw new Error("Target Run registry is closed.");
     if (this.#runs.has(runId) || this.#waiting.some((waiting) => waiting.runId === runId)) {
       throw new Error(`Target Run ${runId} is already active or waiting.`);
     }
+  }
+
+  /** Rejects waiting claims and aborts active turns while their execution owners perform cleanup. */
+  close(): void {
+    this.#closed = true;
+    const reason = new DOMException("The Target runtime is shutting down.", "AbortError");
+    for (const waiting of this.#waiting.splice(0)) waiting.reject(reason);
+    for (const run of this.#runs.values()) run.controller.abort(reason);
   }
 
   snapshot(runId: string): { active: boolean; events: TargetRunEvent[] } {

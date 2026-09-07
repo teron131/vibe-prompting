@@ -1,5 +1,6 @@
 /** Composes profile persistence, revision pinning, and executable runtimes behind the public Target System API. */
 
+import { type ModelContext, standaloneModelContext } from "../clients/llm/context.ts";
 import type { Database } from "../database/index.ts";
 import type { PromptSystem } from "../prompt-system/index.ts";
 import {
@@ -21,10 +22,16 @@ export type { PinnedTarget } from "./runtime.ts";
 
 /** Keeps the public Target operations stable while sharing one pinning recipe across durable workflows. */
 export class TargetSystem {
+  readonly #models: ModelContext;
   readonly #profiles: TargetProfiles;
   readonly #prompts: PromptSystem;
 
-  constructor(database: Database, prompts: PromptSystem) {
+  constructor(
+    database: Database,
+    prompts: PromptSystem,
+    models: ModelContext = standaloneModelContext,
+  ) {
+    this.#models = models;
     this.#profiles = new TargetProfiles(database, prompts);
     this.#prompts = prompts;
   }
@@ -58,6 +65,6 @@ export class TargetSystem {
 
   /** Opens an executable runtime from the same definition used to prepare durable evaluation records. */
   async createPinnedTarget(input: TargetPinInput): Promise<PinnedTarget> {
-    return openTargetRuntime(await this.resolveDefinition(input));
+    return openTargetRuntime(await this.resolveDefinition(input), this.#models);
   }
 }

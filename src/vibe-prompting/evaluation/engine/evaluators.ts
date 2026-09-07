@@ -6,6 +6,7 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import { END, ReducedValue, Send, START, StateGraph, StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
 
+import { type ModelContext } from "../../clients/llm/context.ts";
 import { createModel } from "../../clients/llm/langchain.ts";
 import { buildCriteriaPrompt, buildCriteriaSystemPrompt } from "./prompts.ts";
 import {
@@ -65,29 +66,32 @@ function dispatchJudgeModels(state: typeof JudgeState.State): Send[] {
   );
 }
 
-const evaluateJudge: typeof JudgeState.Node = async (state, config) => {
-  const judgeModel = state.judgeModel;
-  if (!judgeModel) throw new Error("Judge model was not dispatched.");
-  const results = await evaluateCriteria(
-    createModel({ model: judgeModel, reasoningEffort: "high" }),
-    state.criteria,
-    state.subject,
-    config,
-  );
-  return {
-    evaluations: [{ model: judgeModel, results }],
+/** Binds judge calls to the model context owned by the enclosing evaluation runtime. */
+export function createJudgesGraph(models: ModelContext) {
+  const evaluateJudge: typeof JudgeState.Node = async (state, config) => {
+    const judgeModel = state.judgeModel;
+    if (!judgeModel) throw new Error("Judge model was not dispatched.");
+    const results = await evaluateCriteria(
+      createModel({ model: judgeModel, reasoningEffort: "high" }, models),
+      state.criteria,
+      state.subject,
+      config,
+    );
+    return {
+      evaluations: [{ model: judgeModel, results }],
+    };
   };
-};
 
-export const judgesGraph = new StateGraph({
-  input: JudgeInput,
-  output: JudgeOutput,
-  state: JudgeState,
-})
-  .addNode("evaluateJudge", evaluateJudge)
-  .addConditionalEdges(START, dispatchJudgeModels, ["evaluateJudge"])
-  .addEdge("evaluateJudge", END)
-  .compile();
+  return new StateGraph({
+    input: JudgeInput,
+    output: JudgeOutput,
+    state: JudgeState,
+  })
+    .addNode("evaluateJudge", evaluateJudge)
+    .addConditionalEdges(START, dispatchJudgeModels, ["evaluateJudge"])
+    .addEdge("evaluateJudge", END)
+    .compile();
+}
 
 /** Runs one structured judge call against the complete configured criterion set. */
 async function evaluateCriteria(

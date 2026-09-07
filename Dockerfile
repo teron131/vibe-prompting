@@ -23,6 +23,7 @@ RUN pnpm run typecheck && pnpm run frontend:build
 FROM node:24-slim AS runtime
 
 ENV NODE_ENV=production
+ENV NEXT_MANUAL_SIG_HANDLE=1
 
 WORKDIR /app/frontend
 

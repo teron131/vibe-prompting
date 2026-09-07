@@ -9,9 +9,9 @@ import {
   type Tool,
 } from "@openai/agents";
 
+import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
 import { resolveModelIdentities } from "../../clients/llm/models-dev.ts";
-import { startModelCostEstimate } from "../../clients/llm/pricing.ts";
-import { loadRuntimeConfig, type ModelConfig } from "../../config/index.ts";
+import { type ModelConfig } from "../../config/index.ts";
 import type { CriterionLibrary } from "../../criteria/index.ts";
 import type { EvaluationResults } from "../../evaluation/results/index.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
@@ -68,6 +68,7 @@ export type PromptEdit = {
 };
 
 export type PromptEditInput = {
+  modelContext?: ModelContext;
   markdown: string;
   instruction: string;
   modelId: string;
@@ -98,6 +99,7 @@ export type ChatConversationMessage = {
 };
 
 export type ChatRunInput = {
+  modelContext?: ModelContext;
   actorUserId: string;
   chatId: string;
   instruction: string;
@@ -141,8 +143,9 @@ export function createAgentRuntime(
   modelId: string,
   tools: Tool[] = [],
   reasoningEffort: ChatReasoningEffort = "medium",
+  modelContext: ModelContext = standaloneModelContext,
 ): AgentRuntime {
-  const { config, provider } = createModel(modelId);
+  const { config, provider } = createModel(modelId, modelContext);
   const usesResponses = config.id.startsWith("gpt-");
 
   return {
@@ -191,7 +194,13 @@ function adaptTools(
       description: definition.description,
       parameters: definition.parameters,
       execute: (input, _context, details) =>
-        definition.execute(input, { ...executionContext, signal: details?.signal }),
+        definition.execute(input, {
+          ...executionContext,
+          signal:
+            executionContext.signal && details?.signal
+              ? AbortSignal.any([executionContext.signal, details.signal])
+              : (executionContext.signal ?? details?.signal),
+        }),
     }),
   );
 }
@@ -201,6 +210,7 @@ export async function streamChatRun(
   input: ChatRunInput,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<ChatRunResult> {
+  const modelContext = input.modelContext ?? standaloneModelContext;
   const startedAt = performance.now();
   onEvent({ type: "response-start", startedAt: new Date().toISOString() });
   const enabled = new Set(input.enabledTools);
@@ -213,21 +223,29 @@ export async function streamChatRun(
   if (evaluationsEnabled)
     toolkits.push(
       new CriteriaLibraryToolkit(input.criterion),
-      new EvaluationRunsToolkit(input.evaluations, getEvaluationModelReferences),
+      new EvaluationRunsToolkit(input.evaluations, () =>
+        getEvaluationModelReferences(modelContext),
+      ),
       new EvaluationResultsToolkit(input.evaluationResults),
-      new ScenarioRunsToolkit(input.scenarios, getEvaluationModelReferences),
-      new TargetRunsToolkit(input.targetRuns, getEvaluationModelReferences),
+      new ScenarioRunsToolkit(input.scenarios, () => getEvaluationModelReferences(modelContext)),
+      new TargetRunsToolkit(input.targetRuns, () => getEvaluationModelReferences(modelContext)),
     );
   const toolDefinitions = AgentToolkit.compose(toolkits);
-  if (enabled.has("web-search")) toolDefinitions.push(createExaSearchTool());
+  if (enabled.has("web-search"))
+    toolDefinitions.push(createExaSearchTool(modelContext.readConfig, modelContext.signal));
 
   if (input.signal?.aborted) throw abortReason(input.signal);
   const runtime = createAgentRuntime(
     input.modelId,
-    adaptTools(toolDefinitions, { actorUserId: input.actorUserId, chatId: input.chatId }),
+    adaptTools(toolDefinitions, {
+      actorUserId: input.actorUserId,
+      chatId: input.chatId,
+      signal: input.signal,
+    }),
     input.reasoningEffort,
+    modelContext,
   );
-  const costEstimate = startModelCostEstimate(runtime.model.id);
+  const costEstimate = modelContext.pricing.estimate(runtime.model.id);
   const usage = { inputTokens: 0, outputTokens: 0, requests: 0, totalTokens: 0 };
   let runInput = formatConversation(input);
   const toolNames = new Map<string, string>();
@@ -290,8 +308,8 @@ export async function streamChatRun(
 }
 
 /** Loads canonical model labels for the evaluation tool without exposing provider metadata. */
-async function getEvaluationModelReferences() {
-  const { models } = loadRuntimeConfig();
+async function getEvaluationModelReferences(modelContext: ModelContext) {
+  const { models } = modelContext.readConfig();
   const identities = await resolveModelIdentities(models.map(({ id }) => id));
   return models.map(({ id }, index) => ({ id, label: identities[index]?.label ?? id }));
 }
@@ -306,13 +324,22 @@ export async function streamPromptEdit(
   input: PromptEditInput,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<PromptEdit> {
+  const modelContext = input.modelContext ?? standaloneModelContext;
   const workspace = await createPromptWorkspace(input.markdown);
 
   try {
     if (input.signal?.aborted) throw abortReason(input.signal);
     const runtime = createAgentRuntime(
       input.modelId,
-      adaptTools([...createScopedFsTools(workspace), createExaSearchTool()]),
+      adaptTools(
+        [
+          ...createScopedFsTools(workspace),
+          createExaSearchTool(modelContext.readConfig, modelContext.signal),
+        ],
+        { signal: input.signal },
+      ),
+      undefined,
+      modelContext,
     );
     const run = await runtime.runner.run(runtime.agent, input.instruction, {
       signal: input.signal,

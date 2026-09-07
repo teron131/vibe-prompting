@@ -25,11 +25,7 @@ import {
 } from "../evaluation/results/index.ts";
 import { evaluationBatchInputSchema, evaluationRunInputSchema } from "../evaluation/runs/index.ts";
 import { PromptConflictError } from "../prompt-system/index.ts";
-import {
-  createApplicationServices,
-  getApplicationServices,
-  getConfiguredModels,
-} from "../server.ts";
+import { type ApplicationServices, getApplicationServices, registerShutdown } from "../server.ts";
 
 const modelIdSchema = z.string().trim().min(1).describe("Configured model ID.");
 const promptIdSchema = z.uuid();
@@ -88,10 +84,9 @@ export const apiEvaluationSchema = requestSchema.extend({
 });
 
 /** Validates one synchronous evaluation request and invokes the configured target model. */
-export async function evaluateRequest(rawRequest: unknown) {
-  await getApplicationServices();
+export async function evaluateRequest(rawRequest: unknown, services: ApplicationServices) {
   const { targetModel, ...request } = apiEvaluationSchema.parse(rawRequest);
-  const model = createModel({ model: targetModel });
+  const model = createModel({ model: targetModel }, services.models);
   return evaluate(
     {
       model: targetModel,
@@ -103,6 +98,7 @@ export async function evaluateRequest(rawRequest: unknown) {
       },
     },
     request,
+    { engine: services.evaluator },
   );
 }
 
@@ -115,13 +111,13 @@ function evaluationProvenance() {
 }
 
 /** Creates the Fastify adapter for the durable application services and OpenAPI contracts. */
-export async function createApiServer(): Promise<FastifyInstance> {
-  const services = await createApplicationServices();
+export async function createApiServer(application?: ApplicationServices): Promise<FastifyInstance> {
+  const services = application ?? (await getApplicationServices());
   const prompts = services.prompts;
   const server = Fastify({ logger: true }).withTypeProvider<ZodTypeProvider>();
   server.setValidatorCompiler(validatorCompiler);
   server.setSerializerCompiler(serializerCompiler);
-  server.addHook("onClose", () => services.close());
+  if (!application) server.addHook("onClose", () => services.close());
   server.addHook("onListen", async () => {
     const address = server.server.address();
     if (typeof address === "object" && address && !isLoopbackAddress(address.address)) {
@@ -130,6 +126,10 @@ export async function createApiServer(): Promise<FastifyInstance> {
     }
   });
   server.addHook("preHandler", async (request) => {
+    if (services.closed)
+      throw Object.assign(new Error("The application runtime is shutting down."), {
+        statusCode: 503,
+      });
     const userId =
       readUserId(request.body, "actorUserId") ?? readUserId(request.query, "viewerUserId");
     if (userId) await services.auth.requireActiveUser(userId);
@@ -160,7 +160,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
         tags: ["evaluation"],
       },
     },
-    async () => ({ models: await getConfiguredModels() }),
+    async () => ({ models: await services.getConfiguredModels() }),
   );
 
   server.post(
@@ -212,6 +212,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
         markdown: request.body.markdown,
         instruction: request.body.instruction,
         modelId: request.body.modelId,
+        modelContext: services.models,
       });
       const prompt = await prompts.appendAiEdit(request.body.actorUserId, {
         promptId: request.params.promptId,
@@ -234,7 +235,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
         tags: ["evaluation"],
       },
     },
-    (request) => evaluateRequest(request.body),
+    (request) => evaluateRequest(request.body, services),
   );
 
   server.get(
@@ -600,7 +601,7 @@ export async function createApiServer(): Promise<FastifyInstance> {
     },
     async (request, reply) => {
       reply.header("cache-control", "no-store");
-      return exploreEvaluations(services.evaluationResults, request.body.question);
+      return exploreEvaluations(services.evaluationResults, request.body.question, services.models);
     },
   );
 
@@ -669,7 +670,13 @@ function isLoopbackAddress(address: string): boolean {
 }
 
 if (import.meta.main) {
-  const server = await createApiServer();
+  const services = await getApplicationServices();
+  const server = await createApiServer(services);
+  registerShutdown(async () => {
+    const closing = server.close();
+    await services.close();
+    await closing;
+  });
   await server.listen({
     host: "127.0.0.1",
     port: Number(process.env.API_PORT ?? 3000),

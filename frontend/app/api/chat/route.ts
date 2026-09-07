@@ -122,11 +122,14 @@ export async function POST(request: Request) {
       !existing ||
       userMessageCount % METADATA_EVERY_MESSAGES === 0;
     const metadataPromise = shouldUpdateMetadata
-      ? generateChatMetadata({
-          currentIcon: conversation.chat.icon,
-          currentTitle: conversation.chat.title,
-          messages: conversation.messages,
-        })
+      ? generateChatMetadata(
+          {
+            currentIcon: conversation.chat.icon,
+            currentTitle: conversation.chat.title,
+            messages: conversation.messages,
+          },
+          services.models,
+        )
           .then(async (metadata) => {
             if (!metadata) return null;
             await services.conversations.updateMetadata(user.id, {
@@ -143,54 +146,59 @@ export async function POST(request: Request) {
 
     const stream = createNdjsonStream(claim);
     claim.start(async () => {
-      const collected = new CollectedAssistantParts();
-      const result = await streamChatRun(
-        {
-          actorUserId: user.id,
+      try {
+        const collected = new CollectedAssistantParts();
+        const result = await streamChatRun(
+          {
+            actorUserId: user.id,
+            modelContext: services.models,
+            chatId: input.chatId,
+            instruction: formatWorkspaceInstruction(
+              input.instruction,
+              activePrompt,
+              quotes.map(({ context }) => context),
+            ),
+            history,
+            attachments: input.attachments,
+            modelId: input.modelId,
+            reasoningEffort: input.workspace.reasoningEffort,
+            enabledTools: input.workspace.enabledTools,
+            prompts: services.prompts,
+            criterion: services.criterion,
+            evaluations: services.evaluations,
+            evaluationResults: services.evaluationResults,
+            targetRuns: services.targetRuns,
+            scenarios: services.scenarios,
+            signal: claim?.signal,
+            steering: claim?.steering,
+          },
+          (event) => {
+            collected.add(event);
+            claim?.publish(event);
+          },
+        );
+        if (claim?.signal.aborted) throw claim.signal.reason;
+        await services.conversations.appendAssistantMessage(user.id, {
           chatId: input.chatId,
-          instruction: formatWorkspaceInstruction(
-            input.instruction,
-            activePrompt,
-            quotes.map(({ context }) => context),
-          ),
-          history,
-          attachments: input.attachments,
-          modelId: input.modelId,
-          reasoningEffort: input.workspace.reasoningEffort,
-          enabledTools: input.workspace.enabledTools,
-          prompts: services.prompts,
-          criterion: services.criterion,
-          evaluations: services.evaluations,
-          evaluationResults: services.evaluationResults,
-          targetRuns: services.targetRuns,
-          scenarios: services.scenarios,
-          signal: claim?.signal,
-          steering: claim?.steering,
-        },
-        (event) => {
-          collected.add(event);
-          claim?.publish(event);
-        },
-      );
-      if (claim?.signal.aborted) throw claim.signal.reason;
-      await services.conversations.appendAssistantMessage(user.id, {
-        chatId: input.chatId,
-        metadata: {
-          completedAt: new Date().toISOString(),
-          activePromptId: activePrompt?.id ?? null,
-          activePromptRevisionId: activePrompt?.revisionId ?? null,
-          enabledTools: input.workspace.enabledTools,
-          modelId: result.model.id,
-          reasoningEffort: input.workspace.reasoningEffort,
-          telemetry: result.telemetry,
-        },
-        parts: collected.finish(result.message),
-      });
-      const metadata = await metadataPromise;
-      if (metadata) {
-        claim?.publish({ chatId: input.chatId, ...metadata, type: "chat-metadata" });
+          metadata: {
+            completedAt: new Date().toISOString(),
+            activePromptId: activePrompt?.id ?? null,
+            activePromptRevisionId: activePrompt?.revisionId ?? null,
+            enabledTools: input.workspace.enabledTools,
+            modelId: result.model.id,
+            reasoningEffort: input.workspace.reasoningEffort,
+            telemetry: result.telemetry,
+          },
+          parts: collected.finish(result.message),
+        });
+        const metadata = await metadataPromise;
+        if (metadata) {
+          claim?.publish({ chatId: input.chatId, ...metadata, type: "chat-metadata" });
+        }
+        claim?.publish({ type: "finish" });
+      } finally {
+        await metadataPromise;
       }
-      claim?.publish({ type: "finish" });
     });
 
     return new Response(stream, {

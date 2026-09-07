@@ -1,6 +1,6 @@
 /** Generates the native Gemini embeddings used by shared hybrid search. */
 
-import { loadRuntimeConfig } from "../config/index.ts";
+import { loadRuntimeConfig, type RuntimeConfig } from "../config/index.ts";
 
 export const SEARCH_EMBEDDING_MODEL = "gemini-embedding-2";
 
@@ -28,10 +28,13 @@ export class EmbeddingError extends Error {
 }
 
 /** Embeds retrieval documents in bounded batches while preserving input order. */
-export async function embedSearchDocuments(documents: Array<{ text: string; title: string }>) {
+export async function embedSearchDocuments(
+  documents: Array<{ text: string; title: string }>,
+  readConfig: () => RuntimeConfig = loadRuntimeConfig,
+) {
   if (documents.length === 0) return [];
 
-  const apiKey = loadEmbeddingApiKey();
+  const apiKey = loadEmbeddingApiKey(readConfig);
   const batches: string[][] = [];
   for (let index = 0; index < documents.length; index += EMBEDDING_BATCH_SIZE) {
     batches.push(
@@ -55,8 +58,11 @@ export async function embedSearchDocuments(documents: Array<{ text: string; titl
 }
 
 /** Embeds one asymmetric retrieval query using Gemini Embedding 2's search format. */
-export async function embedSearchQuery(query: string) {
-  const apiKey = loadEmbeddingApiKey();
+export async function embedSearchQuery(
+  query: string,
+  readConfig: () => RuntimeConfig = loadRuntimeConfig,
+) {
+  const apiKey = loadEmbeddingApiKey(readConfig);
   const normalizedQuery = query.trim().replace(/\s+/g, " ");
   const cacheKey = `${SEARCH_EMBEDDING_MODEL}:${normalizedQuery}`;
   const cached = queryEmbeddings.get(cacheKey);
@@ -85,8 +91,8 @@ export async function embedSearchQuery(query: string) {
   }
 }
 
-function loadEmbeddingApiKey() {
-  const config = loadRuntimeConfig();
+function loadEmbeddingApiKey(readConfig: () => RuntimeConfig) {
+  const config = readConfig();
   if (
     config.embeddingModel.id !== SEARCH_EMBEDDING_MODEL ||
     config.embeddingModel.platform !== "gemini"

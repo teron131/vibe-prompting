@@ -9,9 +9,10 @@ import {
   type LangfuseConfig,
   loadOptionalLangfuseConfig,
 } from "../../clients/langfuse.ts";
+import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
 import { targetSchema } from "../../target/api.ts";
 import { LangfuseExperimentRunner } from "../experiments.ts";
-import { type JudgeEvaluation, judgeModelsSchema, judgesGraph } from "./evaluators.ts";
+import { createJudgesGraph, type JudgeEvaluation, judgeModelsSchema } from "./evaluators.ts";
 import {
   evaluationCriteriaSchema,
   evaluationSubjectSchema,
@@ -69,29 +70,149 @@ const EvaluatorState = new StateSchema({
   results: z.array(evaluatedCaseSchema).optional(),
 });
 
+const EvaluationCaseInput = new StateSchema({
+  target: targetSchema.optional(),
+  caseIndex: z.number().int().nonnegative(),
+  input: z.unknown().refine((input) => input !== undefined, "Case input is required."),
+  expectedOutput: z.unknown().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  criteria: evaluationCriteriaSchema,
+  judgeModels: judgeModelsSchema,
+  output: z.unknown().optional(),
+});
+
+const EvaluationCaseOutput = new StateSchema({
+  caseResults: z.array(indexedCaseResultSchema),
+});
+
+const EvaluationCaseState = new StateSchema({
+  ...EvaluationCaseInput.fields,
+  subject: evaluationSubjectSchema.optional(),
+  evaluations: z.array(z.custom<JudgeEvaluation>()).optional(),
+  caseResults: z.array(indexedCaseResultSchema).optional(),
+});
+
 type EvaluatorStateValue = typeof EvaluatorState.State;
 
-let defaultRunner: LangfuseExperimentRunner | undefined;
+export type EvaluationEngine = ReturnType<typeof createEvaluationEngine>;
 
-const prepareEvaluation: typeof EvaluatorState.Node = (state) => {
-  const judgeModels = state.skipTargetModel
-    ? state.judgeModels.filter((judge) => judge !== state.targetModel)
-    : state.judgeModels;
-  if (judgeModels.length === 0) {
-    throw new Error("No judge models remain after skipping the Target model.");
+/** Owns a compiled evaluator and its optional telemetry runner for one application or standalone evaluation. */
+export function createEvaluationEngine(
+  modelContext: ModelContext = standaloneModelContext,
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  const judgesGraph = createJudgesGraph(modelContext);
+  let runner: LangfuseExperimentRunner | undefined;
+  const active = new Set<Promise<unknown>>();
+  let closed = false;
+  let closing: Promise<void> | undefined;
+
+  const prepareEvaluation: typeof EvaluatorState.Node = (state) => {
+    const judgeModels = state.skipTargetModel
+      ? state.judgeModels.filter((judge) => judge !== state.targetModel)
+      : state.judgeModels;
+    if (judgeModels.length === 0) {
+      throw new Error("No judge models remain after skipping the Target model.");
+    }
+
+    const langfuseConfig = loadOptionalLangfuseConfig(environment);
+    if (langfuseConfig) getRunner(langfuseConfig).startTracing();
+    return { resolvedJudgeModels: judgeModels };
+  };
+
+  function getRunner(config: LangfuseConfig): LangfuseExperimentRunner {
+    runner ??= new LangfuseExperimentRunner({
+      client: createLangfuseClient(config),
+      telemetry: createLangfuseTelemetry(config),
+    });
+    return runner;
   }
 
-  const langfuseConfig = loadOptionalLangfuseConfig();
-  if (langfuseConfig) getDefaultRunner(langfuseConfig).startTracing();
-  return { resolvedJudgeModels: judgeModels };
-};
+  const finalizeEvaluation: typeof EvaluatorState.Node = async (state) => {
+    const completedCases = state.caseResults.toSorted(
+      (left, right) => left.caseIndex - right.caseIndex,
+    );
+    const langfuseConfig = loadOptionalLangfuseConfig(environment);
+    if (langfuseConfig) {
+      await getRunner(langfuseConfig).persist({
+        name: state.name,
+        cases: completedCases.map(({ caseIndex, result }) => {
+          const testCase = state.cases[caseIndex];
+          if (!testCase) throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
+          return {
+            input: testCase.input,
+            output: result.output,
+            expectedOutput: testCase.expectedOutput,
+            metadata: testCase.metadata,
+            criteria: testCase.criteria,
+            scores: result.evaluations,
+          };
+        }),
+        runName: state.runName,
+        description: state.description,
+        maxConcurrency: state.maxConcurrency,
+        metadata: { ...state.metadata, targetModel: state.targetModel },
+      });
+    }
+    return { results: completedCases.map(({ result }) => result) };
+  };
 
-function getDefaultRunner(config: LangfuseConfig): LangfuseExperimentRunner {
-  defaultRunner ??= new LangfuseExperimentRunner({
-    client: createLangfuseClient(config),
-    telemetry: createLangfuseTelemetry(config),
-  });
-  return defaultRunner;
+  const evaluationCaseGraph = new StateGraph({
+    input: EvaluationCaseInput,
+    output: EvaluationCaseOutput,
+    state: EvaluationCaseState,
+  })
+    .addNode("invokeTarget", invokeTarget)
+    .addNode("prepareRecordedSubject", prepareRecordedSubject)
+    .addNode("judgeEvaluation", judgesGraph)
+    .addNode("projectResult", projectCaseResult)
+    .addConditionalEdges(START, routeCase, ["invokeTarget", "prepareRecordedSubject"])
+    .addEdge("invokeTarget", "judgeEvaluation")
+    .addEdge("prepareRecordedSubject", "judgeEvaluation")
+    .addEdge("judgeEvaluation", "projectResult")
+    .addEdge("projectResult", END)
+    .compile();
+
+  const evaluatorGraph = new StateGraph({
+    input: EvaluatorInput,
+    output: EvaluatorOutput,
+    state: EvaluatorState,
+  })
+    .addNode("prepareEvaluation", prepareEvaluation)
+    .addNode<"evaluateCase", typeof EvaluationCaseInput>("evaluateCase", evaluationCaseGraph, {
+      input: EvaluationCaseInput,
+    })
+    .addNode("advanceBatch", advanceBatch)
+    .addNode("finalizeEvaluation", finalizeEvaluation)
+    .addEdge(START, "prepareEvaluation")
+    .addConditionalEdges("prepareEvaluation", dispatchCaseBatch, ["evaluateCase"])
+    .addEdge("evaluateCase", "advanceBatch")
+    .addConditionalEdges("advanceBatch", routeNextBatch, ["evaluateCase", "finalizeEvaluation"])
+    .addEdge("finalizeEvaluation", END)
+    .compile();
+
+  return {
+    models: modelContext,
+    graph: evaluatorGraph,
+    invoke(...args: Parameters<typeof evaluatorGraph.invoke>) {
+      if (closed) return Promise.reject(new Error("Evaluation engine is closed."));
+      const pending = evaluatorGraph.invoke(...args);
+      active.add(pending);
+      void pending.then(
+        () => active.delete(pending),
+        () => active.delete(pending),
+      );
+      return pending;
+    },
+    close(): Promise<void> {
+      closing ??= (async () => {
+        closed = true;
+        await Promise.allSettled(active);
+        await runner?.close();
+      })();
+      return closing;
+    },
+  };
 }
 
 function dispatchCaseBatch(state: EvaluatorStateValue): Send[] {
@@ -125,57 +246,6 @@ const advanceBatch: typeof EvaluatorState.Node = (state) => ({
 function routeNextBatch(state: EvaluatorStateValue): Send[] | "finalizeEvaluation" {
   return state.caseOffset < state.cases.length ? dispatchCaseBatch(state) : "finalizeEvaluation";
 }
-
-const finalizeEvaluation: typeof EvaluatorState.Node = async (state) => {
-  const completedCases = state.caseResults.toSorted(
-    (left, right) => left.caseIndex - right.caseIndex,
-  );
-  const langfuseConfig = loadOptionalLangfuseConfig();
-  if (langfuseConfig) {
-    await getDefaultRunner(langfuseConfig).persist({
-      name: state.name,
-      cases: completedCases.map(({ caseIndex, result }) => {
-        const testCase = state.cases[caseIndex];
-        if (!testCase) throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
-        return {
-          input: testCase.input,
-          output: result.output,
-          expectedOutput: testCase.expectedOutput,
-          metadata: testCase.metadata,
-          criteria: testCase.criteria,
-          scores: result.evaluations,
-        };
-      }),
-      runName: state.runName,
-      description: state.description,
-      maxConcurrency: state.maxConcurrency,
-      metadata: { ...state.metadata, targetModel: state.targetModel },
-    });
-  }
-  return { results: completedCases.map(({ result }) => result) };
-};
-
-const EvaluationCaseInput = new StateSchema({
-  target: targetSchema.optional(),
-  caseIndex: z.number().int().nonnegative(),
-  input: z.unknown().refine((input) => input !== undefined, "Case input is required."),
-  expectedOutput: z.unknown().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-  criteria: evaluationCriteriaSchema,
-  judgeModels: judgeModelsSchema,
-  output: z.unknown().optional(),
-});
-
-const EvaluationCaseOutput = new StateSchema({
-  caseResults: z.array(indexedCaseResultSchema),
-});
-
-const EvaluationCaseState = new StateSchema({
-  ...EvaluationCaseInput.fields,
-  subject: evaluationSubjectSchema.optional(),
-  evaluations: z.array(z.custom<JudgeEvaluation>()).optional(),
-  caseResults: z.array(indexedCaseResultSchema).optional(),
-});
 
 const invokeTarget: typeof EvaluationCaseState.Node = async (state) => ({
   subject: {
@@ -217,22 +287,6 @@ const projectCaseResult: typeof EvaluationCaseState.Node = (state) => {
   };
 };
 
-const evaluationCaseGraph = new StateGraph({
-  input: EvaluationCaseInput,
-  output: EvaluationCaseOutput,
-  state: EvaluationCaseState,
-})
-  .addNode("invokeTarget", invokeTarget)
-  .addNode("prepareRecordedSubject", prepareRecordedSubject)
-  .addNode("judgeEvaluation", judgesGraph)
-  .addNode("projectResult", projectCaseResult)
-  .addConditionalEdges(START, routeCase, ["invokeTarget", "prepareRecordedSubject"])
-  .addEdge("invokeTarget", "judgeEvaluation")
-  .addEdge("prepareRecordedSubject", "judgeEvaluation")
-  .addEdge("judgeEvaluation", "projectResult")
-  .addEdge("projectResult", END)
-  .compile();
-
 function toEvaluatorScores(evaluations: JudgeEvaluation[]): EvaluatorScore[] {
   return evaluations.flatMap(({ model, results }) =>
     results.map((result) => ({
@@ -268,21 +322,3 @@ function requireJudgeEvaluations(evaluations: JudgeEvaluation[] | undefined): Ju
   if (!evaluations) throw new Error("Judge evaluations were not produced.");
   return evaluations;
 }
-
-export const evaluatorGraph = new StateGraph({
-  input: EvaluatorInput,
-  output: EvaluatorOutput,
-  state: EvaluatorState,
-})
-  .addNode("prepareEvaluation", prepareEvaluation)
-  .addNode<"evaluateCase", typeof EvaluationCaseInput>("evaluateCase", evaluationCaseGraph, {
-    input: EvaluationCaseInput,
-  })
-  .addNode("advanceBatch", advanceBatch)
-  .addNode("finalizeEvaluation", finalizeEvaluation)
-  .addEdge(START, "prepareEvaluation")
-  .addConditionalEdges("prepareEvaluation", dispatchCaseBatch, ["evaluateCase"])
-  .addEdge("evaluateCase", "advanceBatch")
-  .addConditionalEdges("advanceBatch", routeNextBatch, ["evaluateCase", "finalizeEvaluation"])
-  .addEdge("finalizeEvaluation", END)
-  .compile();

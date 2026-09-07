@@ -277,12 +277,16 @@ export class ScenarioRunStore {
     });
   }
 
-  async fail(runId: string, message: string): Promise<void> {
+  async fail(
+    runId: string,
+    message: string,
+    status: "failed" | "interrupted" = "failed",
+  ): Promise<void> {
     await this.#database.run(async (sql) => {
       await sql`
         UPDATE scenario_runs
         SET
-          status = 'failed',
+          status = ${status},
           stop_reason = NULL,
           error_message = ${message},
           updated_at = now(),

@@ -5,15 +5,16 @@ import { homedir, hostname } from "node:os";
 import { z } from "zod";
 
 import {
+  applyRuntimeOverrides,
   getModelStorage,
-  loadBaseRuntimeConfig,
   loadRuntimeConfig,
   type ModelConfig,
   parseModelCatalog,
   parseModelConfig,
   type PlatformId,
+  type RuntimeConfig,
+  type RuntimeConfigOverrides,
   saveLocalModelSettings,
-  setRuntimeConfigOverrides,
 } from "../config/index.ts";
 import type { Database, DatabaseClient } from "../database/index.ts";
 import {
@@ -87,6 +88,7 @@ export class ApplicationSettingsStore {
   #models: ModelConfig[] = [];
   #providerOverrides: ProviderOverrides = {};
   #revision = 0;
+  #runtimeOverrides: RuntimeConfigOverrides = {};
 
   constructor(database: Database, environment: NodeJS.ProcessEnv = process.env) {
     this.#database = database;
@@ -94,7 +96,7 @@ export class ApplicationSettingsStore {
   }
 
   async initialize(): Promise<void> {
-    const baseConfig = loadBaseRuntimeConfig(this.#environment);
+    const baseConfig = loadRuntimeConfig(this.#environment);
     const row = await this.#database.run(async (sql) => {
       await sql`
         INSERT INTO application_settings (singleton, model_catalog, helper_model, provider_overrides)
@@ -116,9 +118,14 @@ export class ApplicationSettingsStore {
     this.#applyRuntimeOverlay();
   }
 
+  /** Reads this instance's effective configuration without changing other application instances. */
+  getRuntimeConfig(): RuntimeConfig {
+    return applyRuntimeOverrides(loadRuntimeConfig(this.#environment), this.#runtimeOverrides);
+  }
+
   get(): ApplicationSettings {
-    const effective = loadRuntimeConfig(this.#environment);
-    const base = loadBaseRuntimeConfig(this.#environment);
+    const effective = this.getRuntimeConfig();
+    const base = loadRuntimeConfig(this.#environment);
     return {
       revision: this.#revision,
       models: this.#models,
@@ -225,7 +232,7 @@ export class ApplicationSettingsStore {
         ];
       }),
     );
-    setRuntimeConfigOverrides({ helperModel: this.#helperModel, models: this.#models, platforms });
+    this.#runtimeOverrides = { helperModel: this.#helperModel, models: this.#models, platforms };
   }
 }
 

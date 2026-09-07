@@ -3,8 +3,8 @@
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
+import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
 import { createModel } from "../../clients/llm/langchain.ts";
-import { loadRuntimeConfig } from "../../config/index.ts";
 import { type EvaluationQueryResponse, evaluationStructuredQuerySchema } from "./schemas.ts";
 import type { EvaluationResults } from "./service.ts";
 
@@ -38,16 +38,20 @@ Omit optional filter fields, groupBy, field, and limit when they are not needed.
 export async function exploreEvaluations(
   evaluationResults: EvaluationResults,
   rawQuestion: unknown,
+  context: ModelContext = standaloneModelContext,
 ): Promise<EvaluationExplorerResponse> {
   const question = evaluationExplorerQuestionSchema.parse(rawQuestion);
-  const helperModel = loadRuntimeConfig().helperModel;
-  const model = createModel({
-    maxRetries: 0,
-    model: helperModel.id,
-    reasoningEffort: "low",
-    temperature: 0,
-    timeout: EXPLORER_TIMEOUT_MS,
-  }).withStructuredOutput(evaluationStructuredQuerySchema, {
+  const helperModel = context.readConfig().helperModel;
+  const model = createModel(
+    {
+      maxRetries: 0,
+      model: helperModel.id,
+      reasoningEffort: "low",
+      temperature: 0,
+      timeout: EXPLORER_TIMEOUT_MS,
+    },
+    context,
+  ).withStructuredOutput(evaluationStructuredQuerySchema, {
     method: "jsonMode",
     name: "evaluationExplorerQuery",
   });

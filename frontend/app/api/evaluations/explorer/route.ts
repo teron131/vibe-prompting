@@ -13,9 +13,12 @@ export async function POST(request: Request) {
     await requireActiveSessionUser();
     const body = (await request.json()) as { question?: unknown };
     const services = await getApplicationServices();
-    return Response.json(await exploreEvaluations(services.evaluationResults, body.question), {
-      headers: { "cache-control": "no-store" },
-    });
+    return Response.json(
+      await exploreEvaluations(services.evaluationResults, body.question, services.models),
+      {
+        headers: { "cache-control": "no-store" },
+      },
+    );
   } catch (error) {
     return serverErrorResponse(error, "Evaluation storage failed.");
   }

@@ -10,19 +10,22 @@ import {
   type StreamEvent,
 } from "@openai/agents";
 
-import { startSpendCall } from "../../clients/llm/spend.ts";
-import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../../config/index.ts";
+import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
+import { type ModelConfig, resolveModelPlatform } from "../../config/index.ts";
 import { preserveGeminiToolCallSignatures } from "./gemini.ts";
 import { normalizeChatCompletionsReasoning } from "./reasoning.ts";
 
-export function createModel(modelId: string): {
+export function createModel(
+  modelId: string,
+  context: ModelContext = standaloneModelContext,
+): {
   config: ModelConfig;
   provider: ModelProvider;
 } {
   const id = modelId.trim();
   if (!id) throw new Error("Model ID must not be empty.");
 
-  const runtime = loadRuntimeConfig();
+  const runtime = context.readConfig();
   const config = runtime.models.find((candidate) => candidate.id === id);
   if (!config) throw new Error(`Model is not configured: ${id}.`);
 
@@ -45,7 +48,7 @@ export function createModel(modelId: string): {
     config,
     provider: {
       async getModel(modelName) {
-        return new SpendLimitedModel(await provider.getModel(modelName), config);
+        return new SpendLimitedModel(await provider.getModel(modelName), config, context);
       },
     },
   };
@@ -54,16 +57,23 @@ export function createModel(modelId: string): {
 class SpendLimitedModel implements Model {
   readonly #config: ModelConfig;
   readonly #model: Model;
+  readonly #context: ModelContext;
 
-  constructor(model: Model, config: ModelConfig) {
+  constructor(model: Model, config: ModelConfig, context: ModelContext) {
     this.#model = model;
+    this.#context = context;
     this.#config = config;
   }
 
   async getResponse(request: ModelRequest): Promise<ModelResponse> {
-    const call = await startSpendCall(this.#config);
+    const call = await this.#context.spend.start(this.#config);
     try {
-      const response = await this.#model.getResponse(request);
+      const response = await this.#model.getResponse({
+        ...request,
+        signal: request.signal
+          ? AbortSignal.any([request.signal, this.#context.signal])
+          : this.#context.signal,
+      });
       await call.record(response.usage);
       return response;
     } finally {
@@ -76,9 +86,14 @@ class SpendLimitedModel implements Model {
   }
 
   async *getStreamedResponse(request: ModelRequest): AsyncIterable<StreamEvent> {
-    const call = await startSpendCall(this.#config);
+    const call = await this.#context.spend.start(this.#config);
     try {
-      for await (const event of this.#model.getStreamedResponse(request)) {
+      for await (const event of this.#model.getStreamedResponse({
+        ...request,
+        signal: request.signal
+          ? AbortSignal.any([request.signal, this.#context.signal])
+          : this.#context.signal,
+      })) {
         if (event.type === "response_done") await call.record(event.response.usage);
         yield event;
       }

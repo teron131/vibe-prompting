@@ -2,7 +2,7 @@
 
 import { type ModelConfig, type ModelSpendLimits } from "../../config/index.ts";
 import type { Database } from "../../database/index.ts";
-import { calculateModelCostUsd, resolveModelPrice } from "./pricing.ts";
+import { calculateModelCostUsd, type ModelPricing } from "./pricing.ts";
 
 const SPEND_LOCK = 1_450_701_649;
 const MAX_CONCURRENT_PROVIDER_CALLS = 10;
@@ -22,49 +22,58 @@ export type SpendCall = {
   release(): void;
 };
 
-let spendLimit: SpendLimit | undefined;
+/** Owns provider capacity and optional rolling spend limits for one application instance. */
+export class ModelSpend {
+  readonly #capacity = new ProviderCapacity(MAX_CONCURRENT_PROVIDER_CALLS);
+  readonly #limit: SpendLimit | undefined;
 
-export function configureSpendLimit(
-  database: Database,
-  limits: ModelSpendLimits | undefined,
-): void {
-  spendLimit = limits ? new SpendLimit(database, limits) : undefined;
-}
-
-export async function startSpendCall(model: ModelConfig): Promise<SpendCall> {
-  const release = await providerCapacity.acquire();
-  const limit = spendLimit;
-  try {
-    await limit?.assertCanSpend(model);
-  } catch (error) {
-    release();
-    throw error;
+  constructor(pricing: ModelPricing, database?: Database, limits?: ModelSpendLimits) {
+    this.#limit = database && limits ? new SpendLimit(database, limits, pricing) : undefined;
   }
-  let recorded = false;
-  return {
-    async record(usage) {
-      if (recorded) return;
-      recorded = true;
-      await limit?.record(model, usage);
-    },
-    release,
-  };
+
+  /** Reserves capacity until usage recording and provider cleanup release it. */
+  async start(model: ModelConfig): Promise<SpendCall> {
+    const release = await this.#capacity.acquire();
+    try {
+      await this.#limit?.assertCanSpend(model);
+    } catch (error) {
+      release();
+      throw error;
+    }
+    let recorded = false;
+    return {
+      record: async (usage) => {
+        if (recorded) return;
+        recorded = true;
+        await this.#limit?.record(model, usage);
+      },
+      release,
+    };
+  }
+
+  close(): Promise<void> {
+    return this.#capacity.close();
+  }
 }
 
 class ProviderCapacity {
   readonly #limit: number;
   #active = 0;
-  readonly #waiting: Array<() => void> = [];
+  readonly #waiting: Array<{ resolve(): void; reject(error: unknown): void }> = [];
+  #closed = false;
+  #idle: (() => void) | undefined;
+  #closing: Promise<void> | undefined;
 
   constructor(limit: number) {
     this.#limit = limit;
   }
 
   async acquire(): Promise<() => void> {
+    if (this.#closed) throw new Error("Model provider capacity is closed.");
     if (this.#active < this.#limit) {
       this.#active += 1;
     } else {
-      await new Promise<void>((resolve) => this.#waiting.push(resolve));
+      await new Promise<void>((resolve, reject) => this.#waiting.push({ resolve, reject }));
     }
     let released = false;
     return () => {
@@ -72,15 +81,24 @@ class ProviderCapacity {
       released = true;
       const next = this.#waiting.shift();
       if (next) {
-        next();
+        next.resolve();
       } else {
         this.#active -= 1;
+        if (this.#active === 0) this.#idle?.();
       }
     };
   }
+  close(): Promise<void> {
+    this.#closing ??= new Promise<void>((resolve) => {
+      this.#closed = true;
+      for (const waiting of this.#waiting.splice(0))
+        waiting.reject(new Error("Model provider capacity is closed."));
+      if (this.#active === 0) resolve();
+      else this.#idle = resolve;
+    });
+    return this.#closing;
+  }
 }
-
-const providerCapacity = new ProviderCapacity(MAX_CONCURRENT_PROVIDER_CALLS);
 
 class SpendLimitError extends Error {
   readonly retryAfterSeconds: number;
@@ -98,14 +116,16 @@ class SpendLimitError extends Error {
 class SpendLimit {
   readonly #database: Database;
   readonly #limits: ModelSpendLimits;
+  readonly #pricing: ModelPricing;
 
-  constructor(database: Database, limits: ModelSpendLimits) {
+  constructor(database: Database, limits: ModelSpendLimits, pricing: ModelPricing) {
+    this.#pricing = pricing;
     this.#database = database;
     this.#limits = limits;
   }
 
   async assertCanSpend(model: ModelConfig): Promise<void> {
-    await resolveModelPrice(model.id);
+    await this.#pricing.resolve(model.id);
     await this.#database.transaction(async (sql) => {
       await sql`SELECT pg_advisory_xact_lock(${SPEND_LOCK})`;
       await sql`
@@ -142,7 +162,7 @@ class SpendLimit {
     const inputTokens = normalizeTokenCount(usage.inputTokens);
     const outputTokens = normalizeTokenCount(usage.outputTokens);
     if (inputTokens === 0 && outputTokens === 0) return;
-    const price = await resolveModelPrice(model.id);
+    const price = await this.#pricing.resolve(model.id);
     const estimatedCostUsd = calculateModelCostUsd(price, { inputTokens, outputTokens });
     await this.#database.run(
       (sql) => sql`

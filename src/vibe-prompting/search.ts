@@ -11,6 +11,7 @@ import {
   SEARCH_EMBEDDING_DIMENSIONS,
   SEARCH_EMBEDDING_MODEL,
 } from "./clients/embedding.ts";
+import { loadRuntimeConfig, type RuntimeConfig } from "./config/index.ts";
 import type { Database } from "./database/index.ts";
 
 const MIN_SEMANTIC_SIMILARITY = 0.6;
@@ -52,9 +53,11 @@ type SearchCandidate<T> = {
 /** Applies one keyword-plus-semantic ranking policy to documents projected by each search target. */
 export class HybridSearch {
   readonly #database: Database;
+  readonly #readConfig: () => RuntimeConfig;
 
-  constructor(database: Database) {
+  constructor(database: Database, readConfig: () => RuntimeConfig = loadRuntimeConfig) {
     this.#database = database;
+    this.#readConfig = readConfig;
   }
 
   /** Ranks matching documents and persists embeddings only for the candidate set that can affect the result. */
@@ -105,7 +108,7 @@ export class HybridSearch {
     }));
     const [embeddingByDocumentId, queryEmbedding] = await Promise.all([
       this.#refreshEmbeddings(target, selected),
-      embedSearchQuery(query),
+      embedSearchQuery(query, this.#readConfig),
     ]);
     return rankCandidates(selected, embeddingByDocumentId, queryEmbedding, hasKeywordMatches);
   }
@@ -132,6 +135,7 @@ export class HybridSearch {
     });
     const pendingEmbeddings = await embedSearchDocuments(
       pending.map(({ document }) => ({ text: document.text, title: document.title })),
+      this.#readConfig,
     );
     const embeddingByDocumentId = new Map<string, number[]>();
     for (const row of cached) {

@@ -9,6 +9,7 @@ import {
 } from "@langchain/langgraph";
 import { z } from "zod";
 
+import { type ModelContext } from "../clients/llm/context.ts";
 import type { EvaluationRuns } from "../evaluation/runs/index.ts";
 import type { StoredTargetRun, TargetRuns } from "../target/runs/index.ts";
 import {
@@ -26,12 +27,14 @@ import {
 import { type ScenarioExecution, ScenarioRunStore } from "./store.ts";
 
 export type ScenarioGraphDependencies = {
+  models?: ModelContext;
   scenarioStore: ScenarioRunStore;
   targetRuns: TargetRuns;
   evaluations: EvaluationRuns;
 };
 
 const ScenarioGraphContext = z.object({
+  models: z.custom<ModelContext>().optional(),
   evaluations: z.custom<EvaluationRuns>(),
   scenarioStore: z.custom<ScenarioRunStore>(),
   targetRuns: z.custom<TargetRuns>(),
@@ -71,6 +74,7 @@ function createScenarioGraph() {
     if (!targetRun) {
       const initialized = await initializeScenarioDriver({
         modelId: execution.driverModel,
+        models: requireGraphDependencies(config).models,
         instruction: execution.instruction,
         maxTurns: execution.maxTurns,
         signal: requireSignal(config.signal),
@@ -265,7 +269,11 @@ export async function runScenarioGraph(
 ): Promise<void> {
   await scenarioGraph.invoke(
     { runId },
-    { context: dependencies, recursionLimit: SCENARIO_GRAPH_RECURSION_LIMIT, signal },
+    {
+      context: { ...dependencies, models: dependencies.models },
+      recursionLimit: SCENARIO_GRAPH_RECURSION_LIMIT,
+      signal,
+    },
   );
 }
 

@@ -1,6 +1,7 @@
 /** Persists completed evaluator results through Langfuse experiments without owning Target or judge execution. */
 
 import { type Evaluation, LangfuseClient } from "@langfuse/client";
+import { ProxyTracerProvider, trace } from "@opentelemetry/api";
 import type { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 
 import { createLangfuseClient, createLangfuseTelemetry } from "../clients/langfuse.ts";
@@ -50,6 +51,7 @@ export class LangfuseExperimentRunner {
 
   private closed = false;
   private started = false;
+  private closing: Promise<void> | undefined;
 
   constructor({
     client = createLangfuseClient(),
@@ -120,10 +122,28 @@ export class LangfuseExperimentRunner {
     }
   }
 
-  async close(): Promise<void> {
-    if (this.closed) return;
-    this.closed = true;
-    await Promise.all([this.client.shutdown(), this.telemetry.shutdown()]);
+  /** Releases this runner's telemetry without unregistering a provider owned by another host. */
+  close(): Promise<void> {
+    this.closing ??= (async () => {
+      this.closed = true;
+      try {
+        const outcomes = await Promise.allSettled([
+          this.client.shutdown(),
+          this.telemetry.shutdown(),
+        ]);
+        const errors = outcomes.flatMap((outcome) =>
+          outcome.status === "rejected" ? [outcome.reason] : [],
+        );
+        if (errors.length)
+          throw new AggregateError(errors, "Evaluation telemetry shutdown failed.");
+      } finally {
+        const registered = trace.getTracerProvider();
+        const provider =
+          registered instanceof ProxyTracerProvider ? registered.getDelegate() : registered;
+        if (provider === this.telemetry) trace.disable();
+      }
+    })();
+    return this.closing;
   }
 }
 

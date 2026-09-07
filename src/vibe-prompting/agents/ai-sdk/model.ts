@@ -6,18 +6,22 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel, LanguageModelMiddleware, ToolLoopAgentSettings } from "ai";
 import { wrapLanguageModel } from "ai";
 
-import { type SpendCall, startSpendCall } from "../../clients/llm/spend.ts";
-import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../../config/index.ts";
+import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
+import { type SpendCall } from "../../clients/llm/spend.ts";
+import { type ModelConfig, resolveModelPlatform } from "../../config/index.ts";
 
-export function createModel(modelId: string): LanguageModel {
+export function createModel(
+  modelId: string,
+  context: ModelContext = standaloneModelContext,
+): LanguageModel {
   const id = modelId.trim();
   if (!id) throw new Error("Model ID must not be empty.");
 
-  const runtime = loadRuntimeConfig();
+  const runtime = context.readConfig();
   const config = runtime.models.find((candidate) => candidate.id === id);
   if (!config) throw new Error(`Model is not configured: ${id}.`);
   const platform = resolveModelPlatform(config, runtime);
-  const middleware: LanguageModelMiddleware[] = [createSpendLimitMiddleware(config)];
+  const middleware: LanguageModelMiddleware[] = [createSpendLimitMiddleware(config, context)];
   if (platform.id === "gemini") {
     const provider = createGoogleGenerativeAI({
       apiKey: platform.apiKey,
@@ -43,8 +47,9 @@ export function createModel(modelId: string): LanguageModel {
 export function createReasoningProviderOptions(
   modelId: string,
   reasoningEffort: "high" | "low" | "medium" | "xhigh",
+  context: ModelContext = standaloneModelContext,
 ): ToolLoopAgentSettings["providerOptions"] {
-  const runtime = loadRuntimeConfig();
+  const runtime = context.readConfig();
   const config = runtime.models.find((candidate) => candidate.id === modelId);
   if (!config) throw new Error(`Model is not configured: ${modelId}.`);
   const platform = resolveModelPlatform(config, runtime);
@@ -70,7 +75,10 @@ type Usage = {
   outputTokens: { total: number | undefined };
 };
 
-function createSpendLimitMiddleware(model: ModelConfig): LanguageModelMiddleware {
+function createSpendLimitMiddleware(
+  model: ModelConfig,
+  context: ModelContext,
+): LanguageModelMiddleware {
   const recordUsage = (call: SpendCall, usage: Usage) =>
     call.record({
       inputTokens: usage.inputTokens.total ?? 0,
@@ -79,8 +87,16 @@ function createSpendLimitMiddleware(model: ModelConfig): LanguageModelMiddleware
 
   return {
     specificationVersion: "v3",
+    async transformParams({ params }) {
+      return {
+        ...params,
+        abortSignal: params.abortSignal
+          ? AbortSignal.any([params.abortSignal, context.signal])
+          : context.signal,
+      };
+    },
     async wrapGenerate({ doGenerate }) {
-      const call = await startSpendCall(model);
+      const call = await context.spend.start(model);
       try {
         const result = await doGenerate();
         await recordUsage(call, result.usage);
@@ -90,7 +106,7 @@ function createSpendLimitMiddleware(model: ModelConfig): LanguageModelMiddleware
       }
     },
     async wrapStream({ doStream }) {
-      const call = await startSpendCall(model);
+      const call = await context.spend.start(model);
       try {
         const result = await doStream();
         const reader = result.stream.getReader();

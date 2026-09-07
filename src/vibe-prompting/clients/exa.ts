@@ -59,8 +59,8 @@ export function getExaMcpConnection(apiKey = loadRuntimeConfig().exa.apiKey): Ex
 export async function searchExaWeb(
   input: ExaWebSearchInput,
   signal?: AbortSignal,
+  apiKey = loadRuntimeConfig().exa.apiKey,
 ): Promise<ExaWebSearchResult[]> {
-  const apiKey = loadRuntimeConfig().exa.apiKey;
   if (!apiKey) throw new Error("EXA_API_KEY is required for web search.");
 
   const { query, numResults } = exaSearchInputSchema.parse(input);

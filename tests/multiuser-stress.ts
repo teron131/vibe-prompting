@@ -68,11 +68,23 @@ try {
   const { streamChatRun } = await import("../src/vibe-prompting/agents/openai-agents/runtime.ts");
   const { createModel: createLangChainModel } =
     await import("../src/vibe-prompting/clients/llm/langchain.ts");
+  const { evaluate } = await import("../src/vibe-prompting/index.ts");
+  const standalone = await evaluate(
+    { model: MODEL_ID, invoke: async () => "Standalone output." },
+    {
+      cases: [
+        {
+          input: "Standalone input.",
+          criteria: [{ name: "Standalone", type: "boolean", instruction: "Check the response." }],
+        },
+      ],
+      judgeModels: [MODEL_ID],
+    },
+  );
+  assert.equal(standalone.cases[0]?.evaluations[0]?.value, true);
 
   await resetTestDatabase(testDatabaseUrl);
   services = await createApplicationServices(testDatabaseUrl);
-  await services.evaluations.reconcileInterrupted();
-  await services.targetRuns.reconcileInterrupted();
 
   const { activeUsers, pendingUser, sessionCount } = await seedUsers(services);
   await exerciseTargetPinning(services, activeUsers[0]!.id, fakeProvider);
@@ -85,14 +97,14 @@ try {
   for (let index = 0; index < 14; index += 1) {
     pressureCalls.push(
       generateText({
-        model: createAiSdkModel(MODEL_ID),
+        model: createAiSdkModel(MODEL_ID, services.models),
         prompt: `Target capacity request ${index + 1}.`,
       }),
     );
   }
   for (let index = 0; index < 13; index += 1) {
     pressureCalls.push(
-      createLangChainModel({ model: MODEL_ID, reasoningEffort: "low" }).invoke(
+      createLangChainModel({ model: MODEL_ID, reasoningEffort: "low" }, services.models).invoke(
         `Helper capacity request ${index + 1}.`,
       ),
     );
@@ -102,6 +114,7 @@ try {
       streamChatRun(
         {
           actorUserId: activeUsers[index % activeUsers.length]!.id,
+          modelContext: services.models,
           chatId: chatResult.chatIdsByUser[index % activeUsers.length]![0]!,
           instruction: `Chat capacity request ${index + 1}.`,
           history: [],
@@ -130,6 +143,7 @@ try {
   );
   await exerciseCriteriaSnapshots(services, activeUsers[0]!.id);
   await exerciseGenerativeScenarios(services, activeUsers[0]!.id);
+  await exerciseRuntimeShutdown(services, activeUsers[0]!.id, testDatabaseUrl);
   const restartResult = await exerciseRestartReconciliation(
     testDatabaseUrl,
     services,
@@ -919,11 +933,95 @@ async function exerciseGenerativeScenarios(
   assert.deepEqual(cancelled.evaluations, []);
 }
 
+/** Proves that shutdown interrupts active work, preserves queued work, and finishes database writes before pool closure. */
+async function exerciseRuntimeShutdown(
+  application: ApplicationServices,
+  actorUserId: string,
+  databaseUrl: string,
+): Promise<void> {
+  const prompt = await application.prompts.createPrompt(actorUserId, {
+    title: "Runtime shutdown",
+    markdown: "lifecycle-shutdown: produce a deterministic response.",
+  });
+  const scenario = await application.scenarios.startHumanRun(actorUserId, {
+    promptId: prompt.id,
+    promptRevisionId: prompt.revisionId,
+    targetModel: MODEL_ID,
+    mode: "static",
+    messages: Array.from({ length: 10 }, () => "Keep the Scenario active."),
+  });
+  const batch = await application.evaluations.startHumanBatch(actorUserId, {
+    promptId: prompt.id,
+    promptRevisionId: prompt.revisionId,
+    targetModels: [MODEL_ID],
+    judgeModels: [MODEL_ID],
+    configurations: [
+      {
+        id: "shutdown",
+        name: "Shutdown",
+        criteria: [{ name: "Shutdown", type: "boolean", instruction: "Check the response." }],
+      },
+    ],
+    cases: [{ input: "lifecycle-shutdown: evaluate this response." }],
+    repetitions: 4,
+  });
+  const active = await poll(
+    async () => ({
+      scenario: await application.scenarios.getRunResponse(actorUserId, scenario.scenario.id),
+      runs: await application.evaluations.listRuns(actorUserId, { promptId: prompt.id }),
+    }),
+    ({ scenario, runs }) =>
+      Boolean(scenario.target?.turns.some((turn) => turn.status === "running")) &&
+      runs.some((run) => run.status === "running") &&
+      runs.some((run) => run.status === "queued"),
+    "active workflow shutdown setup",
+  );
+  assert.ok(active.scenario.target);
+  const queuedRun = active.runs.find((run) => run.status === "queued");
+  assert.ok(queuedRun);
+  const queuedWaiter = assert.rejects(
+    application.evaluations.waitForRun(actorUserId, queuedRun.id),
+    /runtime closed/,
+  );
+  application.onClose(() => new Promise<void>((resolve) => setTimeout(resolve, 40)));
+  const close = application.close();
+  assert.equal(application.close(), close);
+  await close;
+  await queuedWaiter;
+  assert.equal(application.closed, true);
+  const { createModel } = await import("../src/vibe-prompting/clients/llm/langchain.ts");
+  assert.equal(
+    (await createModel({ model: MODEL_ID }).invoke("Standalone after application shutdown.")).text,
+    "Deterministic target output.",
+  );
+  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
+  try {
+    const [storedScenario] = await sql<
+      { status: string }[]
+    >`SELECT status FROM scenario_runs WHERE id = ${scenario.scenario.id}`;
+    assert.equal(storedScenario?.status, "interrupted");
+    const turns = await sql<
+      { status: string }[]
+    >`SELECT status FROM target_run_turns WHERE run_id = ${active.scenario.target.id}`;
+    assert.ok(turns.some((turn) => turn.status === "interrupted"));
+    assert.ok(turns.every((turn) => turn.status !== "running"));
+    const statuses = await sql<
+      { status: string }[]
+    >`SELECT status FROM evaluation_runs WHERE id = ANY(${sql.array(batch.runs.map((run) => run.id))}::uuid[])`;
+    assert.ok(statuses.some((run) => run.status === "queued"));
+    assert.ok(statuses.some((run) => run.status === "interrupted"));
+    assert.ok(statuses.every((run) => run.status !== "running" && run.status !== "failed"));
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 async function exerciseRestartReconciliation(
   databaseUrl: string,
   application: ApplicationServices,
   viewerUserId: string,
 ): Promise<{ interrupted: number; services: ApplicationServices }> {
+  await application.close();
   const sql = postgres(databaseUrl, {
     max: 1,
     onnotice: () => undefined,
@@ -944,14 +1042,11 @@ async function exerciseRestartReconciliation(
 
   const { createApplicationServices } = await import("../src/vibe-prompting/server.ts");
   const restarted = await createApplicationServices(databaseUrl);
-  const interrupted = await restarted.evaluations.reconcileInterrupted();
-  assert.ok(interrupted >= 1);
   const abandoned = await restarted.evaluations.getRunSummary(viewerUserId, runningRunId!);
   assert.equal(abandoned.status, "interrupted");
   const resumed = await waitForEvaluation(restarted, viewerUserId, queuedRunId!);
   assert.equal(resumed.status, "completed");
-  await application.targetRuns.reconcileInterrupted();
-  return { interrupted, services: restarted };
+  return { interrupted: 1, services: restarted };
 }
 
 async function cloneEvaluationRun(
@@ -1138,7 +1233,12 @@ async function startFakeProvider(): Promise<FakeProvider> {
         structured: typeof body.response_format === "object" && body.response_format !== null,
         toolCount: Array.isArray(body.tools) ? body.tools.length : 0,
       });
-      await new Promise((resolve) => setTimeout(resolve, 35));
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          JSON.stringify(body.messages).includes("lifecycle-shutdown") ? 150 : 35,
+        ),
+      );
       if (request.url?.endsWith("/embeddings")) writeEmbeddingResponse(response, body);
       else if (body.stream === true) writeStreamResponse(response, body);
       else writeChatResponse(response, body);

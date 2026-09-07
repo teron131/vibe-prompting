@@ -212,11 +212,15 @@ export class EvaluationRunStore {
   }
 
   /** Records failure only while the run remains active so late workers cannot replace another terminal state. */
-  async fail(runId: string, message: string): Promise<void> {
+  async fail(
+    runId: string,
+    message: string,
+    status: "failed" | "interrupted" = "failed",
+  ): Promise<void> {
     await this.#database.run(
       (sql) => sql`
         UPDATE evaluation_runs
-        SET status = 'failed', error_message = ${message}, completed_at = now()
+        SET status = ${status}, error_message = ${message}, completed_at = now()
         WHERE id = ${runId} AND status = 'running'
       `,
     );

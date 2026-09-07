@@ -14,19 +14,20 @@ import {
 } from "../agents/tools/index.ts";
 import {
   type ApplicationServices,
+  closeApplicationServices,
   type ConfiguredModel,
   getApplicationServices,
-  getConfiguredModels,
+  registerShutdown,
 } from "../server.ts";
 
 export type McpAuthInfo = AuthInfo;
 
-let mcpServerPromise: Promise<FastMCP> | undefined;
+const mcpServers = new WeakMap<ApplicationServices, FastMCP>();
 
 /** Builds one MCP capability surface over an existing application-service graph. */
 export function createMcpServer(
   services: ApplicationServices,
-  loadModels: () => Promise<ConfiguredModel[]> = getConfiguredModels,
+  loadModels: () => Promise<ConfiguredModel[]> = () => services.getConfiguredModels(),
 ): FastMCP {
   const server = new FastMCP({ name: "Vibe Prompting" });
   const loadModelReferences = async () =>
@@ -52,20 +53,19 @@ export function createMcpServer(
       return JSON.stringify({ models: await loadModels() });
     },
   );
+  services.onClose(() => server.close());
   return server;
 }
 
 /** Returns the process-shared MCP server used by every Next.js request in this deployment. */
-export function getMcpServer(): Promise<FastMCP> {
-  if (!mcpServerPromise) {
-    mcpServerPromise = getApplicationServices()
-      .then((services) => createMcpServer(services))
-      .catch((error: unknown) => {
-        mcpServerPromise = undefined;
-        throw error;
-      });
+export async function getMcpServer(): Promise<FastMCP> {
+  const services = await getApplicationServices();
+  let server = mcpServers.get(services);
+  if (!server) {
+    server = createMcpServer(services);
+    mcpServers.set(services, server);
   }
-  return mcpServerPromise;
+  return server;
 }
 
 function registerTool(server: FastMCP, services: ApplicationServices, tool: AgentTool): void {
@@ -120,5 +120,6 @@ function publicApplicationUrl(path: string): string {
 
 if (import.meta.main) {
   const server = await getMcpServer();
+  registerShutdown(closeApplicationServices);
   await server.run({ transport: "stdio" });
 }

@@ -4,7 +4,11 @@ import { z } from "zod";
 
 import { criteriaSchema, type Criterion } from "../criteria/schemas.ts";
 import { type Target, targetSchema } from "../target/api.ts";
-import { evaluatorGraph, type EvaluatorScore } from "./engine/graph.ts";
+import {
+  createEvaluationEngine,
+  type EvaluationEngine,
+  type EvaluatorScore,
+} from "./engine/graph.ts";
 import type {
   EvaluationCriteria as InternalCriteria,
   EvaluationCriterion as InternalCriterion,
@@ -88,7 +92,7 @@ export type EvaluationRun<INPUT = unknown, OUTPUT = unknown> = {
 export async function evaluate<INPUT, OUTPUT>(
   target: Target<INPUT, OUTPUT>,
   request: EvaluationRequest<INPUT>,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; engine?: EvaluationEngine } = {},
 ): Promise<EvaluationRun<INPUT, OUTPUT>> {
   const validatedTarget = targetSchema.parse(target) as Target<INPUT, OUTPUT>;
   const validatedRequest = requestSchema.parse(request) as EvaluationRequest<INPUT>;
@@ -101,6 +105,7 @@ export async function evaluate<INPUT, OUTPUT>(
     },
     targetModel: validatedTarget.model,
     signal: options.signal,
+    engine: options.engine,
   });
 }
 
@@ -108,7 +113,7 @@ export async function evaluate<INPUT, OUTPUT>(
 export async function evaluateRecorded<INPUT, OUTPUT>(
   targetModel: string,
   request: RecordedEvaluationRequest<INPUT, OUTPUT>,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; engine?: EvaluationEngine } = {},
 ): Promise<EvaluationRun<INPUT, OUTPUT>> {
   const model = z.string().trim().min(1).parse(targetModel);
   const validatedRequest = recordedRequestSchema.parse(request) as RecordedEvaluationRequest<
@@ -120,6 +125,7 @@ export async function evaluateRecorded<INPUT, OUTPUT>(
     judgeModels: validatedRequest.judgeModels,
     targetModel: model,
     signal: options.signal,
+    engine: options.engine,
   });
 }
 
@@ -129,40 +135,46 @@ async function runEvaluation<INPUT, OUTPUT>(input: {
   target?: Target<unknown, unknown>;
   targetModel: string;
   signal?: AbortSignal;
+  engine?: EvaluationEngine;
 }): Promise<EvaluationRun<INPUT, OUTPUT>> {
   const validatedCases = input.cases.map((testCase) => ({
     ...testCase,
     internalCriteria: testCase.criteria.map(toInternalCriterion),
   }));
 
-  const { results } = await evaluatorGraph.invoke(
-    {
-      target: input.target,
-      targetModel: input.targetModel,
-      runName: input.targetModel,
-      cases: validatedCases.map(({ input: caseInput, internalCriteria, output }) => ({
-        input: caseInput,
-        output,
-        criteria: internalCriteria,
-      })),
-      judgeModels: input.judgeModels,
-    },
-    { signal: input.signal },
-  );
+  const engine = input.engine ?? createEvaluationEngine();
+  try {
+    const { results } = await engine.invoke(
+      {
+        target: input.target,
+        targetModel: input.targetModel,
+        runName: input.targetModel,
+        cases: validatedCases.map(({ input: caseInput, internalCriteria, output }) => ({
+          input: caseInput,
+          output,
+          criteria: internalCriteria,
+        })),
+        judgeModels: input.judgeModels,
+      },
+      { signal: input.signal },
+    );
 
-  const cases = results.map((item, caseIndex) => {
-    const validatedCase = validatedCases[caseIndex];
-    if (!validatedCase) throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
-    return {
-      input: validatedCase.input,
-      output: item.output as OUTPUT,
-      evaluations: item.evaluations.map((evaluation) =>
-        projectEvaluation(evaluation, validatedCase.criteria, validatedCase.internalCriteria),
-      ),
-    };
-  });
+    const cases = results.map((item, caseIndex) => {
+      const validatedCase = validatedCases[caseIndex];
+      if (!validatedCase) throw new Error(`Unknown evaluation case index: ${caseIndex}.`);
+      return {
+        input: validatedCase.input,
+        output: item.output as OUTPUT,
+        evaluations: item.evaluations.map((evaluation) =>
+          projectEvaluation(evaluation, validatedCase.criteria, validatedCase.internalCriteria),
+        ),
+      };
+    });
 
-  return { cases };
+    return { cases };
+  } finally {
+    if (!input.engine) await engine.close();
+  }
 }
 
 /** Projects the public Criterion into the engine contract while preserving its human name. */

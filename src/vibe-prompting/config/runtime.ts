@@ -1,19 +1,16 @@
-/** Loads model catalogues, provider credentials, runtime overrides, and YAML-backed model configuration. */
+/** Loads model catalogues, provider credentials, instance overrides, and YAML-backed model configuration. */
 
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { rename, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
-import { config as loadDotenv } from "dotenv";
 import { parse, parseDocument } from "yaml";
 import { z } from "zod";
 
 export const CONFIG_PATH = ".config.yaml";
 export const DEFAULT_CLIPROXYAPI_BASE_URL = "http://localhost:8317/v1";
 export const GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
-
-loadDotenv({ override: false, path: resolveRuntimeFile(".env"), quiet: true });
 
 const platformIds = ["cliproxy", "gemini", "llm"] as const;
 
@@ -80,8 +77,6 @@ export type RuntimeConfigOverrides = {
   platforms?: Partial<Record<PlatformId, Partial<Pick<PlatformConfig, "apiKey" | "baseURL">>>>;
 };
 
-let runtimeOverrides: RuntimeConfigOverrides = {};
-
 const optionalText = z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
   z.string().trim().min(1).optional(),
@@ -98,16 +93,8 @@ const environmentSchema = z.object({
   MODEL_CONFIG_YAML: optionalText,
 });
 
-/** Reads user-editable models separately from provider secrets and endpoints. */
-export function loadRuntimeConfig(
-  environment: NodeJS.ProcessEnv = process.env,
-  configPath: string = resolveRuntimeFile(CONFIG_PATH),
-): RuntimeConfig {
-  return applyRuntimeOverrides(loadBaseRuntimeConfig(environment, configPath));
-}
-
 /** Loads environment and YAML defaults without applying database-owned settings. */
-export function loadBaseRuntimeConfig(
+export function loadRuntimeConfig(
   environment: NodeJS.ProcessEnv = process.env,
   configPath: string = resolveRuntimeFile(CONFIG_PATH),
 ): RuntimeConfig {
@@ -147,11 +134,6 @@ export function loadBaseRuntimeConfig(
     },
   };
   return config;
-}
-
-/** Replaces the database-owned runtime overlay after application settings have initialized or changed. */
-export function setRuntimeConfigOverrides(overrides: RuntimeConfigOverrides): void {
-  runtimeOverrides = structuredClone(overrides);
 }
 
 /** Returns the durable owner used for model edits in the current runtime. */
@@ -254,7 +236,11 @@ function isPlatformConfigured(platform: PlatformConfig): boolean {
   return Boolean(platform.apiKey && platform.baseURL);
 }
 
-function applyRuntimeOverrides(config: RuntimeConfig): RuntimeConfig {
+/** Applies one settings owner's overrides without mutating configuration used by other runtimes. */
+export function applyRuntimeOverrides(
+  config: RuntimeConfig,
+  runtimeOverrides: RuntimeConfigOverrides,
+): RuntimeConfig {
   const platforms = { ...config.platforms };
   for (const id of platformIds) {
     const override = runtimeOverrides.platforms?.[id];

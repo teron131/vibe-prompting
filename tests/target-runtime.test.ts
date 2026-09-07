@@ -3,6 +3,8 @@
 import assert from "node:assert/strict";
 import { after, beforeEach, mock, test } from "node:test";
 
+import { createModelContext } from "../src/vibe-prompting/clients/llm/context.ts";
+import { loadRuntimeConfig } from "../src/vibe-prompting/config/index.ts";
 import type { PinnedTargetDefinition } from "../src/vibe-prompting/target/pinning.ts";
 
 type Failure = "none" | "discovery" | "missing-tool" | "adaptation" | "runtime";
@@ -65,6 +67,15 @@ mock.module("../src/vibe-prompting/target/adapters/ai-sdk.ts", {
 });
 
 const { openTargetRuntime } = await import("../src/vibe-prompting/target/runtime.ts");
+const models = createModelContext(() =>
+  loadRuntimeConfig({
+    MODEL_CONFIG_YAML: JSON.stringify({
+      models: [{ id: "fake-model", platform: "llm" }],
+      helper_model: { id: "fake-model", platform: "llm" },
+      embeddingModel: { id: "gemini-embedding-2", platform: "gemini" },
+    }),
+  }),
+);
 
 beforeEach(() => {
   failure = "none";
@@ -72,7 +83,10 @@ beforeEach(() => {
   closes = 0;
   runtimeInput = undefined;
 });
-after(() => mock.restoreAll());
+after(async () => {
+  mock.restoreAll();
+  await models.close();
+});
 
 const definition: PinnedTargetDefinition = {
   promptId: "prompt",
@@ -91,10 +105,13 @@ const definition: PinnedTargetDefinition = {
 };
 
 test("a runtime without configured tools does not open an MCP connection", async () => {
-  const pinned = await openTargetRuntime({
-    ...definition,
-    profile: { ...definition.profile, configuration: {} },
-  });
+  const pinned = await openTargetRuntime(
+    {
+      ...definition,
+      profile: { ...definition.profile, configuration: {} },
+    },
+    models,
+  );
   assert.equal(pinned.target, target);
   assert.equal(connections, 0);
   await pinned.close();
@@ -102,7 +119,7 @@ test("a runtime without configured tools does not open an MCP connection", async
 });
 
 test("a runtime uses the resolved definition and transfers connection ownership to close", async () => {
-  const pinned = await openTargetRuntime(definition);
+  const pinned = await openTargetRuntime(definition, models);
   assert.equal(pinned.profile, definition.profile);
   assert.equal(pinned.effectiveInstructionsHash, definition.effectiveInstructionsHash);
   assert.equal(runtimeInput?.instructions, definition.effectiveInstructions);
@@ -118,7 +135,7 @@ test("every failure after connecting releases the MCP client", async () => {
   for (const phase of ["discovery", "missing-tool", "adaptation", "runtime"] as const) {
     failure = phase;
     const closesBefore = closes;
-    await assert.rejects(openTargetRuntime(definition), (error) =>
+    await assert.rejects(openTargetRuntime(definition, models), (error) =>
       phase === "missing-tool"
         ? error instanceof Error && error.message === "Exa MCP does not expose: web_search_exa."
         : error === initializationError,

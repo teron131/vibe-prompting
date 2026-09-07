@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import { EXA_WEB_SEARCH_TOOL, searchExaWeb } from "../../clients/exa.ts";
+import { loadRuntimeConfig, type RuntimeConfig } from "../../config/index.ts";
 import { defineAgentTool } from "./api.ts";
 
 const exaWebSearchSchema = z.object({
@@ -16,7 +17,10 @@ const exaWebSearchSchema = z.object({
   numResults: z.number().int().min(1).max(100).default(10).describe("Number of results to return."),
 });
 
-export function createExaSearchTool() {
+export function createExaSearchTool(
+  readConfig: () => RuntimeConfig = loadRuntimeConfig,
+  runtimeSignal?: AbortSignal,
+) {
   return defineAgentTool({
     name: EXA_WEB_SEARCH_TOOL,
     title: "Search the web",
@@ -25,7 +29,12 @@ export function createExaSearchTool() {
     parameters: exaWebSearchSchema,
     annotations: { readOnlyHint: true, openWorldHint: true },
     async execute(input, { signal }) {
-      const results = await searchExaWeb(input, signal);
+      const requestSignal = runtimeSignal
+        ? signal
+          ? AbortSignal.any([signal, runtimeSignal])
+          : runtimeSignal
+        : signal;
+      const results = await searchExaWeb(input, requestSignal, readConfig().exa.apiKey);
       return {
         results,
         summary: results.length

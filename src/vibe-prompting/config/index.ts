@@ -7,7 +7,6 @@ export {
   DEFAULT_CLIPROXYAPI_BASE_URL,
   GEMINI_OPENAI_BASE_URL,
   getModelStorage,
-  loadBaseRuntimeConfig,
   loadRuntimeConfig,
   type ModelConfig,
   type ModelStorage,
@@ -19,5 +18,5 @@ export {
   type RuntimeConfig,
   type RuntimeConfigOverrides,
   saveLocalModelSettings,
-  setRuntimeConfigOverrides,
+  applyRuntimeOverrides,
 } from "./runtime.ts";

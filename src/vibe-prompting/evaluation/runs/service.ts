@@ -2,12 +2,14 @@
 
 import { createHash } from "node:crypto";
 
-import { loadRuntimeConfig } from "../../config/index.ts";
+import { RunQueue } from "../../app/queue.ts";
+import type { ModelContext } from "../../clients/llm/context.ts";
 import type { Database } from "../../database/index.ts";
 import { PromptConflictError, type PromptSystem } from "../../prompt-system/index.ts";
 import type { TargetSystem } from "../../target/index.ts";
 import type { TargetRuns } from "../../target/runs/index.ts";
 import { evaluate, evaluateRecorded, type EvaluationCase, requestSchema } from "../api.ts";
+import type { EvaluationEngine } from "../engine/graph.ts";
 import {
   type BooleanTrendPoint,
   type EvaluationBatchInput,
@@ -39,32 +41,39 @@ const MAX_ACTIVE_EVALUATION_JOBS = 2;
 /** Coordinates prompt and target dependencies while persistence remains behind the run store. */
 export class EvaluationRuns {
   readonly #completions = new Map<string, RunCompletion>();
-  readonly #controllers = new Map<string, AbortController>();
+  readonly #queue: RunQueue;
+  readonly #models: ModelContext;
+  readonly #engine: EvaluationEngine;
   readonly #prompts: PromptSystem;
   readonly #store: EvaluationRunStore;
   readonly #targets: TargetSystem;
   readonly #targetRuns: TargetRuns;
-  #activeJobs = 0;
-  #draining = false;
-  #drainRequested = false;
 
   constructor(
     database: Database,
     prompts: PromptSystem,
     targets: TargetSystem,
     targetRuns: TargetRuns,
+    models: ModelContext,
+    engine: EvaluationEngine,
   ) {
     this.#prompts = prompts;
     this.#store = new EvaluationRunStore(database);
     this.#targets = targets;
     this.#targetRuns = targetRuns;
+    this.#models = models;
+    this.#engine = engine;
+    this.#queue = new RunQueue({
+      name: "Evaluation",
+      concurrency: MAX_ACTIVE_EVALUATION_JOBS,
+      claim: () => this.#store.claimNextQueued(),
+      execute: (id, signal) => this.#executeClaimed(id, signal),
+    });
   }
 
   /** Marks runs left in progress by a previous process as interrupted during startup recovery. */
   async reconcileInterrupted(): Promise<number> {
-    const interrupted = await this.#store.reconcileInterrupted();
-    this.#scheduleDrain();
-    return interrupted;
+    return this.#store.reconcileInterrupted();
   }
 
   /** Validates and persists a manually requested run before detached execution begins. */
@@ -104,63 +113,65 @@ export class EvaluationRuns {
     source: EvaluationRunSource,
     chatId: string | null,
   ): Promise<EvaluationRunSummary> {
-    const parsed = recordedEvaluationRunInputSchema.safeParse(rawInput);
-    if (!parsed.success) {
-      throw new EvaluationRequestError(
-        parsed.error.issues[0]?.message ?? "Invalid recorded evaluation request.",
-      );
-    }
-    const input = parsed.data;
-    requireConfiguredModels(input.judgeModels);
-    const targetRun = await this.#targetRuns.getRun(actorUserId, input.targetRunId);
-    const selectedTurn = targetRun.turns.find(({ id }) => id === input.targetRunTurnId);
-    if (!selectedTurn)
-      throw new EvaluationRequestError(`Target Run turn ${input.targetRunTurnId} was not found.`);
-    if (selectedTurn.status !== "completed" || selectedTurn.output === null) {
-      throw new EvaluationRequestError("Only a completed Target Run turn can be evaluated.");
-    }
-    const trace = {
-      messages: targetRun.turns
-        .filter(
-          ({ position, status }) => position <= selectedTurn.position && status === "completed",
-        )
-        .flatMap((turn) => [
-          { content: turn.input, role: "user" as const },
-          ...(turn.position < selectedTurn.position && turn.output !== null
-            ? [{ content: turn.output, role: "assistant" as const }]
-            : []),
-        ]),
-    };
-    const cases = [{ input: trace, criteria: input.criteria }];
-    const record: NewEvaluationRun = {
-      cases,
-      chatId,
-      configurationFingerprint: createConfigurationFingerprint({
+    return this.#queue.prepare(async () => {
+      const parsed = recordedEvaluationRunInputSchema.safeParse(rawInput);
+      if (!parsed.success) {
+        throw new EvaluationRequestError(
+          parsed.error.issues[0]?.message ?? "Invalid recorded evaluation request.",
+        );
+      }
+      const input = parsed.data;
+      requireConfiguredModels(input.judgeModels, this.#models);
+      const targetRun = await this.#targetRuns.getRun(actorUserId, input.targetRunId);
+      const selectedTurn = targetRun.turns.find(({ id }) => id === input.targetRunTurnId);
+      if (!selectedTurn)
+        throw new EvaluationRequestError(`Target Run turn ${input.targetRunTurnId} was not found.`);
+      if (selectedTurn.status !== "completed" || selectedTurn.output === null) {
+        throw new EvaluationRequestError("Only a completed Target Run turn can be evaluated.");
+      }
+      const trace = {
+        messages: targetRun.turns
+          .filter(
+            ({ position, status }) => position <= selectedTurn.position && status === "completed",
+          )
+          .flatMap((turn) => [
+            { content: turn.input, role: "user" as const },
+            ...(turn.position < selectedTurn.position && turn.output !== null
+              ? [{ content: turn.output, role: "assistant" as const }]
+              : []),
+          ]),
+      };
+      const cases = [{ input: trace, criteria: input.criteria }];
+      const record: NewEvaluationRun = {
         cases,
+        chatId,
+        configurationFingerprint: createConfigurationFingerprint({
+          cases,
+          effectiveInstructionsHash: targetRun.effectiveInstructionsHash,
+          judgeModels: input.judgeModels,
+          targetConfiguration: targetRun.targetConfiguration,
+          targetModel: targetRun.targetModel,
+          targetProfileRevisionId: targetRun.targetProfileRevisionId,
+        }),
         effectiveInstructionsHash: targetRun.effectiveInstructionsHash,
+        isSyntheticExample: false,
         judgeModels: input.judgeModels,
-        targetConfiguration: targetRun.targetConfiguration,
+        promptId: targetRun.promptId,
+        promptRevisionId: targetRun.promptRevisionId,
+        source,
         targetModel: targetRun.targetModel,
+        targetProfileId: targetRun.targetProfileId,
         targetProfileRevisionId: targetRun.targetProfileRevisionId,
-      }),
-      effectiveInstructionsHash: targetRun.effectiveInstructionsHash,
-      isSyntheticExample: false,
-      judgeModels: input.judgeModels,
-      promptId: targetRun.promptId,
-      promptRevisionId: targetRun.promptRevisionId,
-      source,
-      targetModel: targetRun.targetModel,
-      targetProfileId: targetRun.targetProfileId,
-      targetProfileRevisionId: targetRun.targetProfileRevisionId,
-      targetRunId: targetRun.id,
-      targetRunTurnId: selectedTurn.id,
-      startedByUserId: actorUserId,
-      recordedOutputs: [selectedTurn.output],
-    };
-    const runId = await this.#store.create(record);
-    this.#trackCompletion(runId);
-    this.#scheduleDrain();
-    return this.getRunSummary(actorUserId, runId);
+        targetRunId: targetRun.id,
+        targetRunTurnId: selectedTurn.id,
+        startedByUserId: actorUserId,
+        recordedOutputs: [selectedTurn.output],
+      };
+      const runId = await this.#store.create(record);
+      this.#trackCompletion(runId);
+      this.#queue.wake();
+      return this.getRunSummary(actorUserId, runId);
+    });
   }
 
   /** Validates a batch and reports its execution fan-out without creating run records. */
@@ -190,43 +201,45 @@ export class EvaluationRuns {
     source: EvaluationRunSource,
     chatId: string | null,
   ): Promise<EvaluationBatchStart> {
-    const input = await this.#requireBatchInput(rawInput);
-    const preview = expandBatch(input);
-    const configurations = new Map(
-      input.configurations.map((configuration) => [configuration.id, configuration]),
-    );
-    const preparedRuns: PreparedRun[] = [];
-    for (const job of preview.jobs) {
-      const configuration = configurations.get(job.configurationId);
-      if (!configuration) {
-        throw new EvaluationRequestError(
-          `Unknown evaluation configuration: ${job.configurationId}.`,
+    return this.#queue.prepare(async () => {
+      const input = await this.#requireBatchInput(rawInput);
+      const preview = expandBatch(input);
+      const configurations = new Map(
+        input.configurations.map((configuration) => [configuration.id, configuration]),
+      );
+      const preparedRuns: PreparedRun[] = [];
+      for (const job of preview.jobs) {
+        const configuration = configurations.get(job.configurationId);
+        if (!configuration) {
+          throw new EvaluationRequestError(
+            `Unknown evaluation configuration: ${job.configurationId}.`,
+          );
+        }
+        preparedRuns.push(
+          await this.#prepareRun(
+            actorUserId,
+            {
+              promptId: input.promptId,
+              promptRevisionId: input.promptRevisionId,
+              targetModel: job.targetModel,
+              judgeModels: input.judgeModels,
+              cases: input.cases.map(({ input: caseInput }) => ({
+                input: caseInput,
+                criteria: configuration.criteria,
+              })),
+              isSyntheticExample: input.isSyntheticExample,
+            },
+            source,
+            chatId,
+          ),
         );
       }
-      preparedRuns.push(
-        await this.#prepareRun(
-          actorUserId,
-          {
-            promptId: input.promptId,
-            promptRevisionId: input.promptRevisionId,
-            targetModel: job.targetModel,
-            judgeModels: input.judgeModels,
-            cases: input.cases.map(({ input: caseInput }) => ({
-              input: caseInput,
-              criteria: configuration.criteria,
-            })),
-            isSyntheticExample: input.isSyntheticExample,
-          },
-          source,
-          chatId,
-        ),
-      );
-    }
-    const runIds = await this.#store.createBatch(preparedRuns.map(({ record }) => record));
-    for (const runId of runIds) this.#trackCompletion(runId);
-    this.#scheduleDrain();
-    const runs = await Promise.all(runIds.map((runId) => this.getRunSummary(actorUserId, runId)));
-    return { preview, runs };
+      const runIds = await this.#store.createBatch(preparedRuns.map(({ record }) => record));
+      for (const runId of runIds) this.#trackCompletion(runId);
+      this.#queue.wake();
+      const runs = await Promise.all(runIds.map((runId) => this.getRunSummary(actorUserId, runId)));
+      return { preview, runs };
+    });
   }
 
   /** Parses batch input and checks its models and pinned prompt revision before execution. */
@@ -237,7 +250,7 @@ export class EvaluationRuns {
         parsed.error.issues[0]?.message ?? "Invalid evaluation batch request.",
       );
     const input = parsed.data;
-    requireConfiguredModels([...input.targetModels, ...input.judgeModels]);
+    requireConfiguredModels([...input.targetModels, ...input.judgeModels], this.#models);
     const prompt = await this.#prompts.getPrompt(input.promptId);
     if (prompt.revisionId !== input.promptRevisionId) {
       throw new PromptConflictError(prompt.activeRevisionId);
@@ -252,11 +265,13 @@ export class EvaluationRuns {
     source: EvaluationRunSource,
     chatId: string | null,
   ): Promise<EvaluationRunSummary> {
-    const prepared = await this.#prepareRun(actorUserId, rawInput, source, chatId);
-    const runId = await this.#store.create(prepared.record);
-    this.#trackCompletion(runId);
-    this.#scheduleDrain();
-    return this.getRunSummary(actorUserId, runId);
+    return this.#queue.prepare(async () => {
+      const prepared = await this.#prepareRun(actorUserId, rawInput, source, chatId);
+      const runId = await this.#store.create(prepared.record);
+      this.#trackCompletion(runId);
+      this.#queue.wake();
+      return this.getRunSummary(actorUserId, runId);
+    });
   }
 
   /** Pins every external dependency needed by one run before its durable record exists. */
@@ -274,7 +289,7 @@ export class EvaluationRuns {
     const input = parsed.data;
     const request = requestSchema.parse({ cases: input.cases, judgeModels: input.judgeModels });
     const judgeModels = request.judgeModels;
-    requireConfiguredModels([input.targetModel, ...judgeModels]);
+    requireConfiguredModels([input.targetModel, ...judgeModels], this.#models);
     const prompt = await this.#prompts.getPrompt(input.promptId);
     if (prompt.revisionId !== input.promptRevisionId) {
       throw new PromptConflictError(prompt.activeRevisionId);
@@ -334,9 +349,9 @@ export class EvaluationRuns {
 
   async cancel(actorUserId: string, runId: string): Promise<EvaluationRunSummary> {
     await this.#store.cancel(runId, actorUserId);
-    this.#controllers.get(runId)?.abort(new Error("The evaluation was cancelled."));
+    this.#queue.cancel(runId, new Error("The evaluation was cancelled."));
     this.#resolveCompletion(runId);
-    this.#scheduleDrain();
+    this.#queue.wake();
     return this.getRunSummary(actorUserId, runId);
   }
 
@@ -349,7 +364,10 @@ export class EvaluationRuns {
       throw new Error(`Evaluation Run ${runId} is active outside this process lifecycle.`);
     }
     await completion;
-    return this.getRunSummary(viewerUserId, runId);
+    const completed = await this.getRunSummary(viewerUserId, runId);
+    if (!isTerminalStatus(completed.status))
+      throw new Error("The evaluation runtime closed before this run reached a terminal state.");
+    return completed;
   }
 
   /** Returns chronological compatible runs from SQL aggregates when the selected configuration is Boolean-only. */
@@ -357,43 +375,19 @@ export class EvaluationRuns {
     return this.#store.getBooleanTrend(runId);
   }
 
-  #scheduleDrain(): void {
-    this.#drainRequested = true;
-    if (this.#draining) return;
-    this.#draining = true;
-    queueMicrotask(() => {
-      void this.#drainUntilIdle();
-    });
+  /** Activates draining only after the application has reconciled every durable workflow. */
+  start(): void {
+    this.#queue.start();
   }
 
-  async #drainUntilIdle(): Promise<void> {
-    try {
-      while (this.#drainRequested) {
-        this.#drainRequested = false;
-        await this.#drain();
-      }
-    } finally {
-      this.#draining = false;
-      if (this.#drainRequested) this.#scheduleDrain();
-    }
-  }
-
-  async #drain(): Promise<void> {
-    while (this.#activeJobs < MAX_ACTIVE_EVALUATION_JOBS) {
-      const runId = await this.#store.claimNextQueued();
-      if (!runId) return;
-      this.#activeJobs += 1;
-      void this.#executeClaimed(runId).finally(() => {
-        this.#activeJobs -= 1;
-        this.#scheduleDrain();
-      });
-    }
+  /** Settles accepted preparation and active execution before the application closes storage. */
+  async close(): Promise<void> {
+    await this.#queue.close();
+    for (const id of this.#completions.keys()) this.#resolveCompletion(id);
   }
 
   /** Executes one claimed queue record and lets guarded store transitions preserve cancellation. */
-  async #executeClaimed(runId: string): Promise<void> {
-    const controller = new AbortController();
-    this.#controllers.set(runId, controller);
+  async #executeClaimed(runId: string, signal: AbortSignal): Promise<void> {
     let close = () => Promise.resolve();
     try {
       const run = await this.#store.getExecution(runId);
@@ -410,7 +404,7 @@ export class EvaluationRuns {
             cases: recordedCases,
             judgeModels: run.judgeModels,
           },
-          { signal: controller.signal },
+          { signal, engine: this.#engine },
         );
       } else {
         const pinnedTarget = await this.#targets.createPinnedTarget({
@@ -428,18 +422,23 @@ export class EvaluationRuns {
             invoke: (input) => {
               if (typeof input !== "string")
                 throw new Error("Evaluation target input must be text.");
-              return invokeUntilAborted(pinnedTarget.target.invoke(input), controller.signal);
+              return invokeUntilAborted(pinnedTarget.target.invoke(input), signal);
             },
           },
           { cases, judgeModels: run.judgeModels },
-          { signal: controller.signal },
+          { signal, engine: this.#engine },
         );
       }
       await this.#store.complete(runId, cases, result);
     } catch (error) {
-      await this.#store.fail(runId, safeExecutionError(error));
+      await this.#store.fail(
+        runId,
+        signal.aborted
+          ? "The application runtime ended before this run completed."
+          : safeExecutionError(error),
+        signal.aborted ? "interrupted" : "failed",
+      );
     } finally {
-      this.#controllers.delete(runId);
       this.#resolveCompletion(runId);
       await close();
     }
@@ -472,8 +471,8 @@ async function invokeUntilAborted<T>(result: PromiseLike<T>, signal: AbortSignal
 }
 
 /** Validates all target and judge models against the current runtime configuration. */
-function requireConfiguredModels(models: readonly string[]): void {
-  const configuredModels = new Set(loadRuntimeConfig().models.map(({ id }) => id));
+function requireConfiguredModels(models: readonly string[], context: ModelContext): void {
+  const configuredModels = new Set(context.readConfig().models.map(({ id }) => id));
   const unknownModel = models.find((id) => !configuredModels.has(id));
   if (unknownModel) throw new EvaluationRequestError(`Model is not configured: ${unknownModel}.`);
 }

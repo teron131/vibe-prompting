@@ -7,9 +7,10 @@ import {
   ChatOpenAICompletions as NativeChatOpenAICompletions,
 } from "@langchain/openai";
 
-import { loadRuntimeConfig, type ModelConfig, resolveModelPlatform } from "../../config/index.ts";
+import { type ModelConfig, resolveModelPlatform } from "../../config/index.ts";
+import { type ModelContext, standaloneModelContext } from "./context.ts";
 import { readGeminiThoughtSignature } from "./gemini.ts";
-import { type SpendCall, startSpendCall } from "./spend.ts";
+import { type SpendCall } from "./spend.ts";
 
 type ClientConfiguration = NonNullable<ChatOpenAIFields["configuration"]>;
 
@@ -23,16 +24,14 @@ export type ModelOptions = Omit<
 };
 
 /** Creates a configured LangChain model and applies the requested provider-native reasoning level. */
-export function createModel({
-  model,
-  configuration,
-  reasoningEffort = "medium",
-  ...options
-}: ModelOptions): NativeChatOpenAI {
+export function createModel(
+  { model, configuration, reasoningEffort = "medium", ...options }: ModelOptions,
+  context: ModelContext = standaloneModelContext,
+): NativeChatOpenAI {
   const modelId = model.trim();
   if (!modelId) throw new Error("Model ID must not be empty.");
 
-  const runtime = loadRuntimeConfig();
+  const runtime = context.readConfig();
   const modelConfig =
     runtime.models.find((candidate) => candidate.id === modelId) ??
     (runtime.helperModel.id === modelId ? runtime.helperModel : undefined);
@@ -63,6 +62,7 @@ export function createModel({
   return new SpendLimitedChatOpenAI({
     ...fields,
     modelConfig,
+    modelContext: context,
     ...(platform.id === "gemini" && {
       completions: new GeminiChatOpenAICompletions(fields),
     }),
@@ -72,17 +72,19 @@ export function createModel({
 /** Records usage around every LangChain generation while leaving request execution to the native client. */
 class SpendLimitedChatOpenAI extends NativeChatOpenAI {
   readonly #modelConfig: ModelConfig;
+  readonly #context: ModelContext;
 
-  constructor(fields: ChatOpenAIFields & { modelConfig: ModelConfig }) {
-    const { modelConfig, ...modelFields } = fields;
+  constructor(fields: ChatOpenAIFields & { modelConfig: ModelConfig; modelContext: ModelContext }) {
+    const { modelConfig, modelContext, ...modelFields } = fields;
     super(modelFields);
     this.#modelConfig = modelConfig;
+    this.#context = modelContext;
   }
 
   override async _generate(...args: Parameters<NativeChatOpenAI["_generate"]>) {
-    const call = await startSpendCall(this.#modelConfig);
+    const call = await this.#context.spend.start(this.#modelConfig);
     try {
-      const result = await super._generate(...args);
+      const result = await super._generate(args[0], this.#withRuntimeSignal(args[1]), args[2]);
       let inputTokens = 0;
       let outputTokens = 0;
       for (const generation of result.generations) {
@@ -100,10 +102,14 @@ class SpendLimitedChatOpenAI extends NativeChatOpenAI {
   override async *_streamChatModelEvents(
     ...args: Parameters<NativeChatOpenAI["_streamChatModelEvents"]>
   ) {
-    const call = await startSpendCall(this.#modelConfig);
+    const call = await this.#context.spend.start(this.#modelConfig);
     let usage: LangChainUsage | undefined;
     try {
-      for await (const event of super._streamChatModelEvents(...args)) {
+      for await (const event of super._streamChatModelEvents(
+        args[0],
+        this.#withRuntimeSignal(args[1]),
+        args[2],
+      )) {
         if (event.event === "usage") usage = event.usage;
         if (event.event === "message-finish") {
           usage = event.usage ?? usage;
@@ -120,10 +126,14 @@ class SpendLimitedChatOpenAI extends NativeChatOpenAI {
   override async *_streamResponseChunks(
     ...args: Parameters<NativeChatOpenAI["_streamResponseChunks"]>
   ) {
-    const call = await startSpendCall(this.#modelConfig);
+    const call = await this.#context.spend.start(this.#modelConfig);
     let usage: LangChainUsage | undefined;
     try {
-      for await (const chunk of super._streamResponseChunks(...args)) {
+      for await (const chunk of super._streamResponseChunks(
+        args[0],
+        this.#withRuntimeSignal(args[1]),
+        args[2],
+      )) {
         if (AIMessageChunk.isInstance(chunk.message) && chunk.message.usage_metadata) {
           usage = chunk.message.usage_metadata;
           await recordLangChainUsage(call, usage);
@@ -134,6 +144,16 @@ class SpendLimitedChatOpenAI extends NativeChatOpenAI {
     } finally {
       call.release();
     }
+  }
+
+  /** Combines caller cancellation with application shutdown for every native generation path. */
+  #withRuntimeSignal(options: Parameters<NativeChatOpenAI["_generate"]>[1]) {
+    return {
+      ...options,
+      signal: options.signal
+        ? AbortSignal.any([options.signal, this.#context.signal])
+        : this.#context.signal,
+    };
   }
 }
 
