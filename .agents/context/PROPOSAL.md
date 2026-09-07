@@ -78,7 +78,7 @@ The Evaluation System owns one transport-neutral evaluation capability shared by
 - Evaluate opaque Targets against case-local criteria with one or more judges.
 - Evaluate a selected completed Target Run turn through the same judge pipeline without invoking the Target again.
 - Support Boolean, categorical, numeric, text, and correction criteria as configuration rather than hard-coded evaluator classes in the product workflow.
-- Manage reusable named Criterion and ordered Criteria while keeping exact resolved Criterion snapshots on every durable run.
+- Consume reusable named Criterion and ordered Criteria from the Criteria System, keeping exact resolved snapshots on every durable run.
 - Persist runs, cases, outputs, scores, evidence, status, and exact configuration when durable tracking is requested.
 - Expand batch configuration into an exact manifest before execution, then start each run asynchronously and expose progress through durable run status.
 - Search paginated case results by exact identifier, hybrid text retrieval, and shared filters, then compute compatible analytics over the same filtered result set.
@@ -109,7 +109,7 @@ The workspace is one in-memory Markdown string loaded from Prompt System rather 
 
 ## Agent Editing Contract
 
-The editing agent receives one narrowly scoped document capability rather than general filesystem tools:
+The editing agent receives one narrowly scoped document capability rather than general filesystem tools. Document state and Hashline editing remain generic; the prompt adapter binds tool names and revision persistence:
 
 - `read_prompt` returns the complete current Markdown with each physical line represented as `LINE#HASH:content`.
 - `edit_prompt` accepts structured `replace_range`, `insert_before`, `insert_after`, and `append` operations that reference hashes copied from the latest read.
@@ -134,27 +134,19 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 - `prompt-system/` owns prompt identity, immutable revisions, history navigation, derived search, and its persistence rules.
 - `target/` owns the small Target contract, revisioned Target Profiles, pinned runtime construction, and AI SDK or LangChain interoperability adapters.
 - `target/runs/` owns durable multi-turn Target Run lifecycle, pinned history replay, event snapshots, and PostgreSQL trace persistence.
-- `criteria/` owns canonical Criterion definitions, named reusable rules, and ordered Criteria compositions; started evaluations retain their own resolved snapshots.
-- `scenarios/` owns static and generative workflow progression, the Scenario graph, stopping, and optional recorded-evaluation handoff across Target Runs and Evaluation Runs.
-- `evaluation/api.ts` and `evaluation/engine/` own the transport-neutral evaluator contract, judge orchestration, and optional Langfuse tracing while consuming the Criteria System's definitions.
-- `evaluation/runs/preparation.ts` owns immutable request preparation, target pinning, batch expansion, and configuration fingerprints; `runs/service.ts` owns queue and execution lifecycle, while `runs/store.ts` owns atomic writes and guarded PostgreSQL transitions.
-- `evaluation/runs/queries.ts` owns shared run-snapshot reads used by execution, lifecycle summaries, and historical reports.
-- `evaluation/results/` owns complete historical reports, compatible Boolean trends, result filters, per-domain search projection, paginated PostgreSQL queries, aggregate analytics, and the helper-model translation into allowlisted read operations.
-- Evaluators consume the Criteria System's canonical definitions directly; conversion to the existing judge prompt format and Langfuse score vocabulary occurs only at those boundaries.
+- `evaluation/api.ts` and `evaluation/engine/` own transport-neutral evaluation, judge orchestration, and optional Langfuse tracing, consuming canonical definitions from the Criteria System.
+- `evaluation/runs/` owns durable run schemas, target preparation, detached lifecycle orchestration, and PostgreSQL state transitions.
+- `evaluation/results/` owns historical reports, compatible revision trends, result filters, search, aggregate analytics, and helper-model translation into allowlisted read operations.
+- `criteria/` owns canonical Criterion definitions and ordered Criteria composition; evaluations retain their own historical snapshots.
+- `scenarios/` owns multi-turn workflow progression across Target Runs and optional Evaluation Runs.
 - `agents/tools/` owns framework-neutral agent tool definitions over direct clients and public system operations, `agents/ai-sdk/` and `agents/openai-agents/` own agent runtime integration, and each runtime usage owns its tool adaptation.
 - `auth/` owns Google-backed identity upsert, pending and active membership, invitation throttling, and opaque application-session lifecycle.
-- `conversations/service.ts` owns private chat sending and replacement, quote resolution, history preparation, metadata cadence, steering, stopping, deletion, and inspection; adapters call complete operations rather than combining stores with run claims.
-- `conversations/schemas.ts` owns shared browser-safe chat data and event definitions, `requests.ts` validates commands, `store.ts` owns PostgreSQL persistence, and `runs.ts` owns detached execution and replayable subscriptions.
-- Browser rendering adds transient streaming state locally; unsubscribing never cancels accepted work, and conversation deletion waits for the run and metadata writes to settle.
+- `conversations/` owns private durable general-chat history, owner scoping, and detached assistant-run reconciliation rather than prompt or evaluation records.
 - `database/` owns the PostgreSQL client, ordered migrations, migration locking, and database setup rather than domain queries or authorization rules.
 - `search.ts` owns target-agnostic hybrid matching, semantic ranking, thresholds, and derived embedding-cache lifecycle; each domain owner projects its own searchable documents.
 - `clients/` owns direct model and service clients plus shared provider primitives that do not construct agent runtimes, including LangChain chat models, embeddings, Exa Search API access, Exa MCP connection data, Langfuse, model identity, pricing, and spend accounting.
-- `config/` owns validated runtime configuration and optional spend limits, while `settings/` owns persisted application settings, each runtime's effective settings overlay, revision conflicts, and contributor attribution.
-- `app/application.ts` constructs one service graph, completes recovery before activating queues, and settles execution, adapter resources, telemetry, and accounting before closing its database.
-- `app/runtime.ts` owns retryable process-shared initialization, replacement, and executable-host shutdown; `server.ts` is an export-only facade.
-- `app/queue.ts` owns bounded draining and shutdown for Evaluation and Scenario queues; each domain still owns durable claims, cancellation, and terminal state transitions.
-- `app/` also owns Fastify, MCP, and database setup; HTTP, MCP, and browser adapters use the selected service graph and its model context.
-- `clients/llm/context.ts` binds mutable configuration, price caches, provider capacity, spend accounting, and cancellation to each application instance; standalone library clients use a database-free context.
+- `config/` owns validated runtime configuration and shared optional spend limits, while `settings/` owns shared user-editable persisted application settings with revision conflicts and contributor attribution.
+- `app/` owns Fastify, MCP, database setup, and application composition and lifecycle; domains retain their own rules and durable workflow state.
 - `frontend/auth/`, `frontend/server/`, and `frontend/proxy.ts` own browser-session resolution, route protection, request validation, and safe transport errors, while the rest of `frontend/` owns browser interaction and presentation rather than backend behavior.
 
 ## What Not to Build
@@ -182,7 +174,7 @@ Evaluation exposes the transport-neutral `evaluate(target, request)` boundary pl
 
 Google-backed Users, invitation-gated membership, and opaque revocable sessions now protect the browser workspace. Chats are owner-scoped in PostgreSQL, while prompts, revisions, profiles, settings, Target Runs, and Evaluation Runs remain shared and retain contributor attribution. Shared projections expose contributor names where useful without exposing member email addresses. The trusted Fastify adapter is forced to loopback and validates supplied actor or viewer identifiers as active members, while browser routes always derive identity from the session.
 
-Evaluation and Scenario queue draining stays paused until all startup recovery finishes, provider capacity hands off slots without exceeding its configured limit, and PostgreSQL guards cancellation and terminal workflow transitions against late workers. Shutdown stops admission, aborts active work, settles accepted operations, and closes storage last; queued records remain available for the next runtime. Invitation failures are transactionally throttled, migration execution is serialized with an advisory lock, and the database pool supports concurrent request and workflow activity.
+Evaluation and Scenario queues start after recovery completes, provider capacity hands off slots without exceeding its configured limit, and PostgreSQL guards cancellation and terminal workflow transitions against late workers. Invitation failures are transactionally throttled, migration execution is serialized with an advisory lock, and the database pool supports concurrent request and workflow activity.
 
 The built-in agent uses separate structured prompt editing, Target Run, evaluation execution, evaluation search, and evaluation analytics tools, passes revision IDs explicitly, and can operate the same durable Target Runs and evaluation batches as a human client. Prompt editing operates on one isolated in-memory string with hash-addressed structured operations and persists only through Prompt System. The configured helper model only translates plain-language questions into validated read operations at low reasoning effort. The browser reuses the general conversation presentation in an explicit Test Target mode whose traces are not stored in general chat history, and it can launch judge-only evaluation from a selected completed turn. The other run setup, result exploration, aggregate analytics, criteria management, and LLM-assisted exploration surfaces remain clients of backend owners.
 

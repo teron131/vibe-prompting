@@ -3,8 +3,8 @@
 import { z } from "zod";
 
 import type { TargetRuns } from "../../target/runs/index.ts";
+import { type ConfiguredModelReference, resolveConfiguredModelId } from "../models.ts";
 import { AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
-import { type ConfiguredModelReference, resolveConfiguredModelId } from "./evaluation.ts";
 
 const startSchema = z.object({
   promptId: z.uuid().describe("Saved prompt ID."),

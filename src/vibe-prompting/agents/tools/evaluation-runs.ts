@@ -4,8 +4,9 @@ import { z } from "zod";
 
 import type { EvaluationResults } from "../../evaluation/results/index.ts";
 import { evaluationBatchInputSchema, type EvaluationRuns } from "../../evaluation/runs/index.ts";
+import type { ConfiguredModelReference } from "../models.ts";
 import { AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
-import { type ConfiguredModelReference, createEvaluationTool } from "./evaluation.ts";
+import { createEvaluationTool } from "./evaluation.ts";
 
 const listSchema = z.object({
   promptId: z.uuid().optional().describe("Optional saved prompt ID filter."),

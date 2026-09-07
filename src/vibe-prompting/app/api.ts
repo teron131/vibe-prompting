@@ -12,7 +12,7 @@ import {
 } from "fastify-type-provider-zod";
 import { z } from "zod";
 
-import { editPrompt } from "../agents/openai-agents/runtime.ts";
+import { editPrompt } from "../agents/openai-agents/prompt-edit.ts";
 import { createModel } from "../clients/llm/langchain.ts";
 import { criteriaInputSchema, savedCriterionInputSchema } from "../criteria/index.ts";
 import { evaluate, requestSchema } from "../evaluation/api.ts";

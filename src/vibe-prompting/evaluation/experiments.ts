@@ -1,7 +1,7 @@
 /** Persists completed evaluator results through Langfuse experiments without owning Target or judge execution. */
 
 import { type Evaluation, LangfuseClient } from "@langfuse/client";
-import { ProxyTracerProvider, trace } from "@opentelemetry/api";
+import { trace } from "@opentelemetry/api";
 import type { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 
 import { createLangfuseClient, createLangfuseTelemetry } from "../clients/langfuse.ts";
@@ -134,10 +134,9 @@ export class LangfuseExperimentRunner {
         if (errors.length)
           throw new AggregateError(errors, "Evaluation telemetry shutdown failed.");
       } finally {
-        const registered = trace.getTracerProvider();
-        const provider =
-          registered instanceof ProxyTracerProvider ? registered.getDelegate() : registered;
-        if (provider === this.telemetry) trace.disable();
+        // SDK providers cache tracers by scope; compare through the public API after shutdown settles.
+        const scope = "vibe-prompting.evaluation";
+        if (trace.getTracer(scope) === this.telemetry.getTracer(scope)) trace.disable();
       }
     })();
     return this.closing;

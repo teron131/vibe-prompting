@@ -1,14 +1,15 @@
 /** Exercises conversation orchestration through its public commands with model and persistence boundaries controlled independently. */
+
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, afterEach, beforeEach, mock, test } from "node:test";
 import { setImmediate } from "node:timers/promises";
 
 import type {
-  AgentStreamEvent,
   ChatRunInput,
   ChatRunResult,
-} from "../src/vibe-prompting/agents/openai-agents/runtime.ts";
+} from "../src/vibe-prompting/agents/openai-agents/chat.ts";
+import type { AgentStreamEvent } from "../src/vibe-prompting/agents/openai-agents/events.ts";
 import type { ChatMetadata } from "../src/vibe-prompting/conversations/metadata.ts";
 import type {
   ChatRequest,
@@ -26,7 +27,7 @@ let respond: Respond;
 let metadata: () => Promise<ChatMetadata | null>;
 const calls: ChatRunInput[] = [];
 let metadataCalls = 0;
-mock.module("../src/vibe-prompting/agents/openai-agents/runtime.ts", {
+mock.module("../src/vibe-prompting/agents/openai-agents/chat.ts", {
   namedExports: {
     streamChatRun: (input: ChatRunInput, emit: (event: AgentStreamEvent) => void) => {
       calls.push(input);

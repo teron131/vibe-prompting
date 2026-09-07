@@ -1,10 +1,7 @@
 /** Owns private chat commands, contextual input, detached assistant execution, and persisted outcomes independently of browser lifetime. */
 
-import {
-  type AgentStreamEvent,
-  type ChatRunInput,
-  streamChatRun,
-} from "../agents/openai-agents/runtime.ts";
+import { type ChatRunInput, streamChatRun } from "../agents/openai-agents/chat.ts";
+import type { AgentStreamEvent } from "../agents/openai-agents/events.ts";
 import type { AuthService } from "../auth/index.ts";
 import { PromptRevisionNotFoundError, type StoredPrompt } from "../prompt-system/index.ts";
 import type { StoredTargetRun } from "../target/runs/index.ts";

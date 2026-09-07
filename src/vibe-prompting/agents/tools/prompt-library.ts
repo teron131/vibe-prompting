@@ -7,18 +7,15 @@ import {
   type PromptSystem,
   type StoredPrompt,
 } from "../../prompt-system/index.ts";
-import { AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
-import {
-  applyPromptHashlineEdits,
-  formatPromptHashlines,
-  promptHashlineEditsSchema,
-} from "./hashline.ts";
+import { type AgentTool, AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
+import { applyHashlineEdits, formatHashlines, hashlineEditsSchema } from "./hashline.ts";
+import type { ScopedDocument } from "./scoped-fs.ts";
 
 const promptEditRequestSchema = z.object({
   promptId: z.uuid().describe("Saved prompt ID."),
   expectedRevisionId: z.uuid().describe("Active revision ID expected by this edit."),
   changeRequest: z.string().trim().min(1).describe("Concise reason for the revision."),
-  edits: promptHashlineEditsSchema,
+  edits: hashlineEditsSchema,
 });
 
 export class PromptLibraryToolkit extends AgentToolkit {
@@ -48,7 +45,7 @@ export class PromptLibraryToolkit extends AgentToolkit {
           const prompt = await prompts.getPrompt(promptId);
           return {
             ...projectStoredPrompt(prompt),
-            content: formatPromptHashlines(prompt.markdown),
+            content: formatHashlines(prompt.markdown),
           };
         },
       }),
@@ -110,7 +107,7 @@ async function editStoredPrompt(
   if (active.activeRevisionId !== expectedRevisionId) {
     throw new PromptConflictError(active.activeRevisionId);
   }
-  const editedMarkdown = applyPromptHashlineEdits(active.markdown, edits);
+  const editedMarkdown = applyHashlineEdits(active.markdown, edits);
   return prompts.appendAiEdit(actorUserId, {
     promptId,
     expectedActiveRevisionId: expectedRevisionId,
@@ -147,4 +144,35 @@ export function storedPromptLink(prompt: StoredPrompt) {
     title: prompt.title,
     href: `/prompts/${prompt.id}`,
   };
+}
+
+/** Binds generic document operations to the existing prompt-edit tool names and input schemas. */
+export function createPromptEditTools(document: ScopedDocument): AgentTool[] {
+  return [
+    defineAgentTool({
+      name: "read_prompt",
+      title: "Read working prompt",
+      description:
+        "Read the complete working prompt with current LINE#HASH physical-line references for structured editing.",
+      parameters: z.object({}),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      async execute() {
+        return formatHashlines(document.read());
+      },
+    }),
+    defineAgentTool({
+      name: "edit_prompt",
+      title: "Edit working prompt",
+      description:
+        "Update the in-memory working prompt with an atomic batch of replace_range, insert_before, insert_after, or append operations addressed by current LINE#HASH refs. Edit content contains complete physical lines without refs.",
+      parameters: z.object({
+        edits: hashlineEditsSchema,
+      }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+      async execute({ edits }) {
+        document.applyEdits(edits);
+        return "Updated the working prompt.";
+      },
+    }),
+  ];
 }

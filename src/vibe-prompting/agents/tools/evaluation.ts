@@ -4,10 +4,8 @@ import { z } from "zod";
 
 import { criteriaSchema } from "../../criteria/index.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
+import { type ConfiguredModelReference, resolveConfiguredModelId } from "../models.ts";
 import { type AgentTool, defineAgentTool, requireAgentActor } from "./api.ts";
-
-/** Identifies configured models by either their canonical ID or display label. */
-export type ConfiguredModelReference = { id: string; label: string };
 
 const evaluationCaseSchema = z.object({
   input: z.string().trim().min(1).describe("Input sent to the Target."),
@@ -138,19 +136,4 @@ export function createEvaluationTool(
       };
     },
   });
-}
-
-/** Resolves a model ID or unique display label and rejects unknown or ambiguous references. */
-export function resolveConfiguredModelId(
-  reference: string,
-  models: readonly ConfiguredModelReference[],
-): string {
-  const normalized = reference.trim().toLocaleLowerCase();
-  const idMatch = models.find((model) => model.id.toLocaleLowerCase() === normalized);
-  if (idMatch) return idMatch.id;
-  const labelMatches = models.filter((model) => model.label.toLocaleLowerCase() === normalized);
-  if (labelMatches.length === 1) return labelMatches[0].id;
-  if (labelMatches.length > 1)
-    throw new Error(`Configured model label is ambiguous: ${reference}. Use its model ID.`);
-  throw new Error(`Unknown configured model: ${reference}.`);
 }

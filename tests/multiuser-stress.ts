@@ -65,7 +65,7 @@ try {
   const { createApplicationServices } = await import("../src/vibe-prompting/server.ts");
   const { createModel: createAiSdkModel } =
     await import("../src/vibe-prompting/agents/ai-sdk/model.ts");
-  const { streamChatRun } = await import("../src/vibe-prompting/agents/openai-agents/runtime.ts");
+  const { streamChatRun } = await import("../src/vibe-prompting/agents/openai-agents/chat.ts");
   const { createModel: createLangChainModel } =
     await import("../src/vibe-prompting/clients/llm/langchain.ts");
   const { evaluate } = await import("../src/vibe-prompting/index.ts");

@@ -1,4 +1,4 @@
-/** Owns the framework-neutral structured Hashline editing protocol for database-backed prompts without exposing a filesystem or raw patch grammar. */
+/** Owns the framework-neutral structured Hashline editing over supplied text without importing persistence or filesystem access. */
 
 import { createHash } from "node:crypto";
 
@@ -49,22 +49,22 @@ const appendSchema = z.object({
   lines: z.array(z.string()).min(1).describe("Complete lines to append to the prompt."),
 });
 
-export const promptHashlineEditSchema = z.discriminatedUnion("operation", [
+export const hashlineEditSchema = z.discriminatedUnion("operation", [
   replacementSchema,
   insertBeforeSchema,
   insertAfterSchema,
   appendSchema,
 ]);
 
-export const promptHashlineEditsSchema = z
-  .array(promptHashlineEditSchema)
+export const hashlineEditsSchema = z
+  .array(hashlineEditSchema)
   .min(1)
   .max(20)
   .describe(
     "Atomic line-addressed edits applied to the latest read_prompt result; every referenced line must still have the same hash.",
   );
 
-export type PromptHashlineEdit = z.infer<typeof promptHashlineEditSchema>;
+export type HashlineEdit = z.infer<typeof hashlineEditSchema>;
 
 type ResolvedEdit = {
   end: number;
@@ -73,10 +73,7 @@ type ResolvedEdit = {
 };
 
 /** Applies one atomic batch against the original physical-line coordinates and rejects stale, overlapping, ambiguous, or no-op edits before returning content. */
-export function applyPromptHashlineEdits(
-  originalText: string,
-  edits: PromptHashlineEdit[],
-): string {
+export function applyHashlineEdits(originalText: string, edits: HashlineEdit[]): string {
   const { hasTrailingNewline, lines } = splitTextLines(originalText);
   const resolved = edits.map((edit) => resolveEdit(edit, lines));
   validateEditTargets(resolved);
@@ -90,8 +87,8 @@ export function applyPromptHashlineEdits(
   return updatedText;
 }
 
-/** Presents prompt content as copyable LINE#HASH:content records while keeping the stored Markdown unchanged. */
-export function formatPromptHashlines(text: string): string {
+/** Presents supplied text as copyable LINE#HASH:content records without changing the original content. */
+export function formatHashlines(text: string): string {
   const { lines } = splitTextLines(text);
   return lines.map((line, index) => `${formatHashlineRef(index + 1, line)}:${line}`).join("\n");
 }
@@ -104,7 +101,7 @@ function formatHashlineRef(lineNumber: number, line: string): string {
   return `${lineNumber}#${computeLineHash(line)}`;
 }
 
-function resolveEdit(edit: PromptHashlineEdit, lines: string[]): ResolvedEdit {
+function resolveEdit(edit: HashlineEdit, lines: string[]): ResolvedEdit {
   if (edit.operation === "append") {
     return { end: lines.length, lines: edit.lines, start: lines.length };
   }

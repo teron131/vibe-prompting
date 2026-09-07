@@ -1,62 +1,22 @@
-/** Owns the in-memory prompt workspace and its framework-neutral document tools. */
+/** Owns one isolated in-memory document; callers bind its tools and persistence without granting access to other documents or the host filesystem. */
 
-import { z } from "zod";
+import { applyHashlineEdits, type HashlineEdit } from "./hashline.ts";
 
-import { type AgentTool, defineAgentTool } from "./api.ts";
-import {
-  applyPromptHashlineEdits,
-  formatPromptHashlines,
-  type PromptHashlineEdit,
-  promptHashlineEditsSchema,
-} from "./hashline.ts";
-
-export type PromptWorkspace = {
-  applyEdits(edits: PromptHashlineEdit[]): Promise<string>;
-  dispose(): Promise<void>;
-  read(): Promise<string>;
+export type ScopedDocument = {
+  applyEdits(edits: HashlineEdit[]): string;
+  read(): string;
 };
 
-export async function createPromptWorkspace(markdown: string): Promise<PromptWorkspace> {
-  let currentMarkdown = markdown;
-
+/** Creates a private text scope whose failed edit batches leave its content unchanged. */
+export function createScopedDocument(text: string): ScopedDocument {
+  let current = text;
   return {
-    async applyEdits(edits) {
-      currentMarkdown = applyPromptHashlineEdits(currentMarkdown, edits);
-      return currentMarkdown;
+    applyEdits(edits) {
+      current = applyHashlineEdits(current, edits);
+      return current;
     },
-    async dispose() {},
-    async read() {
-      return currentMarkdown;
+    read() {
+      return current;
     },
   };
-}
-
-export function createScopedFsTools(workspace: PromptWorkspace): AgentTool[] {
-  return [
-    defineAgentTool({
-      name: "read_prompt",
-      title: "Read working prompt",
-      description:
-        "Read the complete working prompt with current LINE#HASH physical-line references for structured editing.",
-      parameters: z.object({}),
-      annotations: { readOnlyHint: true, openWorldHint: false },
-      async execute() {
-        return formatPromptHashlines(await workspace.read());
-      },
-    }),
-    defineAgentTool({
-      name: "edit_prompt",
-      title: "Edit working prompt",
-      description:
-        "Update the in-memory working prompt with an atomic batch of replace_range, insert_before, insert_after, or append operations addressed by current LINE#HASH refs. Edit content contains complete physical lines without refs.",
-      parameters: z.object({
-        edits: promptHashlineEditsSchema,
-      }),
-      annotations: { destructiveHint: false, openWorldHint: false },
-      async execute({ edits }) {
-        await workspace.applyEdits(edits);
-        return "Updated the working prompt.";
-      },
-    }),
-  ];
 }

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { LangfuseClient } from "@langfuse/client";
-import { ProxyTracerProvider, trace } from "@opentelemetry/api";
+import { trace } from "@opentelemetry/api";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 
 import { LangfuseExperimentRunner } from "../src/vibe-prompting/evaluation/experiments.ts";
@@ -22,16 +22,16 @@ test("closed evaluator telemetry can be replaced and disposal waits for the clie
     } as unknown as LangfuseClient,
   });
   runner.startTracing();
-  assert.equal(activeProvider(), telemetry);
+  assert.equal(trace.getTracer("test"), telemetry.getTracer("test"));
   const close = runner.close();
   assert.equal(runner.close(), close);
   release();
   await close;
-  assert.notEqual(activeProvider(), telemetry);
+  assert.notEqual(trace.getTracer("test"), telemetry.getTracer("test"));
   const replacement = new NodeTracerProvider();
   const next = new LangfuseExperimentRunner({ telemetry: replacement, client: client() });
   next.startTracing();
-  assert.equal(activeProvider(), replacement);
+  assert.equal(trace.getTracer("test"), replacement.getTracer("test"));
   await next.close();
 });
 
@@ -44,18 +44,41 @@ test("disposing an evaluator never unregisters another host's telemetry", async 
   });
   runner.startTracing();
   await runner.close();
-  assert.equal(activeProvider(), host);
+  assert.equal(trace.getTracer("test"), host.getTracer("test"));
   trace.disable();
   await host.shutdown();
 });
 
+test("disposing an evaluator preserves telemetry registered while shutdown is pending", async () => {
+  let release!: () => void;
+  const runner = new LangfuseExperimentRunner({
+    telemetry: new NodeTracerProvider(),
+    client: {
+      shutdown: () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    } as unknown as LangfuseClient,
+  });
+  const host = new NodeTracerProvider();
+  runner.startTracing();
+  const close = runner.close();
+  try {
+    trace.disable();
+    host.register();
+    release();
+    await close;
+    assert.equal(trace.getTracer("test"), host.getTracer("test"));
+  } finally {
+    release();
+    await close;
+    trace.disable();
+    await host.shutdown();
+  }
+});
+
 function client(): LangfuseClient {
   return { shutdown: async () => undefined } as unknown as LangfuseClient;
-}
-
-function activeProvider() {
-  const provider = trace.getTracerProvider();
-  return provider instanceof ProxyTracerProvider ? provider.getDelegate() : provider;
 }
 
 test("canonical criteria retain Langfuse score names, data types, and Boolean conversion", async () => {

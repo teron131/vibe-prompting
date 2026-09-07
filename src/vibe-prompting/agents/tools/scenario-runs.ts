@@ -4,8 +4,8 @@ import { z } from "zod";
 
 import { criteriaSchema } from "../../criteria/index.ts";
 import { MAX_SCENARIO_TURNS, type ScenarioRuns } from "../../scenarios/index.ts";
+import { type ConfiguredModelReference, resolveConfiguredModelId } from "../models.ts";
 import { AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
-import { type ConfiguredModelReference, resolveConfiguredModelId } from "./evaluation.ts";
 
 const modelReferenceSchema = z
   .string()
