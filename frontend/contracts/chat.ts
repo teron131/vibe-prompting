@@ -1,104 +1,35 @@
-/** Owns browser-safe chat request, response, persistence, and streaming shapes shared by routes and components. */
-
-export type ConfiguredModel = { id: string; known: boolean; label: string; provider: string };
-
-export type ChatToolId = "evaluations" | "prompt-library" | "web-search";
-export type ChatReasoningEffort = "high" | "low" | "medium" | "xhigh";
-export type Attachment = { dataUrl: string; mediaType: string; name: string; size: number };
-export type PromptQuote = {
-  promptId: string;
-  revisionId: string;
-  text: string;
-  title: string;
-};
-export type TargetRunQuote = { runId: string; title: string };
-export type ChatQuote = PromptQuote | TargetRunQuote;
-export type ChatWorkspaceContext = {
-  activePromptId: string | null;
-  enabledTools: ChatToolId[];
-  panelOpen: boolean;
-  reasoningEffort: ChatReasoningEffort;
-};
-
-export type ResponseTelemetry = {
-  durationMs: number;
-  estimatedCostUsd: number | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  requests: number | null;
-  totalTokens: number | null;
-};
-
-export type ChatRequest = {
-  attachments: Attachment[];
-  chatId: string;
-  instruction: string;
-  messageId: string;
-  modelId: string;
-  quotes: ChatQuote[];
-  replaceFromMessageId?: string;
-  workspace: ChatWorkspaceContext;
-};
-
+/** Adds transient rendering state to the backend's canonical conversation contracts without importing server runtime code. */
+import type {
+  ChatMessage as StoredChatMessage,
+  ChatResponse as StoredChatResponse,
+  Conversation as StoredConversation,
+  MessagePart as StoredMessagePart,
+} from "vibe-prompting/conversations";
+export type {
+  Attachment,
+  ChatQuote,
+  ChatReasoningEffort,
+  ChatRequest,
+  ChatToolId,
+  ChatWorkspaceContext,
+  DeleteChatResponse,
+  PromptQuote,
+  ResponseTelemetry,
+  RunEvent,
+  SteerChatResponse,
+  StopChatResponse,
+  TargetRunQuote,
+  ChatSummary,
+  ChatPage,
+  ChatSearchResponse,
+} from "vibe-prompting/conversations";
 export type MessagePart =
-  | { text: string; type: "text" }
-  | (Attachment & { type: "file" })
-  | { streaming?: boolean; summary: string; type: "reasoning" }
-  | {
-      callId: string;
-      input?: unknown;
-      name: string;
-      output?: unknown;
-      state: "completed" | "failed" | "running";
-      summary?: string;
-      type: "tool";
-    }
-  | { promptId: string; revisionId: string; type: "prompt-revision" }
-  | (PromptQuote & { type: "prompt-quote" })
-  | (TargetRunQuote & { type: "target-run-quote" })
-  | { report: unknown; runId?: string; type: "evaluation" };
-
-export type ChatMessage = {
-  chatId: string;
-  createdAt: string;
-  id: string;
-  metadata: Record<string, unknown>;
-  parts: MessagePart[];
-  role: "assistant" | "user";
+  | Exclude<StoredMessagePart, { type: "reasoning" }>
+  | (Extract<StoredMessagePart, { type: "reasoning" }> & { streaming?: boolean });
+export type ChatMessage = Omit<StoredChatMessage, "parts"> & { parts: MessagePart[] };
+export type Conversation = Omit<StoredConversation, "messages"> & { messages: ChatMessage[] };
+export type ChatResponse = Omit<StoredChatResponse, "conversation"> & {
+  conversation: Conversation;
 };
-
-export type ChatSummary = {
-  createdAt: string;
-  icon: string;
-  id: string;
-  modelId: string;
-  title: string;
-  updatedAt: string;
-};
-
-export type Conversation = {
-  chat: ChatSummary;
-  context: ChatWorkspaceContext;
-  messages: ChatMessage[];
-};
-
-export type RunEvent =
-  | { delta: string; type: "text-delta" }
-  | { type: "reasoning-start" }
-  | { delta: string; type: "reasoning-delta" }
-  | { type: "response-reset" }
-  | { startedAt: string; type: "response-start" }
-  | { durationMs: number; type: "response-complete" }
-  | { chatId: string; icon: string; title: string; type: "chat-metadata" }
-  | Extract<MessagePart, { type: "reasoning" | "tool" | "evaluation" | "prompt-revision" }>
-  | { message: string; type: "error" }
-  | { type: "stopped" }
-  | { type: "finish" };
-
-export type ChatResponse = { active: boolean; conversation: Conversation; events: RunEvent[] };
-export type ChatPage = { chats: ChatSummary[]; nextCursor: string | null };
-export type ChatSearchResponse = { chats: ChatSummary[] };
+export type ConfiguredModel = { id: string; known: boolean; label: string; provider: string };
 export type ConfiguredModelsResponse = { models: ConfiguredModel[] };
-export type StopChatResponse = { stopped: boolean };
-export type SteerChatResponse = { accepted: true };
-export type DeleteChatResponse = { deleted: true };

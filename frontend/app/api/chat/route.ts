@@ -1,56 +1,20 @@
-/** Adapts general conversation commands to detached NDJSON agent streams without making browser lifetime the run owner. */
-
-import {
-  type AgentStreamEvent,
-  CHAT_TOOL_IDS,
-  type ClaimedConversationRun,
-  generateChatMetadata,
-  getApplicationServices,
-  isConfiguredModelId,
-  PromptRevisionNotFoundError,
-  type StoredMessagePart,
-  type StoredPrompt,
-  streamChatRun,
-} from "vibe-prompting/server";
+/** Authenticates browser chat commands and encodes backend-owned run events as NDJSON. */
+import { type ChatRun, getApplicationServices } from "vibe-prompting/server";
 
 import { requireActiveSessionUser } from "@/auth/session";
-import type {
-  Attachment,
-  ChatQuote,
-  ChatReasoningEffort,
-  ChatRequest,
-  ChatResponse,
-  ChatToolId,
-  ChatWorkspaceContext,
-  DeleteChatResponse,
-  RunEvent,
-  SteerChatResponse,
-  StopChatResponse,
-  TargetRunQuote,
-} from "@/contracts/chat";
 import { NO_STORE_HEADERS, projectServerError } from "@/server/errors";
-import { requireRecord, requireText, requireUuid } from "@/server/request";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const METADATA_EVERY_MESSAGES = 3;
-type ApplicationServices = Awaited<ReturnType<typeof getApplicationServices>>;
-type StoredQuote = Extract<StoredMessagePart, { type: "prompt-quote" | "target-run-quote" }>;
-type ResolvedQuote = { context: string; part: StoredQuote };
-
 export async function GET(request: Request) {
   try {
-    const chatId = requireUuid(new URL(request.url).searchParams.get("id"), "Chat ID");
     const user = await requireActiveSessionUser();
     const services = await getApplicationServices();
-    await services.conversations.requireChat(user.id, chatId);
-    const run = services.runs.snapshot(chatId);
-    const payload = {
-      active: run.active,
-      conversation: await services.conversations.getConversation(user.id, chatId),
-      events: run.events,
-    } satisfies ChatResponse;
+    const payload = await services.conversations.inspect(
+      user.id,
+      new URL(request.url).searchParams.get("id"),
+    );
     return Response.json(payload, { headers: NO_STORE_HEADERS });
   } catch (error) {
     return errorResponse(error);
@@ -58,170 +22,31 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let claim: ClaimedConversationRun | undefined;
   try {
-    const input = parseChatRequest(await request.json());
+    const input = await request.json();
     const user = await requireActiveSessionUser();
-    if (!(await isConfiguredModelId(input.modelId))) {
-      throw new RequestError(`Unknown configured model: ${input.modelId}.`, 400);
-    }
     const services = await getApplicationServices();
-    const [activePrompt, quotes] = await Promise.all([
-      input.workspace.activePromptId
-        ? services.prompts.getPrompt(input.workspace.activePromptId)
-        : undefined,
-      resolveChatQuotes(services, user.id, input.quotes),
-    ]);
-
-    let conversation = await services.conversations.findConversation(user.id, input.chatId);
-    const existing = Boolean(conversation);
-    if (!existing && input.replaceFromMessageId)
-      throw new RequestError(`Chat ${input.chatId} was not found.`, 404);
-    claim = services.runs.claim(input.chatId);
-    const attachments = input.attachments.map((attachment) => ({
-      ...attachment,
-      type: "file" as const,
-    }));
-    const storedQuotes = quotes.map(({ part }) => part);
-    if (input.replaceFromMessageId) {
-      conversation = await services.conversations.replaceUserMessage(user.id, {
-        attachments,
-        chatId: input.chatId,
-        context: input.workspace,
-        instruction: input.instruction,
-        messageId: input.messageId,
-        modelId: input.modelId,
-        quotes: storedQuotes,
-        replaceFromMessageId: input.replaceFromMessageId,
-      });
-    } else if (existing) {
-      conversation = await services.conversations.appendUserMessage(user.id, {
-        attachments,
-        chatId: input.chatId,
-        context: input.workspace,
-        instruction: input.instruction,
-        messageId: input.messageId,
-        modelId: input.modelId,
-        quotes: storedQuotes,
-      });
-    } else {
-      conversation = await services.conversations.createWithUserMessage(user.id, {
-        attachments,
-        chatId: input.chatId,
-        context: input.workspace,
-        instruction: input.instruction,
-        messageId: input.messageId,
-        modelId: input.modelId,
-        quotes: storedQuotes,
-      });
-    }
-    const history = projectRunHistory(conversation.messages, input.messageId);
-    const userMessageCount = conversation.messages.filter(({ role }) => role === "user").length;
-    const shouldUpdateMetadata =
-      Boolean(input.replaceFromMessageId) ||
-      !existing ||
-      userMessageCount % METADATA_EVERY_MESSAGES === 0;
-    const metadataPromise = shouldUpdateMetadata
-      ? generateChatMetadata(
-          {
-            currentIcon: conversation.chat.icon,
-            currentTitle: conversation.chat.title,
-            messages: conversation.messages,
-          },
-          services.models,
-        )
-          .then(async (metadata) => {
-            if (!metadata) return null;
-            await services.conversations.updateMetadata(user.id, {
-              chatId: input.chatId,
-              ...metadata,
-            });
-            return metadata;
-          })
-          .catch((error) => {
-            console.warn("Chat metadata update failed", input.chatId, error);
-            return null;
-          })
-      : undefined;
-
-    const stream = createNdjsonStream(claim);
-    claim.start(async () => {
-      try {
-        const collected = new CollectedAssistantParts();
-        const result = await streamChatRun(
-          {
-            actorUserId: user.id,
-            modelContext: services.models,
-            chatId: input.chatId,
-            instruction: formatWorkspaceInstruction(
-              input.instruction,
-              activePrompt,
-              quotes.map(({ context }) => context),
-            ),
-            history,
-            attachments: input.attachments,
-            modelId: input.modelId,
-            reasoningEffort: input.workspace.reasoningEffort,
-            enabledTools: input.workspace.enabledTools,
-            prompts: services.prompts,
-            criterion: services.criterion,
-            evaluations: services.evaluations,
-            evaluationResults: services.evaluationResults,
-            targetRuns: services.targetRuns,
-            scenarios: services.scenarios,
-            signal: claim?.signal,
-            steering: claim?.steering,
-          },
-          (event) => {
-            collected.add(event);
-            claim?.publish(event);
-          },
-        );
-        if (claim?.signal.aborted) throw claim.signal.reason;
-        await services.conversations.appendAssistantMessage(user.id, {
-          chatId: input.chatId,
-          metadata: {
-            completedAt: new Date().toISOString(),
-            activePromptId: activePrompt?.id ?? null,
-            activePromptRevisionId: activePrompt?.revisionId ?? null,
-            enabledTools: input.workspace.enabledTools,
-            modelId: result.model.id,
-            reasoningEffort: input.workspace.reasoningEffort,
-            telemetry: result.telemetry,
-          },
-          parts: collected.finish(result.message),
-        });
-        const metadata = await metadataPromise;
-        if (metadata) {
-          claim?.publish({ chatId: input.chatId, ...metadata, type: "chat-metadata" });
-        }
-        claim?.publish({ type: "finish" });
-      } finally {
-        await metadataPromise;
-      }
-    });
-
-    return new Response(stream, {
+    const run = await services.conversations.send(user.id, input);
+    return new Response(createNdjsonStream(run), {
       headers: {
         ...NO_STORE_HEADERS,
         "content-type": "application/x-ndjson; charset=utf-8",
-        "x-chat-id": input.chatId,
+        "x-chat-id": run.chatId,
       },
     });
   } catch (error) {
-    claim?.release();
     return errorResponse(error);
   }
 }
 
 export async function PATCH(request: Request) {
   try {
-    const chatId = requireUuid(requireRecord(await request.json()).chatId, "Chat ID");
+    const input = await request.json();
     const user = await requireActiveSessionUser();
     const services = await getApplicationServices();
-    await services.conversations.requireChat(user.id, chatId);
-    const payload = { stopped: services.runs.stop(chatId) } satisfies StopChatResponse;
-    return Response.json(payload, { headers: NO_STORE_HEADERS });
+    return Response.json(await services.conversations.stop(user.id, input), {
+      headers: NO_STORE_HEADERS,
+    });
   } catch (error) {
     return errorResponse(error);
   }
@@ -229,27 +54,12 @@ export async function PATCH(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const input = parseSteeringRequest(await request.json());
+    const input = await request.json();
     const user = await requireActiveSessionUser();
-    if (!(await isConfiguredModelId(input.modelId))) {
-      throw new RequestError(`Unknown configured model: ${input.modelId}.`, 400);
-    }
     const services = await getApplicationServices();
-    await services.conversations.requireChat(user.id, input.chatId);
-    if (!services.runs.steer(input.chatId, input.instruction)) {
-      throw new RequestError("The agent run is no longer available to steer.", 409);
-    }
-    await services.conversations.appendUserMessage(user.id, {
-      attachments: [],
-      chatId: input.chatId,
-      context: input.workspace,
-      instruction: input.instruction,
-      messageId: input.messageId,
-      modelId: input.modelId,
-      quotes: [],
+    return Response.json(await services.conversations.steer(user.id, input), {
+      headers: NO_STORE_HEADERS,
     });
-    const payload = { accepted: true } satisfies SteerChatResponse;
-    return Response.json(payload, { headers: NO_STORE_HEADERS });
   } catch (error) {
     return errorResponse(error);
   }
@@ -257,291 +67,40 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const chatId = requireUuid(new URL(request.url).searchParams.get("id"), "Chat ID");
     const user = await requireActiveSessionUser();
     const services = await getApplicationServices();
-    await services.conversations.requireChat(user.id, chatId);
-    await services.runs.stopAndWait(chatId);
-    await services.conversations.deleteChat(user.id, chatId);
-    const payload = { deleted: true } satisfies DeleteChatResponse;
-    return Response.json(payload, { headers: NO_STORE_HEADERS });
+    return Response.json(
+      await services.conversations.delete(user.id, new URL(request.url).searchParams.get("id")),
+      { headers: NO_STORE_HEADERS },
+    );
   } catch (error) {
     return errorResponse(error);
   }
 }
 
-class CollectedAssistantParts {
-  #activity: StoredMessagePart[] = [];
-  readonly #revisions = new Map<string, Extract<StoredMessagePart, { type: "prompt-revision" }>>();
-  readonly #tools = new Map<string, Extract<StoredMessagePart, { type: "tool" }>>();
-
-  add(event: AgentStreamEvent): void {
-    if (event.type === "response-reset") {
-      this.#activity = this.#activity.filter((part) => part.type !== "reasoning");
-    } else if (event.type === "reasoning") {
-      this.#activity.push({ type: "reasoning", summary: event.summary });
-    } else if (event.type === "tool") {
-      const existing = this.#tools.get(event.callId);
-      if (existing) Object.assign(existing, event);
-      else {
-        const tool = { ...event };
-        this.#tools.set(event.callId, tool);
-        this.#activity.push(tool);
-      }
-    } else if (event.type === "prompt-revision") {
-      this.#revisions.set(`${event.promptId}:${event.revisionId}`, event);
-    }
-  }
-
-  finish(message: string): StoredMessagePart[] {
-    return [...this.#activity, { type: "text", text: message }, ...this.#revisions.values()];
-  }
-}
-
-function createNdjsonStream(claim: ClaimedConversationRun) {
+/** Detaching a response only removes its listener; accepted work remains owned by the backend. */
+function createNdjsonStream(run: ChatRun) {
   const encoder = new TextEncoder();
-  let unsubscribe: () => void = () => undefined;
+  let unsubscribe = () => {};
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      unsubscribe = claim.subscribe((event) => {
-        const browserEvent: RunEvent = event;
-        controller.enqueue(encoder.encode(`${JSON.stringify(browserEvent)}\n`));
-        if (
-          browserEvent.type === "finish" ||
-          browserEvent.type === "stopped" ||
-          browserEvent.type === "error"
-        ) {
+      let finished = false;
+      unsubscribe = run.subscribe((event) => {
+        if (finished) return;
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        if (event.type === "finish" || event.type === "stopped" || event.type === "error") {
+          finished = true;
           unsubscribe();
           controller.close();
         }
       });
+      // Replayed terminal events can arrive before subscribe returns its cleanup function.
+      if (finished) unsubscribe();
     },
     cancel() {
       unsubscribe();
     },
   });
-}
-
-function parseChatRequest(value: unknown): ChatRequest {
-  const record = requireRecord(value);
-  const input: ChatRequest = {
-    attachments: requireAttachments(record.attachments),
-    chatId: requireUuid(record.chatId, "Chat ID"),
-    instruction: requireText(record.instruction, "Message"),
-    messageId: requireUuid(record.messageId, "Message ID"),
-    modelId: requireText(record.modelId, "Model"),
-    quotes: requireChatQuotes(record.quotes),
-    replaceFromMessageId:
-      record.replaceFromMessageId === undefined
-        ? undefined
-        : requireUuid(record.replaceFromMessageId, "Replacement message ID"),
-    workspace: requireWorkspaceContext(record.workspace),
-  };
-  if (input.replaceFromMessageId && input.messageId !== input.replaceFromMessageId) {
-    throw new RequestError("A replacement must reuse the selected user message ID.", 400);
-  }
-  return input;
-}
-
-function parseSteeringRequest(value: unknown) {
-  const record = requireRecord(value);
-  return {
-    chatId: requireUuid(record.chatId, "Chat ID"),
-    instruction: requireText(record.instruction, "Steering message"),
-    messageId: requireUuid(record.messageId, "Message ID"),
-    modelId: requireText(record.modelId, "Model"),
-    workspace: requireWorkspaceContext(record.workspace),
-  };
-}
-
-function projectRunHistory(
-  messages: ChatResponse["conversation"]["messages"],
-  currentMessageId: string,
-): Array<{ role: "assistant" | "user"; text: string }> {
-  return messages.flatMap((message) => {
-    if (message.id === currentMessageId) return [];
-    const text = message.parts
-      .filter(
-        (part) =>
-          part.type === "text" || part.type === "prompt-quote" || part.type === "target-run-quote",
-      )
-      .map((part) =>
-        part.type === "prompt-quote"
-          ? `Quoted from ${part.title} revision ${part.revisionId.slice(0, 8)}:\n${part.text}`
-          : part.type === "target-run-quote"
-            ? `Quoted Target Run ${part.runId}: ${part.title}`
-            : part.text,
-      )
-      .join("\n");
-    return text ? [{ role: message.role, text }] : [];
-  });
-}
-
-function requireWorkspaceContext(value: unknown): ChatWorkspaceContext {
-  const record = requireRecord(value);
-  return {
-    activePromptId:
-      record.activePromptId === null
-        ? null
-        : requireUuid(record.activePromptId, "Active prompt ID"),
-    enabledTools: requireToolIds(record.enabledTools),
-    panelOpen: record.panelOpen !== false,
-    reasoningEffort: requireReasoningEffort(record.reasoningEffort),
-  };
-}
-
-function requireChatQuotes(value: unknown): ChatQuote[] {
-  if (!Array.isArray(value) || value.length > 6)
-    throw new RequestError("Quotes must contain at most six references.", 400);
-  return value.map((item) => {
-    const record = requireRecord(item);
-    if (record.runId !== undefined) {
-      return {
-        runId: requireUuid(record.runId, "Quoted Target Run ID"),
-        title: requireText(record.title, "Quoted Target Run title"),
-      } satisfies TargetRunQuote;
-    }
-    const text = requireText(record.text, "Quoted prompt text");
-    if (text.length > 4_000)
-      throw new RequestError("Each prompt quote must be no longer than 4,000 characters.", 400);
-    return {
-      promptId: requireUuid(record.promptId, "Quoted prompt ID"),
-      revisionId: requireUuid(record.revisionId, "Quoted revision ID"),
-      text,
-      title: requireText(record.title, "Quoted prompt title"),
-    };
-  });
-}
-
-async function resolveChatQuotes(
-  services: ApplicationServices,
-  viewerUserId: string,
-  quotes: ChatQuote[],
-): Promise<ResolvedQuote[]> {
-  return Promise.all(
-    quotes.map(async (quote) => {
-      if (isTargetRunQuote(quote)) {
-        const run = await services.targetRuns.getRun(viewerUserId, quote.runId);
-        return {
-          context: formatTargetRunContext(run),
-          part: { runId: run.id, title: run.promptTitle, type: "target-run-quote" },
-        };
-      }
-      const prompt = await services.prompts.getPrompt(quote.promptId);
-      const revision = await services.prompts
-        .getRevision(quote.promptId, quote.revisionId)
-        .catch((error) => {
-          if (error instanceof PromptRevisionNotFoundError) {
-            throw new RequestError("A quoted prompt revision was not found.", 400);
-          }
-          throw error;
-        });
-      if (!revision.markdown.includes(quote.text))
-        throw new RequestError("Quoted prompt text no longer matches its revision.", 400);
-      return {
-        context: `Quoted passage from ${prompt.title} (prompt ${quote.promptId}, revision ${quote.revisionId}):\n<prompt_quote>\n${quote.text}\n</prompt_quote>`,
-        part: { ...quote, title: prompt.title, type: "prompt-quote" },
-      };
-    }),
-  );
-}
-
-function formatWorkspaceInstruction(
-  instruction: string,
-  activePrompt: StoredPrompt | undefined,
-  quoteContexts: string[],
-): string {
-  const context: string[] = [];
-  if (activePrompt) {
-    context.push(
-      `Current prompt: ${activePrompt.title} (prompt ${activePrompt.id}, revision ${activePrompt.revisionId}).\n<prompt_markdown>\n${activePrompt.markdown}\n</prompt_markdown>`,
-    );
-  }
-  context.push(...quoteContexts);
-  return context.length ? `${context.join("\n\n")}\n\nUser request:\n${instruction}` : instruction;
-}
-
-function isTargetRunQuote(quote: ChatQuote): quote is TargetRunQuote {
-  return "runId" in quote;
-}
-
-function formatTargetRunContext(
-  run: Awaited<ReturnType<ApplicationServices["targetRuns"]["getRun"]>>,
-): string {
-  const trace = {
-    createdAt: run.createdAt,
-    id: run.id,
-    prompt: {
-      id: run.promptId,
-      revisionId: run.promptRevisionId,
-      revisionNumber: run.promptRevisionNumber,
-      title: run.promptTitle,
-    },
-    runtime: {
-      effectiveInstructionsHash: run.effectiveInstructionsHash,
-      modelId: run.targetModel,
-      profileId: run.targetProfileId,
-      profileName: run.targetProfileName,
-      profileRevisionId: run.targetProfileRevisionId,
-      reasoningEffort: run.reasoningEffort,
-    },
-    source: run.source,
-    turns: run.turns.map((turn) => ({
-      activity: turn.activity,
-      completedAt: turn.completedAt,
-      createdAt: turn.createdAt,
-      errorMessage: turn.errorMessage,
-      id: turn.id,
-      input: turn.input,
-      output: turn.output,
-      position: turn.position,
-      status: turn.status,
-      usage: turn.usage,
-    })),
-    updatedAt: run.updatedAt,
-  };
-  return `Quoted Target Run ${run.id}:\n<target_run_trace>\n${JSON.stringify(trace, null, 2)}\n</target_run_trace>`;
-}
-
-function requireAttachments(value: unknown): Attachment[] {
-  if (!Array.isArray(value) || value.length > 4)
-    throw new RequestError("Attachments must contain at most four files.", 400);
-  return value.map((item) => {
-    const record = requireRecord(item);
-    const dataUrl = requireText(record.dataUrl, "Attachment data");
-    const mediaType = requireText(record.mediaType, "Attachment media type");
-    const name = requireText(record.name, "Attachment name");
-    const size = typeof record.size === "number" ? record.size : Number.NaN;
-    if (!Number.isInteger(size) || size < 0 || size > 8 * 1024 * 1024)
-      throw new RequestError("Each attachment must be no larger than 8 MB.", 400);
-    if (!dataUrl.startsWith(`data:${mediaType}`))
-      throw new RequestError("Attachment data does not match its media type.", 400);
-    return { dataUrl, mediaType, name, size };
-  });
-}
-
-function requireReasoningEffort(value: unknown): ChatReasoningEffort {
-  if (value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
-  throw new RequestError("Reasoning effort must be low, medium, high, or extra high.", 400);
-}
-
-function requireToolIds(value: unknown): ChatToolId[] {
-  if (!Array.isArray(value)) throw new RequestError("Enabled tools must be an array.", 400);
-  const allowed = new Set<string>(CHAT_TOOL_IDS);
-  const tools = value.filter((item): item is string => typeof item === "string");
-  if (tools.length !== value.length || tools.some((item) => !allowed.has(item)))
-    throw new RequestError("Enabled tools contain an unknown tool.", 400);
-  return [...new Set(tools)] as ChatToolId[];
-}
-
-class RequestError extends Error {
-  readonly statusCode: number;
-
-  constructor(message: string, statusCode: number) {
-    super(message);
-    this.name = "RequestError";
-    this.statusCode = statusCode;
-  }
 }
 
 function errorResponse(error: unknown): Response {

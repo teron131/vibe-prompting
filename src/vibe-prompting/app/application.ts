@@ -4,7 +4,7 @@ import { AuthService } from "../auth/index.ts";
 import { createModelContext, type ModelContext } from "../clients/llm/context.ts";
 import { resolveModelIdentities } from "../clients/llm/models-dev.ts";
 import { loadModelSpendLimits } from "../config/index.ts";
-import { ConversationRunRegistry } from "../conversations/runs.ts";
+import { ConversationService } from "../conversations/service.ts";
 import { ConversationStore } from "../conversations/store.ts";
 import { CriterionLibrary } from "../criteria/index.ts";
 import { Database } from "../database/index.ts";
@@ -29,8 +29,7 @@ export type ApplicationServices = {
   evaluations: EvaluationRuns;
   evaluationResults: EvaluationResults;
   criterion: CriterionLibrary;
-  conversations: ConversationStore;
-  runs: ConversationRunRegistry;
+  conversations: ConversationService;
   settings: ApplicationSettingsStore;
   models: ModelContext;
   evaluator: EvaluationEngine;
@@ -53,7 +52,7 @@ export async function createApplicationServices(
   let targetRuns: TargetRuns | undefined;
   let evaluations: EvaluationRuns | undefined;
   let scenarios: ScenarioRuns | undefined;
-  let runs: ConversationRunRegistry | undefined;
+  let conversations: ConversationService | undefined;
   let closed = false;
   let closing: Promise<void> | undefined;
   const shutdownHooks: Array<() => Promise<void>> = [];
@@ -62,7 +61,7 @@ export async function createApplicationServices(
     (closing ??= (async () => {
       closed = true;
       const executionShutdown = [
-        runs?.close(),
+        conversations?.close(),
         scenarios?.close(),
         evaluations?.close(),
         targetRuns?.close(),
@@ -105,18 +104,29 @@ export async function createApplicationServices(
       evaluator,
     );
     scenarios = new ScenarioRuns(database, prompts, targetRuns, evaluations, modelContext);
-    runs = new ConversationRunRegistry();
+    const auth = new AuthService(database);
+    const criterion = new CriterionLibrary(database);
+    const evaluationResults = new EvaluationResults(database, search);
+    conversations = new ConversationService(new ConversationStore(database, search), {
+      auth,
+      prompts,
+      criterion,
+      evaluations,
+      evaluationResults,
+      targetRuns,
+      scenarios,
+      modelContext,
+    });
     const services: ApplicationServices = {
-      auth: new AuthService(database),
+      auth,
       prompts,
       targets,
       targetRuns,
       scenarios,
       evaluations,
-      evaluationResults: new EvaluationResults(database, search),
-      criterion: new CriterionLibrary(database),
-      conversations: new ConversationStore(database, search),
-      runs,
+      evaluationResults,
+      criterion,
+      conversations,
       settings,
       models: modelContext,
       evaluator,

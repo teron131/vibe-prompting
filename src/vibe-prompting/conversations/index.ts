@@ -1,19 +1,15 @@
-/** Publishes conversation outcomes while keeping SQL projections private. */
-
-export { type ChatMetadata, generateChatMetadata } from "./metadata.ts";
+/** Publishes conversation workflows and canonical data while keeping SQL row projections private. */
+export * from "./schemas.ts";
 export {
-  ChatNotFoundError,
-  ConversationStore,
-  type ChatMessage,
-  type ChatPage,
-  type ChatSummary,
-  type ChatWorkspaceContext,
-  type Conversation,
-  type StoredMessagePart,
-} from "./store.ts";
+  type MessagePart as StoredMessagePart,
+  type RunEvent as ConversationRunEvent,
+} from "./schemas.ts";
+export { ConversationService } from "./service.ts";
+export { ChatRequestError } from "./requests.ts";
+export { type ChatMetadata, generateChatMetadata } from "./metadata.ts";
+export { ChatNotFoundError, ConversationStore } from "./store.ts";
 export {
   ActiveChatRunError,
   type ClaimedConversationRun,
-  type ConversationRunEvent,
   ConversationRunRegistry,
 } from "./runs.ts";

@@ -141,7 +141,9 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 - `evaluation/results/` owns result filters, per-domain search projection, paginated PostgreSQL queries, aggregate analytics, and the helper-model translation into allowlisted read operations.
 - `agents/tools/` owns framework-neutral agent tool definitions over direct clients and public system operations, `agents/ai-sdk/` and `agents/openai-agents/` own agent runtime integration, and each runtime usage owns its tool adaptation.
 - `auth/` owns Google-backed identity upsert, pending and active membership, invitation throttling, and opaque application-session lifecycle.
-- `conversations/` owns private durable general-chat history, owner scoping, and detached assistant-run reconciliation rather than prompt or evaluation records.
+- `conversations/service.ts` owns private chat sending and replacement, quote resolution, history preparation, metadata cadence, steering, stopping, deletion, and inspection; adapters call complete operations rather than combining stores with run claims.
+- `conversations/schemas.ts` owns shared browser-safe chat data and event definitions, `requests.ts` validates commands, `store.ts` owns PostgreSQL persistence, and `runs.ts` owns detached execution and replayable subscriptions.
+- Browser rendering adds transient streaming state locally; unsubscribing never cancels accepted work, and conversation deletion waits for the run and metadata writes to settle.
 - `database/` owns the PostgreSQL client, ordered migrations, migration locking, and database setup rather than domain queries or authorization rules.
 - `search.ts` owns target-agnostic hybrid matching, semantic ranking, thresholds, and derived embedding-cache lifecycle; each domain owner projects its own searchable documents.
 - `clients/` owns direct model and service clients plus shared provider primitives that do not construct agent runtimes, including LangChain chat models, embeddings, Exa Search API access, Exa MCP connection data, Langfuse, model identity, pricing, and spend accounting.

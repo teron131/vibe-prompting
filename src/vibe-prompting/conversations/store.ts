@@ -7,66 +7,15 @@ import type postgres from "postgres";
 import type { Database, DatabaseClient } from "../database/index.ts";
 import type { HybridSearch } from "../search.ts";
 import { type ChatMetadata, validateChatMetadata } from "./metadata.ts";
-
-export type StoredMessagePart =
-  | { text: string; type: "text" }
-  | { dataUrl: string; mediaType: string; name: string; size: number; type: "file" }
-  | { summary: string; type: "reasoning" }
-  | {
-      callId: string;
-      name: string;
-      input?: unknown;
-      output?: unknown;
-      state: "completed" | "failed" | "running";
-      summary?: string;
-      type: "tool";
-    }
-  | { promptId: string; revisionId: string; type: "prompt-revision" }
-  | {
-      promptId: string;
-      revisionId: string;
-      text: string;
-      title: string;
-      type: "prompt-quote";
-    }
-  | { runId: string; title: string; type: "target-run-quote" }
-  | { report: unknown; runId?: string; type: "evaluation" };
-
-export type ChatWorkspaceContext = {
-  activePromptId: string | null;
-  enabledTools: Array<"prompt-library" | "evaluations" | "web-search">;
-  panelOpen: boolean;
-  reasoningEffort: "high" | "low" | "medium" | "xhigh";
-};
-
-export type ChatMessage = {
-  chatId: string;
-  createdAt: string;
-  id: string;
-  metadata: Record<string, unknown>;
-  parts: StoredMessagePart[];
-  role: "assistant" | "user";
-};
-
-export type ChatSummary = {
-  createdAt: string;
-  icon: string;
-  id: string;
-  modelId: string;
-  title: string;
-  updatedAt: string;
-};
-
-export type Conversation = {
-  chat: ChatSummary;
-  context: ChatWorkspaceContext;
-  messages: ChatMessage[];
-};
-
-export type ChatPage = {
-  chats: ChatSummary[];
-  nextCursor: string | null;
-};
+import {
+  CHAT_TOOL_IDS,
+  type ChatMessage,
+  type ChatPage,
+  type ChatSummary,
+  type ChatWorkspaceContext,
+  type Conversation,
+  type MessagePart as StoredMessagePart,
+} from "./schemas.ts";
 
 type ChatRow = {
   createdAt: Date;
@@ -117,7 +66,7 @@ type UserMessageInput = {
 const CHAT_MESSAGES_PER_HOUR = 300;
 const CHAT_MESSAGES_PER_DAY = 1_500;
 const CHAT_USAGE_LOCK = 1_450_701_648;
-const WORKSPACE_TOOL_IDS = new Set(["prompt-library", "evaluations", "web-search"]);
+const WORKSPACE_TOOL_IDS = new Set<string>(CHAT_TOOL_IDS);
 
 export class ChatNotFoundError extends Error {
   readonly statusCode = 404;

@@ -12,6 +12,11 @@ import {
 import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
 import { resolveModelIdentities } from "../../clients/llm/models-dev.ts";
 import { type ModelConfig } from "../../config/index.ts";
+import type {
+  Attachment as ChatAttachment,
+  ChatReasoningEffort,
+  ChatToolId,
+} from "../../conversations/schemas.ts";
 import type { CriterionLibrary } from "../../criteria/index.ts";
 import type { EvaluationResults } from "../../evaluation/results/index.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
@@ -35,6 +40,13 @@ import {
 import { AGENT_INSTRUCTIONS } from "./instructions.ts";
 import { createModel } from "./model.ts";
 import { readChatCompletionsReasoning } from "./reasoning.ts";
+
+export {
+  CHAT_TOOL_IDS,
+  type ChatToolId,
+  type ChatReasoningEffort,
+  type Attachment as ChatAttachment,
+} from "../../conversations/schemas.ts";
 
 export type AgentRuntime = {
   model: ModelConfig;
@@ -75,23 +87,10 @@ export type PromptEditInput = {
   signal?: AbortSignal;
 };
 
-export const CHAT_TOOL_IDS = ["prompt-library", "evaluations", "web-search"] as const;
-
-export type ChatToolId = (typeof CHAT_TOOL_IDS)[number];
-
-export type ChatReasoningEffort = "low" | "medium" | "high" | "xhigh";
-
 type ChatInputContent = Exclude<
   Extract<AgentInputItem, { role: "user" }>["content"],
   string
 >[number];
-
-export type ChatAttachment = {
-  name: string;
-  mediaType: string;
-  size: number;
-  dataUrl: string;
-};
 
 export type ChatConversationMessage = {
   role: "assistant" | "user";

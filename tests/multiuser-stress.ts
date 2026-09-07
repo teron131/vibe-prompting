@@ -89,7 +89,8 @@ try {
   const { activeUsers, pendingUser, sessionCount } = await seedUsers(services);
   await exerciseTargetPinning(services, activeUsers[0]!.id, fakeProvider);
   await exerciseInvitationBoundary(services, activeUsers[0]!.id, pendingUser);
-  const chatResult = await exerciseChatIsolationAndLimits(services, activeUsers);
+  await exerciseConversationService(services, activeUsers, testDatabaseUrl);
+  const chatResult = await exerciseChatIsolationAndLimits(services, activeUsers, testDatabaseUrl);
   const conflictResult = await exerciseSharedConflicts(services, activeUsers);
 
   fakeProvider.reset();
@@ -345,147 +346,242 @@ async function exerciseInvitationBoundary(
   );
 }
 
+/** Verifies the backend chat workflow against real PostgreSQL and the same fake SDK transport used by the stress harness. */
+async function exerciseConversationService(
+  application: ApplicationServices,
+  users: ActiveUser[],
+  databaseUrl: string,
+): Promise<void> {
+  const actor = users[0]!.id;
+  const foreign = users[1]!.id;
+  const chatId = randomUUID();
+  const messageId = randomUUID();
+  const input = {
+    chatId,
+    messageId,
+    modelId: MODEL_ID,
+    instruction: "Backend conversation smoke",
+    attachments: [],
+    quotes: [],
+    workspace: { activePromptId: null, enabledTools: [], panelOpen: false, reasoningEffort: "low" },
+  };
+  const first = await application.conversations.send(actor, input);
+  await first.completion;
+  const events: Array<{ type: string }> = [];
+  first.subscribe((event) => events.push(event));
+  assert.equal(events.at(-1)?.type, "finish");
+  const initial = await application.conversations.inspect(actor, chatId);
+  assert.equal(initial.active, false);
+  assert.equal(initial.conversation.messages.length, 2);
+  assert.equal(
+    initial.conversation.messages[1]?.parts.find((part) => part.type === "text")?.text,
+    "Deterministic target output.",
+  );
+  for (const operation of [
+    () => application.conversations.inspect(foreign, chatId),
+    () => application.conversations.stop(foreign, { chatId }),
+    () => application.conversations.steer(foreign, input),
+    () => application.conversations.delete(foreign, chatId),
+    () => application.conversations.send(foreign, { ...input, replaceFromMessageId: messageId }),
+  ])
+    await assert.rejects(operation(), { statusCode: 404 });
+  const replacement = await application.conversations.send(actor, {
+    ...input,
+    instruction: "Replace the saved user message",
+    replaceFromMessageId: messageId,
+  });
+  await replacement.completion;
+  const replaced = await application.conversations.inspect(actor, chatId);
+  assert.equal(replaced.conversation.messages.length, 2);
+  assert.equal(replaced.conversation.messages[0]?.id, messageId);
+  assert.deepEqual(replaced.conversation.messages[0]?.parts, [
+    { type: "text", text: "Replace the saved user message" },
+  ]);
+  const next = await application.conversations.send(actor, {
+    ...input,
+    messageId: randomUUID(),
+    instruction: "Continue the conversation",
+  });
+  await next.completion;
+  assert.equal(
+    (await application.conversations.inspect(actor, chatId)).conversation.messages.length,
+    4,
+  );
+  assert.equal(
+    (await application.conversations.listChats(actor, {})).chats.some((chat) => chat.id === chatId),
+    true,
+  );
+  assert.equal(
+    (await application.conversations.searchChats(foreign, "Backend conversation smoke")).some(
+      (chat) => chat.id === chatId,
+    ),
+    false,
+  );
+  assert.deepEqual(await application.conversations.delete(actor, chatId), { deleted: true });
+  await assert.rejects(application.conversations.inspect(actor, chatId), { statusCode: 404 });
+  // Reset only the disposable harness's usage ledger before its exact 300-message quota test.
+  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
+  try {
+    await sql`DELETE FROM chat_usage_events`;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 async function exerciseChatIsolationAndLimits(
   application: ApplicationServices,
   users: ActiveUser[],
+  databaseUrl: string,
 ): Promise<{ chatIdsByUser: string[][]; acceptedMessages: number; rateLimitedMessages: number }> {
-  const context = {
-    activePromptId: null,
-    enabledTools: ["prompt-library" as const, "evaluations" as const],
-    panelOpen: false,
-    reasoningEffort: "medium" as const,
-  };
-  const chatIdsByUser: string[][] = [];
-  const initialMessageIds = new Map<string, string>();
-  for (const [userIndex, user] of users.entries()) {
-    const chatIds: string[] = [];
-    for (let chatIndex = 0; chatIndex < 3; chatIndex += 1) {
-      const chatId = randomUUID();
-      const messageId = randomUUID();
-      await application.conversations.createWithUserMessage(user.id, {
-        chatId,
-        context,
-        instruction: `Shared searchable phrase for user ${userIndex + 1} chat ${chatIndex + 1}.`,
-        messageId,
-        modelId: MODEL_ID,
-      });
-      chatIds.push(chatId);
-      initialMessageIds.set(chatId, messageId);
-    }
-    chatIdsByUser.push(chatIds);
-  }
-
-  for (const [userIndex, user] of users.entries()) {
-    const expectedIds = new Set(chatIdsByUser[userIndex]);
-    const listedIds = new Set<string>();
-    let cursor: string | undefined;
-    do {
-      const page = await application.conversations.listChats(user.id, { cursor, limit: 2 });
-      page.chats.forEach(({ id }) => listedIds.add(id));
-      cursor = page.nextCursor ?? undefined;
-    } while (cursor);
-    assert.deepEqual(
-      listedIds,
-      expectedIds,
-      `Chat pagination leaked or skipped user ${userIndex + 1}.`,
-    );
-    const searched = await application.conversations.searchChats(
-      user.id,
-      "Shared searchable phrase",
-    );
-    assert.deepEqual(
-      new Set(searched.map(({ id }) => id)),
-      expectedIds,
-      `Chat search leaked or skipped user ${userIndex + 1}.`,
-    );
-  }
-
-  const owner = users[0]!;
-  const foreign = users[1]!;
-  const privateChatId = chatIdsByUser[0]![0]!;
-  const privateMessageId = initialMessageIds.get(privateChatId)!;
-  const activeRun = application.runs.claim(privateChatId);
-  activeRun.publish({ type: "reasoning-start" });
-  const registryBefore = application.runs.snapshot(privateChatId);
-  const foreignOperations = [
-    () => application.conversations.getConversation(foreign.id, privateChatId),
-    () => application.conversations.requireChat(foreign.id, privateChatId),
-    () =>
-      application.conversations.createWithUserMessage(foreign.id, {
-        chatId: privateChatId,
-        context,
-        instruction: "Foreign create collision.",
-        messageId: randomUUID(),
-        modelId: MODEL_ID,
-      }),
-    () =>
-      application.conversations.appendUserMessage(foreign.id, {
-        chatId: privateChatId,
-        context,
-        instruction: "Foreign append.",
-        messageId: randomUUID(),
-        modelId: MODEL_ID,
-      }),
-    () =>
-      application.conversations.replaceUserMessage(foreign.id, {
-        chatId: privateChatId,
-        context,
-        instruction: "Foreign replacement.",
-        messageId: privateMessageId,
-        modelId: MODEL_ID,
-        replaceFromMessageId: privateMessageId,
-      }),
-    () =>
-      application.conversations.updateMetadata(foreign.id, {
-        chatId: privateChatId,
-        icon: "x",
-        title: "Foreign",
-      }),
-    () => application.conversations.deleteChat(foreign.id, privateChatId),
-  ];
+  const { Database } = await import("../src/vibe-prompting/database/index.ts");
+  const { ConversationStore } = await import("../src/vibe-prompting/conversations/store.ts");
+  const { ConversationRunRegistry } = await import("../src/vibe-prompting/conversations/runs.ts");
+  const { HybridSearch } = await import("../src/vibe-prompting/search.ts");
+  const database = new Database(databaseUrl);
+  const store = new ConversationStore(
+    database,
+    new HybridSearch(database, application.models.readConfig),
+  );
+  const registry = new ConversationRunRegistry();
   try {
-    for (const operation of foreignOperations) await assertRejectsWithStatus(operation, 404);
-    assert.deepEqual(application.runs.snapshot(privateChatId), registryBefore);
-  } finally {
-    activeRun.release();
-  }
-  assert.deepEqual(application.runs.snapshot(privateChatId), { active: false, events: [] });
+    const context = {
+      activePromptId: null,
+      enabledTools: ["prompt-library" as const, "evaluations" as const],
+      panelOpen: false,
+      reasoningEffort: "medium" as const,
+    };
+    const chatIdsByUser: string[][] = [];
+    const initialMessageIds = new Map<string, string>();
+    for (const [userIndex, user] of users.entries()) {
+      const chatIds: string[] = [];
+      for (let chatIndex = 0; chatIndex < 3; chatIndex += 1) {
+        const chatId = randomUUID();
+        const messageId = randomUUID();
+        await store.createWithUserMessage(user.id, {
+          chatId,
+          context,
+          instruction: `Shared searchable phrase for user ${userIndex + 1} chat ${chatIndex + 1}.`,
+          messageId,
+          modelId: MODEL_ID,
+        });
+        chatIds.push(chatId);
+        initialMessageIds.set(chatId, messageId);
+      }
+      chatIdsByUser.push(chatIds);
+    }
 
-  await application.conversations.replaceUserMessage(owner.id, {
-    chatId: privateChatId,
-    context,
-    instruction: "Owner replacement with Shared searchable phrase.",
-    messageId: privateMessageId,
-    modelId: MODEL_ID,
-    replaceFromMessageId: privateMessageId,
-  });
+    for (const [userIndex, user] of users.entries()) {
+      const expectedIds = new Set(chatIdsByUser[userIndex]);
+      const listedIds = new Set<string>();
+      let cursor: string | undefined;
+      do {
+        const page = await store.listChats(user.id, { cursor, limit: 2 });
+        page.chats.forEach(({ id }) => listedIds.add(id));
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor);
+      assert.deepEqual(
+        listedIds,
+        expectedIds,
+        `Chat pagination leaked or skipped user ${userIndex + 1}.`,
+      );
+      const searched = await store.searchChats(user.id, "Shared searchable phrase");
+      assert.deepEqual(
+        new Set(searched.map(({ id }) => id)),
+        expectedIds,
+        `Chat search leaked or skipped user ${userIndex + 1}.`,
+      );
+    }
 
-  let acceptedMessages = 25;
-  let rateLimitedMessages = 0;
-  const remainingAttempts = 280;
-  for (let offset = 0; offset < remainingAttempts; offset += 20) {
-    const wave = Array.from({ length: Math.min(20, remainingAttempts - offset) }, (_, index) =>
-      application.conversations.appendUserMessage(owner.id, {
-        chatId: privateChatId,
-        context,
-        instruction: `Rate ledger message ${offset + index + 1}.`,
-        messageId: randomUUID(),
-        modelId: MODEL_ID,
-      }),
-    );
-    const results = await Promise.allSettled(wave);
-    for (const result of results) {
-      if (result.status === "fulfilled") acceptedMessages += 1;
-      else {
-        assert.equal(readStatusCode(result.reason), 429);
-        assert.ok(readRetryAfter(result.reason) > 0);
-        rateLimitedMessages += 1;
+    const owner = users[0]!;
+    const foreign = users[1]!;
+    const privateChatId = chatIdsByUser[0]![0]!;
+    const privateMessageId = initialMessageIds.get(privateChatId)!;
+    const activeRun = registry.claim(privateChatId);
+    activeRun.publish({ type: "reasoning-start" });
+    const registryBefore = registry.snapshot(privateChatId);
+    const foreignOperations = [
+      () => store.getConversation(foreign.id, privateChatId),
+      () => store.requireChat(foreign.id, privateChatId),
+      () =>
+        store.createWithUserMessage(foreign.id, {
+          chatId: privateChatId,
+          context,
+          instruction: "Foreign create collision.",
+          messageId: randomUUID(),
+          modelId: MODEL_ID,
+        }),
+      () =>
+        store.appendUserMessage(foreign.id, {
+          chatId: privateChatId,
+          context,
+          instruction: "Foreign append.",
+          messageId: randomUUID(),
+          modelId: MODEL_ID,
+        }),
+      () =>
+        store.replaceUserMessage(foreign.id, {
+          chatId: privateChatId,
+          context,
+          instruction: "Foreign replacement.",
+          messageId: privateMessageId,
+          modelId: MODEL_ID,
+          replaceFromMessageId: privateMessageId,
+        }),
+      () =>
+        store.updateMetadata(foreign.id, {
+          chatId: privateChatId,
+          icon: "x",
+          title: "Foreign",
+        }),
+      () => store.deleteChat(foreign.id, privateChatId),
+    ];
+    try {
+      for (const operation of foreignOperations) await assertRejectsWithStatus(operation, 404);
+      assert.deepEqual(registry.snapshot(privateChatId), registryBefore);
+    } finally {
+      activeRun.release();
+    }
+    assert.deepEqual(registry.snapshot(privateChatId), { active: false, events: [] });
+
+    await store.replaceUserMessage(owner.id, {
+      chatId: privateChatId,
+      context,
+      instruction: "Owner replacement with Shared searchable phrase.",
+      messageId: privateMessageId,
+      modelId: MODEL_ID,
+      replaceFromMessageId: privateMessageId,
+    });
+
+    let acceptedMessages = 25;
+    let rateLimitedMessages = 0;
+    const remainingAttempts = 280;
+    for (let offset = 0; offset < remainingAttempts; offset += 20) {
+      const wave = Array.from({ length: Math.min(20, remainingAttempts - offset) }, (_, index) =>
+        store.appendUserMessage(owner.id, {
+          chatId: privateChatId,
+          context,
+          instruction: `Rate ledger message ${offset + index + 1}.`,
+          messageId: randomUUID(),
+          modelId: MODEL_ID,
+        }),
+      );
+      const results = await Promise.allSettled(wave);
+      for (const result of results) {
+        if (result.status === "fulfilled") acceptedMessages += 1;
+        else {
+          assert.equal(readStatusCode(result.reason), 429);
+          assert.ok(readRetryAfter(result.reason) > 0);
+          rateLimitedMessages += 1;
+        }
       }
     }
+    assert.equal(acceptedMessages, 300);
+    assert.equal(rateLimitedMessages, 5);
+    return { chatIdsByUser, acceptedMessages, rateLimitedMessages };
+  } finally {
+    await registry.close();
+    await database.close();
   }
-  assert.equal(acceptedMessages, 300);
-  assert.equal(rateLimitedMessages, 5);
-  return { chatIdsByUser, acceptedMessages, rateLimitedMessages };
 }
 
 /** Proves definition-only pinning, unchanged instruction hashes, and continuation across prompt/profile edits. */
@@ -1233,6 +1329,11 @@ async function startFakeProvider(): Promise<FakeProvider> {
         structured: typeof body.response_format === "object" && body.response_format !== null,
         toolCount: Array.isArray(body.tools) ? body.tools.length : 0,
       });
+      // Hold the cancellation fixture until the client disconnects so completion cannot race the assertion.
+      if (JSON.stringify(body.messages).includes("Cancellation turn")) {
+        await new Promise<void>((resolve) => response.once("close", resolve));
+        return;
+      }
       await new Promise((resolve) =>
         setTimeout(
           resolve,
@@ -1313,26 +1414,31 @@ function writeChatResponse(response: ServerResponse, body: Record<string, unknow
   const initialDriver = requestMessages.includes("<scenario_instruction>");
   const continuingDriver = requestMessages.includes("<public_transcript>");
   const structuredContent =
-    initialDriver || continuingDriver
-      ? JSON.stringify(
-          initialDriver
-            ? {
-                action: "send",
-                message: "First generated user turn.",
-                driverBrief: "Ask once and finish.",
-              }
-            : { action: "end", message: null },
-        )
-      : structuredResultNames.length > 0
+    structuredResultNames.includes("title") && structuredResultNames.includes("icons")
+      ? JSON.stringify({
+          title: "Backend conversation",
+          icons: ["message-circle", "messages-square", "bot"],
+        })
+      : initialDriver || continuingDriver
         ? JSON.stringify(
-            Object.fromEntries(
-              structuredResultNames.map((name) => [
-                name,
-                { value: true, comment: "Deterministic pass.", evidence: [] },
-              ]),
-            ),
+            initialDriver
+              ? {
+                  action: "send",
+                  message: "First generated user turn.",
+                  driverBrief: "Ask once and finish.",
+                }
+              : { action: "end", message: null },
           )
-        : undefined;
+        : structuredResultNames.length > 0
+          ? JSON.stringify(
+              Object.fromEntries(
+                structuredResultNames.map((name) => [
+                  name,
+                  { value: true, comment: "Deterministic pass.", evidence: [] },
+                ]),
+              ),
+            )
+          : undefined;
   const toolCall = toolName
     ? [
         {

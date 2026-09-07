@@ -1,27 +1,6 @@
 /** Owns one-active-run claims, detached event publication, and idempotent process-local cancellation for general chats. */
 
-export type ConversationRunEvent =
-  | { delta: string; type: "text-delta" }
-  | { type: "reasoning-start" }
-  | { delta: string; type: "reasoning-delta" }
-  | { type: "response-reset" }
-  | { startedAt: string; type: "response-start" }
-  | { durationMs: number; type: "response-complete" }
-  | { chatId: string; icon: string; title: string; type: "chat-metadata" }
-  | {
-      callId: string;
-      input?: unknown;
-      name: string;
-      output?: unknown;
-      state: "completed" | "failed" | "running";
-      summary?: string;
-      type: "tool";
-    }
-  | { summary: string; type: "reasoning" }
-  | { promptId: string; revisionId: string; type: "prompt-revision" }
-  | { message: string; type: "error" }
-  | { type: "stopped" }
-  | { type: "finish" };
+import type { RunEvent as ConversationRunEvent } from "./schemas.ts";
 
 type RunListener = (event: ConversationRunEvent) => void;
 const MAX_ACTIVE_RUNS = 10;
@@ -63,6 +42,7 @@ export class ChatRunCapacityError extends Error {
 }
 
 export type ClaimedConversationRun = {
+  completion: Promise<void>;
   publish(event: ConversationRunEvent): void;
   release(): void;
   signal: AbortSignal;
@@ -132,6 +112,7 @@ export class ConversationRunRegistry {
 
     run.release = release;
     return {
+      completion: run.done,
       publish,
       release,
       signal: controller.signal,
@@ -167,6 +148,7 @@ export class ConversationRunRegistry {
         },
       },
       subscribe(listener) {
+        for (const event of run.events) listener(event);
         if (run.settled) return () => undefined;
         run.listeners.add(listener);
         return () => run.listeners.delete(listener);
