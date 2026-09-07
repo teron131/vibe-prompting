@@ -1,338 +1,63 @@
-/** Owns database-backed target profiles and constructs pinned Vercel AI SDK targets without leaking profile policy into deployed source. */
+/** Composes profile persistence, revision pinning, and executable runtimes behind the public Target System API. */
 
-import { createHash, randomUUID } from "node:crypto";
-
-import { createMCPClient } from "@ai-sdk/mcp";
-import type { ToolSet } from "ai";
-import type postgres from "postgres";
-
-import { createModel, createReasoningProviderOptions } from "../agents/ai-sdk/model.ts";
-import { EXA_WEB_SEARCH_TOOL, getExaMcpConnection } from "../clients/exa.ts";
-import type { Database, DatabaseClient } from "../database/index.ts";
+import type { Database } from "../database/index.ts";
 import type { PromptSystem } from "../prompt-system/index.ts";
-import { type AiSdkTargetRuntime, createAiSdkTargetRuntime } from "./adapters/ai-sdk.ts";
-import type { Target } from "./api.ts";
-import { type TargetConfiguration, targetConfigurationSchema } from "./configuration.ts";
+import {
+  type PinnedTargetDefinition,
+  resolveTargetDefinition,
+  type TargetPinInput,
+} from "./pinning.ts";
+import {
+  type CreateProfileInput,
+  type ProfileRevisionInput,
+  type TargetProfile,
+  TargetProfiles,
+} from "./profiles.ts";
+import { openTargetRuntime, type PinnedTarget } from "./runtime.ts";
 
-export type TargetProfile = {
-  configuration: TargetConfiguration;
-  id: string;
-  instructions: string;
-  name: string;
-  revisionId: string;
-};
+export { TargetProfileError, TargetProfileNotFoundError, type TargetProfile } from "./profiles.ts";
+export type { PinnedTargetDefinition, TargetPinInput } from "./pinning.ts";
+export type { PinnedTarget } from "./runtime.ts";
 
-export type PinnedTarget = {
-  close(): Promise<void>;
-  effectiveInstructionsHash: string;
-  profile: TargetProfile;
-  runtime: AiSdkTargetRuntime;
-  target: Target<string, string>;
-};
-
-/** Reports target-profile validation and lifecycle failures with an HTTP-safe status code. */
-export class TargetProfileError extends Error {
-  readonly code: string | undefined;
-  readonly statusCode: number;
-
-  constructor(message: string, statusCode: number, code?: string) {
-    super(message);
-    this.code = code;
-    this.name = "TargetProfileError";
-    this.statusCode = statusCode;
-  }
-}
-
-type ProfileRow = {
-  configuration: unknown;
-  id: string;
-  instructions: string;
-  name: string;
-  revisionId: string;
-};
-
-type ProfileHeadRow = {
-  currentRevisionId: string;
-  promptId: string;
-};
-
-type ProfileRevisionNumberRow = { revisionNumber: number };
-
-export class TargetProfileNotFoundError extends Error {
-  readonly statusCode = 404;
-
-  constructor(promptId: string) {
-    super(`No target profile is configured for prompt ${promptId}.`);
-    this.name = "TargetProfileNotFoundError";
-  }
-}
-
+/** Keeps the public Target operations stable while sharing one pinning recipe across durable workflows. */
 export class TargetSystem {
-  readonly #database: Database;
+  readonly #profiles: TargetProfiles;
   readonly #prompts: PromptSystem;
 
   constructor(database: Database, prompts: PromptSystem) {
-    this.#database = database;
+    this.#profiles = new TargetProfiles(database, prompts);
     this.#prompts = prompts;
   }
 
-  async createProfile(
-    actorUserId: string,
-    input: {
-      configuration: TargetConfiguration;
-      instructions: string;
-      name: string;
-      promptId: string;
-    },
-  ): Promise<TargetProfile> {
-    const name = input.name.trim();
-    const instructions = input.instructions.trim();
-    if (!name) throw new TargetProfileError("Target profile name is required.", 400);
-    if (!instructions)
-      throw new TargetProfileError("Target profile instructions are required.", 400);
-    const parsedConfiguration = targetConfigurationSchema.safeParse(input.configuration);
-    if (!parsedConfiguration.success) {
-      throw new TargetProfileError(
-        parsedConfiguration.error.issues[0]?.message ?? "Target configuration is invalid.",
-        400,
-      );
-    }
-    const configuration = parsedConfiguration.data;
-    await this.#prompts.getPrompt(input.promptId);
-    const id = randomUUID();
-    const revisionId = randomUUID();
-    return this.#database.transaction(async (sql) => {
-      await sql`
-        INSERT INTO target_profiles (id, name, prompt_id, current_revision_id)
-        VALUES (${id}, ${name}, ${input.promptId}, ${revisionId})
-      `;
-      await sql`
-        INSERT INTO target_profile_revisions (
-          id, target_profile_id, revision_number, instructions, configuration, created_by_user_id
-        )
-        VALUES (
-          ${revisionId}, ${id}, 1, ${instructions},
-          ${sql.json(configuration as postgres.JSONValue)}, ${actorUserId}
-        )
-      `;
-      return requireProfileForPrompt(sql, input.promptId);
-    });
+  /** Creates a revisioned profile for an existing prompt. */
+  async createProfile(actorUserId: string, input: CreateProfileInput): Promise<TargetProfile> {
+    return this.#profiles.createProfile(actorUserId, input);
   }
 
   async getProfileForPrompt(promptId: string): Promise<TargetProfile> {
-    return this.#database.run((sql) => requireProfileForPrompt(sql, promptId));
+    return this.#profiles.getProfileForPrompt(promptId);
   }
 
-  /** Persists the vanilla AI SDK agent only when a prompt has no explicit target override. */
+  /** Persists a default profile only when the prompt has no explicit profile. */
   async ensureProfileForPrompt(actorUserId: string, promptId: string): Promise<TargetProfile> {
-    await this.#prompts.getPrompt(promptId);
-    const id = randomUUID();
-    const revisionId = randomUUID();
-    return this.#database.transaction(async (sql) => {
-      const [created] = await sql<{ id: string }[]>`
-        INSERT INTO target_profiles (id, name, prompt_id, current_revision_id)
-        VALUES (${id}, 'AI SDK agent', ${promptId}, ${revisionId})
-        ON CONFLICT (prompt_id) DO NOTHING
-        RETURNING id
-      `;
-      if (created) {
-        await sql`
-          INSERT INTO target_profile_revisions (
-            id, target_profile_id, revision_number, instructions, configuration, created_by_user_id
-          )
-          VALUES (${revisionId}, ${id}, 1, '', ${sql.json({})}, ${actorUserId})
-        `;
-      }
-      return requireProfileForPrompt(sql, promptId);
-    });
+    return this.#profiles.ensureProfileForPrompt(actorUserId, promptId);
   }
 
+  /** Advances a profile only when its expected revision still owns the head. */
   async appendProfileRevision(
     actorUserId: string,
-    input: {
-      configuration: TargetConfiguration;
-      expectedRevisionId: string;
-      instructions: string;
-      profileId: string;
-    },
+    input: ProfileRevisionInput,
   ): Promise<TargetProfile> {
-    const instructions = input.instructions.trim();
-    if (!instructions) throw new Error("Target profile instructions are required.");
-    const configuration = targetConfigurationSchema.parse(input.configuration);
-    return this.#database.transaction(async (sql) => {
-      const [current] = await sql<ProfileHeadRow[]>`
-        SELECT prompt_id, current_revision_id
-        FROM target_profiles
-        WHERE id = ${input.profileId}
-        FOR UPDATE
-      `;
-      if (!current) throw new Error(`Target profile ${input.profileId} was not found.`);
-      if (current.currentRevisionId !== input.expectedRevisionId) {
-        throw new TargetProfileError("Someone saved a newer target profile.", 409, "stale-write");
-      }
-      const [revision] = await sql<ProfileRevisionNumberRow[]>`
-        SELECT revision_number
-        FROM target_profile_revisions
-        WHERE id = ${current.currentRevisionId}
-      `;
-      if (!revision)
-        throw new Error(`Target profile revision ${current.currentRevisionId} was not found.`);
-      const revisionId = randomUUID();
-      await sql`
-        INSERT INTO target_profile_revisions (
-          id, target_profile_id, parent_revision_id, revision_number, instructions, configuration,
-          created_by_user_id
-        )
-        VALUES (
-          ${revisionId}, ${input.profileId}, ${input.expectedRevisionId},
-          ${revision.revisionNumber + 1}, ${instructions},
-          ${sql.json(configuration as postgres.JSONValue)}, ${actorUserId}
-        )
-      `;
-      await sql`
-        UPDATE target_profiles
-        SET current_revision_id = ${revisionId}
-        WHERE id = ${input.profileId}
-      `;
-      return requireProfileForPrompt(sql, current.promptId);
-    });
+    return this.#profiles.appendProfileRevision(actorUserId, input);
   }
 
-  async createPinnedTarget(input: {
-    actorUserId: string;
-    promptId: string;
-    promptRevisionId: string;
-    targetProfileId?: string;
-    targetProfileRevisionId?: string;
-    targetModel: string;
-    reasoningEffort?: "high" | "low" | "medium" | "xhigh";
-  }): Promise<PinnedTarget> {
-    const [profile, prompt] = await Promise.all([
-      input.targetProfileId && input.targetProfileRevisionId
-        ? this.#database.run((sql) =>
-            requireProfileRevision(
-              sql,
-              input.promptId,
-              input.targetProfileId as string,
-              input.targetProfileRevisionId as string,
-            ),
-          )
-        : this.ensureProfileForPrompt(input.actorUserId, input.promptId),
-      this.#prompts.getRevision(input.promptId, input.promptRevisionId),
-    ]);
-    const effectiveInstructions = [profile.instructions, prompt.markdown]
-      .filter(Boolean)
-      .join("\n\n");
-    const effectiveInstructionsHash = createHash("sha256")
-      .update(effectiveInstructions)
-      .digest("hex");
-    const model = createModel(input.targetModel);
-    const exa = profile.configuration.tools?.includes("web-search")
-      ? await connectAiSdkExaSearch()
-      : undefined;
-    const runtime = createAiSdkTargetRuntime({
-      configuration: profile.configuration,
-      instructions: effectiveInstructions,
-      model,
-      modelId: input.targetModel,
-      profileId: profile.id,
-      providerOptions: input.reasoningEffort
-        ? createReasoningProviderOptions(input.targetModel, input.reasoningEffort)
-        : undefined,
-      tools: exa?.tools,
-    });
-    return {
-      close: () => exa?.close() ?? Promise.resolve(),
-      effectiveInstructionsHash,
-      profile,
-      runtime,
-      target: runtime.target,
-    };
+  /** Resolves the exact executable definition without connecting to model or tool providers. */
+  async resolveDefinition(input: TargetPinInput): Promise<PinnedTargetDefinition> {
+    return resolveTargetDefinition(this.#prompts, this.#profiles, input);
   }
-}
 
-type ConnectedExaTools = {
-  close: () => Promise<void>;
-  tools: ToolSet;
-};
-
-/** Ports the primitive Exa connection into the exact AI SDK MCP tool contract used by configured Targets. */
-async function connectAiSdkExaSearch(): Promise<ConnectedExaTools> {
-  const connection = getExaMcpConnection();
-  const client = await createMCPClient({
-    transport: {
-      type: "http",
-      url: connection.url,
-      ...(connection.headers && { headers: connection.headers }),
-    },
-  });
-  try {
-    const definitions = await client.listTools();
-    const definition = definitions.tools.find(({ name }) => name === EXA_WEB_SEARCH_TOOL);
-    if (!definition) throw new Error(`Exa MCP does not expose: ${EXA_WEB_SEARCH_TOOL}.`);
-    const tools = client.toolsFromDefinitions({ ...definitions, tools: [definition] });
-    return {
-      close: () => client.close(),
-      tools: { [EXA_WEB_SEARCH_TOOL]: tools[EXA_WEB_SEARCH_TOOL] as ToolSet[string] },
-    };
-  } catch (error) {
-    await client.close();
-    throw error;
+  /** Opens an executable runtime from the same definition used to prepare durable evaluation records. */
+  async createPinnedTarget(input: TargetPinInput): Promise<PinnedTarget> {
+    return openTargetRuntime(await this.resolveDefinition(input));
   }
-}
-
-async function requireProfileRevision(
-  sql: DatabaseClient,
-  promptId: string,
-  profileId: string,
-  revisionId: string,
-): Promise<TargetProfile> {
-  const [row] = await sql<ProfileRow[]>`
-    SELECT
-      target_profiles.id,
-      target_profiles.name,
-      target_profile_revisions.id AS revision_id,
-      target_profile_revisions.instructions,
-      target_profile_revisions.configuration
-    FROM target_profiles
-    JOIN target_profile_revisions
-      ON target_profile_revisions.target_profile_id = target_profiles.id
-    WHERE target_profiles.prompt_id = ${promptId}
-      AND target_profiles.id = ${profileId}
-      AND target_profile_revisions.id = ${revisionId}
-  `;
-  if (!row) throw new TargetProfileNotFoundError(promptId);
-  return {
-    configuration: targetConfigurationSchema.parse(row.configuration),
-    id: row.id,
-    instructions: row.instructions,
-    name: row.name,
-    revisionId: row.revisionId,
-  };
-}
-
-async function requireProfileForPrompt(
-  sql: DatabaseClient,
-  promptId: string,
-): Promise<TargetProfile> {
-  const [row] = await sql<ProfileRow[]>`
-    SELECT
-      target_profiles.id,
-      target_profiles.name,
-      target_profiles.current_revision_id AS revision_id,
-      target_profile_revisions.instructions,
-      target_profile_revisions.configuration
-    FROM target_profiles
-    JOIN target_profile_revisions
-      ON target_profile_revisions.id = target_profiles.current_revision_id
-    WHERE target_profiles.prompt_id = ${promptId}
-  `;
-  if (!row) throw new TargetProfileNotFoundError(promptId);
-  return {
-    configuration: targetConfigurationSchema.parse(row.configuration),
-    id: row.id,
-    instructions: row.instructions,
-    name: row.name,
-    revisionId: row.revisionId,
-  };
 }

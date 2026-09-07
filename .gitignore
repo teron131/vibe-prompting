@@ -2,7 +2,6 @@
 .pnpm-store/
 .playwright-cli/
 .impeccable/
-*test*
 *.patch
 
 # Byte-compiled / optimized / DLL files

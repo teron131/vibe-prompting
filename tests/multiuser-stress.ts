@@ -75,6 +75,7 @@ try {
   await services.targetRuns.reconcileInterrupted();
 
   const { activeUsers, pendingUser, sessionCount } = await seedUsers(services);
+  await exerciseTargetPinning(services, activeUsers[0]!.id, fakeProvider);
   await exerciseInvitationBoundary(services, activeUsers[0]!.id, pendingUser);
   const chatResult = await exerciseChatIsolationAndLimits(services, activeUsers);
   const conflictResult = await exerciseSharedConflicts(services, activeUsers);
@@ -469,6 +470,97 @@ async function exerciseChatIsolationAndLimits(
   assert.equal(acceptedMessages, 300);
   assert.equal(rateLimitedMessages, 5);
   return { chatIdsByUser, acceptedMessages, rateLimitedMessages };
+}
+
+/** Proves definition-only pinning, unchanged instruction hashes, and continuation across prompt/profile edits. */
+async function exerciseTargetPinning(
+  application: ApplicationServices,
+  actorUserId: string,
+  provider: FakeProvider,
+): Promise<void> {
+  const prompt = await application.prompts.createPrompt(actorUserId, {
+    markdown: "Prompt one.\n",
+    title: "Pinned definition",
+  });
+  const profile = await application.targets.createProfile(actorUserId, {
+    configuration: { maxSteps: 1 },
+    instructions: "Profile one.",
+    name: "Pinned profile",
+    promptId: prompt.id,
+  });
+  const input = {
+    actorUserId,
+    promptId: prompt.id,
+    promptRevisionId: prompt.revisionId,
+    targetModel: MODEL_ID,
+  };
+  const definition = await application.targets.resolveDefinition(input);
+  assert.equal(definition.effectiveInstructions, "Profile one.\n\nPrompt one.\n");
+  assert.equal(
+    definition.effectiveInstructionsHash,
+    "8b11ba3875e63e033e0411e9c82f59fbca01e90ebad472fa962e3098e86b7e21",
+  );
+
+  const launched = await application.targetRuns.startRunAndWait(actorUserId, {
+    ...input,
+    instruction: "First pinned turn.",
+  });
+  const firstTurn = await launched.completion;
+  const evaluation = await application.evaluations.startHumanRun(actorUserId, {
+    ...input,
+    judgeModels: [MODEL_ID],
+    cases: [
+      { input: "Pinned case.", criteria: [{ name: "Pin", type: "boolean", instruction: "Pass." }] },
+    ],
+  });
+  const completedEvaluation = await waitForEvaluation(application, actorUserId, evaluation.id);
+  assert.equal(completedEvaluation.status, "completed");
+  assert.equal(firstTurn.effectiveInstructionsHash, definition.effectiveInstructionsHash);
+  assert.equal(completedEvaluation.effectiveInstructionsHash, definition.effectiveInstructionsHash);
+
+  await application.prompts.appendHumanEdit(actorUserId, {
+    promptId: prompt.id,
+    markdown: "Prompt two.",
+    expectedActiveRevisionId: prompt.revisionId,
+  });
+  const updatedProfile = await application.targets.appendProfileRevision(actorUserId, {
+    profileId: profile.id,
+    expectedRevisionId: profile.revisionId,
+    instructions: "Profile two.",
+    configuration: { tools: ["web-search"] },
+  });
+  const callsBeforePinning = provider.calls();
+  const currentDefinition = await application.targets.resolveDefinition({
+    ...input,
+    targetModel: "definition-only-model",
+  });
+  assert.equal(currentDefinition.profile.revisionId, updatedProfile.revisionId);
+  assert.equal(currentDefinition.effectiveInstructions, "Profile two.\n\nPrompt one.\n");
+  assert.equal(provider.calls(), callsBeforePinning);
+  const originalDefinition = await application.targets.resolveDefinition({
+    ...input,
+    targetProfileId: profile.id,
+    targetProfileRevisionId: profile.revisionId,
+  });
+  assert.deepEqual(originalDefinition, definition);
+  await assertRejectsWithStatus(
+    () =>
+      application.targets.resolveDefinition({
+        ...input,
+        targetProfileId: profile.id,
+        targetProfileRevisionId: randomUUID(),
+      }),
+    404,
+  );
+  const continuation = await application.targetRuns.continueRunAndWait(actorUserId, firstTurn.id, {
+    instruction: "Continue the original pins.",
+  });
+  const continued = await continuation.completion;
+  assert.equal(continued.turns.length, 2);
+  assert.ok(continued.turns.every(({ status }) => status === "completed"));
+  assert.equal(continued.promptRevisionId, prompt.revisionId);
+  assert.equal(continued.targetProfileRevisionId, profile.revisionId);
+  assert.equal(continued.effectiveInstructionsHash, definition.effectiveInstructionsHash);
 }
 
 async function exerciseSharedConflicts(
@@ -963,7 +1055,7 @@ function writeChatResponse(response: ServerResponse, body: Record<string, unknow
     | {
         function?: {
           name?: string;
-          parameters?: { properties?: { results?: { properties?: Record<string, unknown> } } };
+          parameters?: { properties?: Record<string, unknown> };
         };
       }
     | undefined;
@@ -972,24 +1064,22 @@ function writeChatResponse(response: ServerResponse, body: Record<string, unknow
     | {
         json_schema?: {
           schema?: {
-            properties?: { results?: { properties?: Record<string, unknown> } };
+            properties?: Record<string, unknown>;
           };
         };
       }
     | undefined;
-  const structuredResultNames = Object.keys(
-    responseFormat?.json_schema?.schema?.properties?.results?.properties ?? {},
-  );
+  const structuredResultNames = Object.keys(responseFormat?.json_schema?.schema?.properties ?? {});
   const structuredContent =
     structuredResultNames.length > 0
-      ? JSON.stringify({
-          results: Object.fromEntries(
+      ? JSON.stringify(
+          Object.fromEntries(
             structuredResultNames.map((name) => [
               name,
               { value: true, comment: "Deterministic pass.", evidence: [] },
             ]),
           ),
-        })
+        )
       : undefined;
   const toolCall = toolName
     ? [
@@ -998,16 +1088,13 @@ function writeChatResponse(response: ServerResponse, body: Record<string, unknow
           type: "function",
           function: {
             name: toolName,
-            arguments: JSON.stringify({
-              results: Object.fromEntries(
-                Object.keys(
-                  tool.function?.parameters?.properties?.results?.properties ?? { criterion_1: {} },
-                ).map((name) => [
-                  name,
-                  { value: true, comment: "Deterministic pass.", evidence: [] },
-                ]),
+            arguments: JSON.stringify(
+              Object.fromEntries(
+                Object.keys(tool.function?.parameters?.properties ?? { criterion_1: {} }).map(
+                  (name) => [name, { value: true, comment: "Deterministic pass.", evidence: [] }],
+                ),
               ),
-            }),
+            ),
           },
         },
       ]

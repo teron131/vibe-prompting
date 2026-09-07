@@ -26,6 +26,8 @@ export {
   TargetProfileNotFoundError,
   TargetSystem,
   type PinnedTarget,
+  type PinnedTargetDefinition,
+  type TargetPinInput,
   type TargetProfile,
 } from "./system.ts";
 export { targetConfigurationSchema, type TargetConfiguration } from "./configuration.ts";

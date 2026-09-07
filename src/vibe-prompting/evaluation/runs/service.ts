@@ -279,10 +279,12 @@ export class EvaluationRuns {
     if (prompt.revisionId !== input.promptRevisionId) {
       throw new PromptConflictError(prompt.activeRevisionId);
     }
-    const profile = await this.#targets.ensureProfileForPrompt(actorUserId, prompt.id);
-    const effectiveInstructionsHash = createHash("sha256")
-      .update([profile.instructions, prompt.markdown].filter(Boolean).join("\n\n"))
-      .digest("hex");
+    const { profile, effectiveInstructionsHash } = await this.#targets.resolveDefinition({
+      actorUserId,
+      promptId: prompt.id,
+      promptRevisionId: prompt.revisionId,
+      targetModel: input.targetModel,
+    });
     const configurationFingerprint = createConfigurationFingerprint({
       targetModel: input.targetModel,
       targetProfileRevisionId: profile.revisionId,
