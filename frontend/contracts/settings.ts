@@ -12,7 +12,7 @@ export type ProviderSettings = {
   label: string;
   baseURL: string;
   configured: boolean;
-  credentialSource: "byok" | "deployment" | "missing";
+  credentialSource: "byok" | "environment" | "missing";
 };
 
 export type SettingsResponse = {

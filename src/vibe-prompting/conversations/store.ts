@@ -101,7 +101,7 @@ export class ChatRateLimitError extends Error {
 
   constructor(retryAfterSeconds: number) {
     super(
-      `The shared deployment is limited to ${CHAT_MESSAGES_PER_HOUR} messages per hour and ${CHAT_MESSAGES_PER_DAY.toLocaleString()} messages per day.`,
+      `The workspace is limited to ${CHAT_MESSAGES_PER_HOUR} messages per hour and ${CHAT_MESSAGES_PER_DAY.toLocaleString()} messages per day.`,
     );
     this.name = "ChatRateLimitError";
     this.retryAfterSeconds = retryAfterSeconds;

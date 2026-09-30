@@ -56,7 +56,7 @@ export function createMcpServer(
   return server;
 }
 
-/** Returns the process-shared MCP server used by every Next.js request in this deployment. */
+/** Returns the process-shared MCP server used by every Next.js request in this local application. */
 export async function getMcpServer(): Promise<FastMCP> {
   const services = await getApplicationServices();
   let server = mcpServers.get(services);

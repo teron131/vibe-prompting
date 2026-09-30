@@ -106,7 +106,7 @@ class SpendLimitError extends Error {
 
   constructor(retryAfterSeconds: number, limits: ModelSpendLimits) {
     super(
-      `The shared deployment has reached its estimated $${limits.spendUsd} model-spend limit for the last ${limits.windowHours} hours.`,
+      `The workspace has reached its estimated $${limits.spendUsd} model-spend limit for the last ${limits.windowHours} hours.`,
     );
     this.name = "SpendLimitError";
     this.retryAfterSeconds = retryAfterSeconds;

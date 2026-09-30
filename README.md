@@ -20,6 +20,7 @@ Requirements: Node.js 24, pnpm 11, and PostgreSQL.
 corepack enable
 pnpm install
 cp .env.example .env
+cp .config.yaml.example .config.yaml
 pnpm db:setup
 pnpm dev
 ```
@@ -30,15 +31,6 @@ Open [http://localhost:8001](http://localhost:8001).
 
 The optional `pnpm db:seed-example` command imports the existing AI concepts example with a reusable skill revision while retaining its original context revision, recorded conversations, and evaluation history.
 
-## Deployment
+For the optimized local build, run `pnpm frontend:build` followed by `pnpm frontend:start`; it also listens at `http://localhost:8001`. The trusted API binds to loopback, and `pnpm mcp` starts the local stdio MCP server. The app has no deployment workflow or container packaging.
 
-Production is deployed from `main` through GitHub Actions using:
-
-- Google Cloud Run for the containerized Next.js application and embedded MCP endpoint.
-- Google Artifact Registry for Docker images.
-- Google Cloud SQL for PostgreSQL storage.
-- Google Secret Manager for deployment credentials and connection configuration.
-- Google Workload Identity Federation for credential-free GitHub Actions authentication.
-- Google OpenID Connect for application sign-in.
-
-The production service runs in Google Cloud's Singapore region (`asia-southeast1`).
+Google sign-in and model-provider connections remain part of the local app. Set the Google OAuth callback to `http://localhost:8001/api/auth/google/callback`. Provider credentials saved through Settings are encrypted with a machine-local key unless `BYOK_ENCRYPTION_KEY` is explicitly configured.

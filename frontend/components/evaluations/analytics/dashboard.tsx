@@ -744,7 +744,7 @@ function Diagnostics({ data }: { data: EvaluationAnalyticsResponse }) {
             value="Not attributed"
           />
           <DiagnosticRow
-            detail="Deployment-wide spend events cannot be safely assigned to evaluation calls."
+            detail="Workspace-wide spend events cannot be safely assigned to evaluation calls."
             label="Estimated Cost"
             value="Not attributed"
           />

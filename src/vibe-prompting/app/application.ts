@@ -46,7 +46,7 @@ export async function createApplicationServices(
   options: { environment?: NodeJS.ProcessEnv } = {},
 ): Promise<ApplicationServices> {
   const environment = { ...(options.environment ?? process.env) };
-  const database = new Database(databaseUrl ?? environment.DATABASE_URL, environment.DATABASE_HOST);
+  const database = new Database(databaseUrl ?? environment.DATABASE_URL);
   let models: ModelContext | undefined;
   let evaluator: EvaluationEngine | undefined;
   let targetRuns: TargetRuns | undefined;

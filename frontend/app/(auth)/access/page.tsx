@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { redeemInvitation } from "./actions";
 
 const errors: Record<string, string> = {
-  configuration: "Invitation enrollment is not configured for this deployment.",
+  configuration: "Invitation enrollment is not configured for this local workspace.",
   "invalid-code": "That invitation code was not accepted. Check the code and try again.",
   locked: "Too many invitation attempts. Try again in 15 minutes.",
 };

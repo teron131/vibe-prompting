@@ -1,4 +1,4 @@
-/** Provides the lightweight process health probe used by the deployment platform. */
+/** Provides the lightweight process health probe for local diagnostics. */
 
 export function GET() {
   return new Response("ok", {

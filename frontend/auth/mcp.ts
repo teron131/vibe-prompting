@@ -1,4 +1,4 @@
-/** Authenticates the deployed MCP bearer token and binds it to one active application member. */
+/** Authenticates the local HTTP MCP bearer token and binds it to one active application member. */
 
 import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";

@@ -1,4 +1,4 @@
-/** Owns deployed authentication URLs and Google OpenID Connect discovery for the authorization-code flow. */
+/** Owns local authentication URLs and Google OpenID Connect discovery for the authorization-code flow. */
 
 import "server-only";
 import type { NextRequest } from "next/server";
@@ -20,7 +20,7 @@ export const oauthCookieOptions = {
   maxAge: OAUTH_COOKIE_DURATION_SECONDS,
   path: "/api/auth/google/callback",
   sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
+  secure: false,
 };
 
 const sharedState = globalThis as typeof globalThis & {
@@ -47,9 +47,6 @@ export function googleCallbackUrl(request: NextRequest): string {
 
 export function publicApplicationUrl(request: NextRequest, path: string): URL {
   const configuredBaseUrl = process.env.APP_BASE_URL?.trim();
-  if (!configuredBaseUrl && process.env.NODE_ENV === "production") {
-    throw new Error("APP_BASE_URL is required for deployed Google authentication.");
-  }
   const baseUrl = configuredBaseUrl ? new URL(configuredBaseUrl) : request.nextUrl;
   return new URL(path, baseUrl.origin);
 }

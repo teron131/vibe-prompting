@@ -12,14 +12,10 @@ export type DatabaseClient = postgres.Sql | postgres.TransactionSql;
 export class Database {
   readonly #sql: postgres.Sql;
 
-  constructor(
-    databaseUrl: string = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL,
-    host: string | undefined = process.env.DATABASE_HOST,
-  ) {
+  constructor(databaseUrl: string = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL) {
     if (!databaseUrl.trim()) throw new Error("DATABASE_URL is required for application storage.");
     this.#sql = postgres(databaseUrl, {
       connect_timeout: 10,
-      ...(host ? { host } : {}),
       max: 5,
       onnotice: () => undefined,
       transform: postgres.camel,

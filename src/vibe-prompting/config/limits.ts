@@ -1,4 +1,4 @@
-/** Loads optional deployment-wide model spend limits without enabling restrictions when configuration is absent. */
+/** Loads optional workspace-wide model spend limits without enabling restrictions when configuration is absent. */
 
 import { z } from "zod";
 

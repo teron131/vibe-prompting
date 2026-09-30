@@ -29,6 +29,8 @@ Context, Target Profile, and Evaluation records remain separate. Their relations
 
 The product currently has one implicit shared workspace rather than separate organizations or teams.
 
+The application runs locally with PostgreSQL and loopback-bound browser, HTTP, and MCP interfaces; the repository contains no cloud deployment workflow or container packaging. Google identity verification and configured model providers remain external services used by the local app.
+
 - A User is a Google-backed application identity with an email, display name, membership status, and application-owned identifier.
 - A pending User has completed Google verification but cannot enter the workspace until the shared invitation code activates the membership.
 - An active User may create and use workspace resources until the membership or application session is revoked.

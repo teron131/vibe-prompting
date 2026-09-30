@@ -28,10 +28,7 @@ export async function setupDatabase(
   return true;
 }
 
-async function createMissingDatabase(
-  databaseUrl: string,
-  host: string | undefined = process.env.DATABASE_HOST,
-): Promise<void> {
+async function createMissingDatabase(databaseUrl: string): Promise<void> {
   const targetUrl = new URL(databaseUrl);
   const databaseName = decodeURIComponent(targetUrl.pathname.slice(1));
   if (!databaseName) throw new Error("DATABASE_URL must name a PostgreSQL database.");
@@ -40,7 +37,6 @@ async function createMissingDatabase(
   maintenanceUrl.pathname = "/postgres";
   const sql = postgres(maintenanceUrl.toString(), {
     connect_timeout: 10,
-    ...(host ? { host } : {}),
     max: 1,
     onnotice: () => undefined,
   });

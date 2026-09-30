@@ -68,7 +68,7 @@ export type ProviderSettings = {
   label: string;
   baseURL: string;
   configured: boolean;
-  credentialSource: "byok" | "deployment" | "missing";
+  credentialSource: "byok" | "environment" | "missing";
 };
 
 export type ApplicationSettings = {
@@ -141,11 +141,11 @@ export class ApplicationSettingsStore {
           credentialSource: override?.apiKey
             ? "byok"
             : base.platforms[id].apiKey
-              ? "deployment"
+              ? "environment"
               : "missing",
         };
       }),
-      canSaveCredentials: Boolean(readEncryptionSecret(this.#environment)),
+      canSaveCredentials: true,
     };
   }
 
@@ -155,12 +155,9 @@ export class ApplicationSettingsStore {
     const models = parseModelCatalog(input.models);
     const encryptionSecret = readEncryptionSecret(this.#environment);
     const providerPatches = input.providers.map((patch) => {
-      if (patch.apiKey && !encryptionSecret)
-        throw new SettingsError("Credential saving requires BYOK_ENCRYPTION_KEY.", 400);
       return {
         ...patch,
-        ...(patch.apiKey &&
-          encryptionSecret && { encryptedApiKey: encryptSecret(patch.apiKey, encryptionSecret) }),
+        ...(patch.apiKey && { encryptedApiKey: encryptSecret(patch.apiKey, encryptionSecret) }),
         ...(patch.baseURL !== undefined && {
           normalizedBaseURL: patch.baseURL
             ? parseHttpUrl(patch.baseURL, `${patch.id} base URL`)
@@ -220,10 +217,9 @@ export class ApplicationSettingsStore {
       providerIds.flatMap((id) => {
         const override = this.#providerOverrides[id];
         if (!override) return [];
-        const apiKey =
-          override.apiKey && encryptionSecret
-            ? decryptSecret(override.apiKey, encryptionSecret)
-            : undefined;
+        const apiKey = override.apiKey
+          ? decryptSecret(override.apiKey, encryptionSecret)
+          : undefined;
         return [
           [
             id,
@@ -273,12 +269,10 @@ async function readSettings(sql: DatabaseClient, lock = false): Promise<Settings
   return rows[0];
 }
 
-function readEncryptionSecret(environment: NodeJS.ProcessEnv): string | undefined {
-  const configured = environment.BYOK_ENCRYPTION_KEY?.trim() || undefined;
-  if (configured) return configured;
-  return environment.NODE_ENV === "development"
-    ? `vibe-prompting-local:${hostname()}:${homedir()}`
-    : undefined;
+function readEncryptionSecret(environment: NodeJS.ProcessEnv): string {
+  return (
+    environment.BYOK_ENCRYPTION_KEY?.trim() || `vibe-prompting-local:${hostname()}:${homedir()}`
+  );
 }
 
 function parseHttpUrl(value: string, label: string): string {

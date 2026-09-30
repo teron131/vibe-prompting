@@ -1,4 +1,4 @@
-/** Embeds the authenticated FastMCP HTTP transport in the deployed Next.js backend process. */
+/** Embeds the authenticated FastMCP HTTP transport in the local Next.js backend process. */
 
 import type { NextRequest } from "next/server";
 import { getMcpServer } from "vibe-prompting/mcp";

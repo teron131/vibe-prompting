@@ -224,7 +224,7 @@ export function SettingsEditor() {
                 Provider Access
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                Workspace credentials override deployment credentials until removed.
+                Workspace credentials override environment credentials until removed.
               </p>
             </div>
             <div className="divide-y">
@@ -483,7 +483,7 @@ function ProviderRow({
         <p className="text-xs text-muted-foreground">
           {canSaveCredentials
             ? "The saved value is encrypted and cannot be revealed from this page."
-            : "Encrypted credential storage is unavailable on this deployment."}
+            : "Encrypted credential storage is unavailable on this local workspace."}
         </p>
         {provider.credentialSource === "byok" ? (
           <Button
@@ -493,7 +493,7 @@ function ProviderRow({
             variant="ghost"
           >
             <RotateCcw aria-hidden="true" className="size-3.5" />
-            {draft.clearApiKey ? "Keep workspace key" : "Use deployment key"}
+            {draft.clearApiKey ? "Keep workspace key" : "Use environment key"}
           </Button>
         ) : null}
       </div>
@@ -564,7 +564,7 @@ function validateModels(models: SettingsModel[], helperModel: SettingsModel): st
 
 function credentialDescription(provider: ProviderSettings): string {
   if (provider.credentialSource === "byok") return "Using the encrypted workspace credential";
-  if (provider.credentialSource === "deployment") return "Using the deployment credential";
+  if (provider.credentialSource === "environment") return "Using the environment credential";
   return "No credential available";
 }
 

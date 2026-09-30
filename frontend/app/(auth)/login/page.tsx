@@ -12,7 +12,7 @@ import { AuthSubmitButton } from "@/components/auth/submit-button";
 const errors: Record<string, string> = {
   "oauth-failed": "Google sign-in could not be completed. Try again.",
   "oauth-state": "The sign-in request expired. Start again from this page.",
-  "oauth-unavailable": "Google sign-in is not configured for this deployment.",
+  "oauth-unavailable": "Google sign-in is not configured for this local workspace.",
   "unverified-email": "This Google account does not provide a verified email address.",
 };
 

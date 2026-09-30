@@ -8,7 +8,7 @@ import { getApplicationServices, type SessionUser } from "vibe-prompting/server"
 export const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7;
 
 export function sessionCookieName(): string {
-  return process.env.NODE_ENV === "production" ? "__Host-vibe-session" : "vibe-session";
+  return "vibe-session";
 }
 
 export function sessionCookieOptions(expires: Date) {
@@ -17,7 +17,7 @@ export function sessionCookieOptions(expires: Date) {
     httpOnly: true,
     path: "/",
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    secure: false,
   };
 }
 

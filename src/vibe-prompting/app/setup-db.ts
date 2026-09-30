@@ -1,4 +1,4 @@
-/** Prepares the configured workspace database for local development or deployment setup. */
+/** Prepares the configured workspace database for local use. */
 
 import "dotenv/config";
 import { setupDatabase } from "../database/index.ts";
