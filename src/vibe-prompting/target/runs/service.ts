@@ -1,10 +1,10 @@
-/** Coordinates Target Run validation, exact runtime pinning, detached AI SDK execution, and process-local event replay. */
+/** Coordinates Target Run validation, exact runtime pinning, detached execution, and process-local event replay. */
 
 import type { ModelMessage } from "ai";
 
 import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
+import type { ContextSystem } from "../../context-system/index.ts";
 import type { Database } from "../../database/index.ts";
-import type { PromptSystem } from "../../prompt-system/index.ts";
 import { sanitizeAiSdkHistory } from "../adapters/ai-sdk.ts";
 import type { PinnedTarget } from "../runtime.ts";
 import type { TargetSystem } from "../system.ts";
@@ -26,19 +26,19 @@ export class TargetRuns {
   readonly #executions = new Set<Promise<void>>();
   #closed = false;
   #closing: Promise<void> | undefined;
-  readonly #prompts: PromptSystem;
+  readonly #contexts: ContextSystem;
   readonly #registry = new TargetRunRegistry();
   readonly #store: TargetRunStore;
   readonly #targets: TargetSystem;
 
   constructor(
     database: Database,
-    prompts: PromptSystem,
+    contexts: ContextSystem,
     targets: TargetSystem,
     models: ModelContext = standaloneModelContext,
   ) {
     this.#models = models;
-    this.#prompts = prompts;
+    this.#contexts = contexts;
     this.#store = new TargetRunStore(database);
     this.#targets = targets;
   }
@@ -128,10 +128,10 @@ export class TargetRuns {
 
   async listRuns(
     viewerUserId: string,
-    promptId: string,
+    contextId: string,
     limit?: number,
   ): Promise<TargetRunSummary[]> {
-    return this.#store.list(viewerUserId, promptId, limit);
+    return this.#store.list(viewerUserId, contextId, limit);
   }
 
   async stop(actorUserId: string, runId: string): Promise<boolean> {
@@ -155,11 +155,11 @@ export class TargetRuns {
         );
       const input = parsed.data;
       requireConfiguredModel(input.targetModel, this.#models);
-      await this.#prompts.getRevision(input.promptId, input.promptRevisionId);
+      await this.#contexts.getRevision(input.contextId, input.contextRevisionId);
       const pinnedTarget = await this.#targets.createPinnedTarget({
         actorUserId,
-        promptId: input.promptId,
-        promptRevisionId: input.promptRevisionId,
+        contextId: input.contextId,
+        contextRevisionId: input.contextRevisionId,
         reasoningEffort: input.reasoningEffort,
         targetModel: input.targetModel,
       });
@@ -169,8 +169,8 @@ export class TargetRuns {
           chatId,
           effectiveInstructionsHash: pinnedTarget.effectiveInstructionsHash,
           instruction: input.instruction,
-          promptId: input.promptId,
-          promptRevisionId: input.promptRevisionId,
+          contextId: input.contextId,
+          contextRevisionId: input.contextRevisionId,
           reasoningEffort: input.reasoningEffort,
           source,
           startedByUserId: actorUserId,
@@ -201,8 +201,8 @@ export class TargetRuns {
     try {
       pinnedTarget ??= await this.#targets.createPinnedTarget({
         actorUserId,
-        promptId: context.promptId,
-        promptRevisionId: context.promptRevisionId,
+        contextId: context.contextId,
+        contextRevisionId: context.contextRevisionId,
         reasoningEffort: context.reasoningEffort,
         targetModel: context.targetModel,
         targetProfileId: context.targetProfileId,

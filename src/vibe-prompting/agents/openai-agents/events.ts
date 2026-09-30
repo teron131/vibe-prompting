@@ -1,4 +1,4 @@
-/** Translates provider reasoning and tool events into application stream events while preserving call identity and prompt revision links. */
+/** Translates provider reasoning and tool events into application stream events while preserving call identity and context revision links. */
 
 import type { RunStreamEvent } from "@openai/agents";
 
@@ -20,7 +20,7 @@ export type AgentStreamEvent =
       output?: unknown;
       summary?: string;
     }
-  | { type: "prompt-revision"; promptId: string; revisionId: string }
+  | { type: "context-revision"; contextId: string; revisionId: string }
   | { type: "reasoning"; summary: string };
 
 /** Projects provider stream events into the small event contract consumed by the frontend. */
@@ -83,20 +83,21 @@ export function projectEvent(
       output,
       summary: summarizeTool(name, output),
     };
-    const revisionEvent = projectPromptRevision(name, output);
+    const revisionEvent = projectContextRevision(name, output);
     return revisionEvent ? [toolEvent, revisionEvent] : [toolEvent];
   }
   return [];
 }
 
-function projectPromptRevision(
+function projectContextRevision(
   toolName: string,
   output: unknown,
-): Extract<AgentStreamEvent, { type: "prompt-revision" }> | undefined {
-  if (toolName !== "edit_prompt" || !isRecord(output) || !isRecord(output.prompt)) return undefined;
-  const { id, revisionId } = output.prompt;
+): Extract<AgentStreamEvent, { type: "context-revision" }> | undefined {
+  if (toolName !== "edit_context" || !isRecord(output) || !isRecord(output.context))
+    return undefined;
+  const { id, revisionId } = output.context;
   if (typeof id !== "string" || typeof revisionId !== "string") return undefined;
-  return { type: "prompt-revision", promptId: id, revisionId };
+  return { type: "context-revision", contextId: id, revisionId };
 }
 
 function getReasoningSummary(value: unknown): string | undefined {
@@ -172,9 +173,9 @@ function summarizeTool(name: string, output: unknown): string {
   if (isRecord(output) && typeof output.summary === "string" && output.summary.trim()) {
     return output.summary;
   }
-  if (name === "list_prompts") return "Listed saved prompts.";
-  if (name === "read_prompt") return "Read the current prompt.";
-  if (name === "search_prompts") return "Searched saved prompts.";
+  if (name === "list_contexts") return "Listed saved contexts.";
+  if (name === "read_context") return "Read the current context.";
+  if (name === "search_contexts") return "Searched saved contexts.";
   if (name === "list_criteria_library") return "Listed saved criteria.";
   if (name === "preview_evaluation_batch") return "Previewed an evaluation batch.";
   if (name === "list_evaluation_runs") return "Listed evaluation runs.";

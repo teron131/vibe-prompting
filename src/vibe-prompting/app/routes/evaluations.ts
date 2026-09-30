@@ -16,7 +16,7 @@ import { actorSchema, modelIdSchema, viewerQuerySchema } from "./schemas.ts";
 const runParamsSchema = z.object({ runId: z.uuid() });
 const evaluationRunsQuerySchema = z.object({
   viewerUserId: z.uuid(),
-  promptId: z.uuid().optional(),
+  contextId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 const evaluationBatchStatusQuerySchema = z.object({
@@ -27,7 +27,7 @@ const startEvaluationRequestSchema = evaluationRunInputSchema.extend(actorSchema
 const startEvaluationBatchRequestSchema = evaluationBatchInputSchema.extend(actorSchema.shape);
 const apiCaseSchema = evaluationRunInputSchema.shape.cases.element.extend({
   input: evaluationRunInputSchema.shape.cases.element.shape.input.describe(
-    "Text prompt to send to the target model.",
+    "Text context to send to the target model.",
   ),
 });
 const apiEvaluationSchema = requestSchema.extend({
@@ -58,7 +58,7 @@ export function registerEvaluationRoutes(
     "/api/evaluations",
     {
       schema: {
-        description: "List durable evaluation runs, optionally scoped to one prompt.",
+        description: "List durable evaluation runs, optionally scoped to one context.",
         querystring: evaluationRunsQuerySchema,
         summary: "List evaluation runs",
         tags: ["evaluation"],

@@ -1,4 +1,4 @@
-/** Exposes prompt-bound target profile availability without leaking runtime construction into the browser. */
+/** Exposes context-bound target profile availability without leaking runtime construction into the browser. */
 
 import { getApplicationServices, projectServerError } from "vibe-prompting/server";
 
@@ -13,9 +13,9 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   await requireActiveSessionUser();
   try {
-    const promptId = requireUuid(new URL(request.url).searchParams.get("promptId"), "Prompt ID");
+    const contextId = requireUuid(new URL(request.url).searchParams.get("contextId"), "Context ID");
     const services = await getApplicationServices();
-    const profile = await services.targets.getProfileForPrompt(promptId);
+    const profile = await services.targets.getProfileForContext(contextId);
     return Response.json(
       {
         profile: { configuration: profile.configuration, name: profile.name },

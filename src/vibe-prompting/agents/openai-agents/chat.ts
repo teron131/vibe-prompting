@@ -4,6 +4,7 @@ import type { AgentInputItem } from "@openai/agents";
 
 import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
 import type { ModelConfig } from "../../config/index.ts";
+import type { ContextSystem } from "../../context-system/index.ts";
 import type {
   Attachment as ChatAttachment,
   ChatReasoningEffort,
@@ -12,22 +13,22 @@ import type {
 import type { CriterionLibrary } from "../../criteria/index.ts";
 import type { EvaluationResults } from "../../evaluation/results/index.ts";
 import type { EvaluationRuns } from "../../evaluation/runs/index.ts";
-import type { PromptSystem } from "../../prompt-system/index.ts";
 import type { ScenarioRuns } from "../../scenarios/index.ts";
 import type { TargetRuns } from "../../target/runs/index.ts";
 import { getConfiguredModelReferences } from "../models.ts";
 import {
   AgentToolkit,
+  ContextLibraryToolkit,
   createExaSearchTool,
   CriteriaLibraryToolkit,
   EvaluationResultsToolkit,
   EvaluationRunsToolkit,
-  PromptLibraryToolkit,
   ScenarioRunsToolkit,
   TargetRunsToolkit,
 } from "../tools/index.ts";
 import { type AgentStreamEvent, projectEvent } from "./events.ts";
 import { adaptTools, createAgentRuntime } from "./runtime.ts";
+import { skillSandbox, toSkillDescriptors } from "./skills.ts";
 
 export {
   CHAT_TOOL_IDS,
@@ -56,7 +57,7 @@ export type ChatRunInput = {
   modelId: string;
   reasoningEffort: ChatReasoningEffort;
   enabledTools: ChatToolId[];
-  prompts: PromptSystem;
+  contexts: ContextSystem;
   criterion: CriterionLibrary;
   evaluations: EvaluationRuns;
   evaluationResults: EvaluationResults;
@@ -76,6 +77,7 @@ export type ChatSteering = {
 export type ChatRunResult = {
   message: string;
   model: ModelConfig;
+  skillRevisions?: Array<{ contextId: string; revisionId: string; name: string }>;
   telemetry: {
     durationMs: number;
     estimatedCostUsd: number | null;
@@ -96,10 +98,10 @@ export async function streamChatRun(
   onEvent({ type: "response-start", startedAt: new Date().toISOString() });
   const enabled = new Set(input.enabledTools);
   const toolkits: AgentToolkit[] = [];
-  const promptToolsEnabled = enabled.has("prompt-library");
+  const contextToolsEnabled = enabled.has("context-library");
   const evaluationsEnabled = enabled.has("evaluations");
-  if (promptToolsEnabled) {
-    toolkits.push(new PromptLibraryToolkit(input.prompts));
+  if (contextToolsEnabled) {
+    toolkits.push(new ContextLibraryToolkit(input.contexts));
   }
   if (evaluationsEnabled)
     toolkits.push(
@@ -116,6 +118,8 @@ export async function streamChatRun(
     toolDefinitions.push(createExaSearchTool(modelContext.readConfig, modelContext.signal));
 
   input.signal?.throwIfAborted();
+  const skillRecords = enabled.has("skills") ? await input.contexts.listSkills() : [];
+  const availableSkills = toSkillDescriptors(skillRecords);
   const runtime = createAgentRuntime(
     input.modelId,
     adaptTools(toolDefinitions, {
@@ -125,6 +129,7 @@ export async function streamChatRun(
     }),
     input.reasoningEffort,
     modelContext,
+    { skills: availableSkills },
   );
   const costEstimate = modelContext.pricing.estimate(runtime.model.id);
   const usage = { inputTokens: 0, outputTokens: 0, requests: 0, totalTokens: 0 };
@@ -134,6 +139,7 @@ export async function streamChatRun(
     const run = await runtime.runner.run(runtime.agent, runInput, {
       signal: input.signal,
       stream: true,
+      ...(availableSkills.length && { sandbox: skillSandbox() }),
     });
     const disconnectSteering = input.steering?.connect((instruction) => {
       try {
@@ -175,6 +181,11 @@ export async function streamChatRun(
       return {
         message: run.finalOutput,
         model: runtime.model,
+        skillRevisions: skillRecords.map((record) => ({
+          contextId: record.id,
+          revisionId: record.revisionId,
+          name: record.skill.name,
+        })),
         telemetry: {
           durationMs,
           estimatedCostUsd: await costEstimate.calculate(usage),

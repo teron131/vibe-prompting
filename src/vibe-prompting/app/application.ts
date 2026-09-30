@@ -4,6 +4,7 @@ import { AuthService } from "../auth/index.ts";
 import { createModelContext, type ModelContext } from "../clients/llm/context.ts";
 import { resolveModelIdentities } from "../clients/llm/models-dev.ts";
 import { loadModelSpendLimits } from "../config/index.ts";
+import { ContextSystem } from "../context-system/index.ts";
 import { ConversationService } from "../conversations/service.ts";
 import { ConversationStore } from "../conversations/store.ts";
 import { CriterionLibrary } from "../criteria/index.ts";
@@ -11,7 +12,6 @@ import { Database } from "../database/index.ts";
 import { createEvaluationEngine, type EvaluationEngine } from "../evaluation/engine/graph.ts";
 import { EvaluationResults } from "../evaluation/results/index.ts";
 import { EvaluationRuns } from "../evaluation/runs/index.ts";
-import { PromptSystem } from "../prompt-system/index.ts";
 import { ScenarioRuns } from "../scenarios/index.ts";
 import { HybridSearch } from "../search.ts";
 import { ApplicationSettingsStore } from "../settings/index.ts";
@@ -22,7 +22,7 @@ export type ConfiguredModel = { id: string; provider: string; label: string; kno
 
 export type ApplicationServices = {
   auth: AuthService;
-  prompts: PromptSystem;
+  contexts: ContextSystem;
   targets: TargetSystem;
   targetRuns: TargetRuns;
   scenarios: ScenarioRuns;
@@ -92,24 +92,24 @@ export async function createApplicationServices(
     models = modelContext;
     evaluator = createEvaluationEngine(modelContext, environment);
     const search = new HybridSearch(database, modelContext.readConfig);
-    const prompts = new PromptSystem(database, search);
-    const targets = new TargetSystem(database, prompts, modelContext);
-    targetRuns = new TargetRuns(database, prompts, targets, modelContext);
+    const contexts = new ContextSystem(database, search);
+    const targets = new TargetSystem(database, contexts, modelContext);
+    targetRuns = new TargetRuns(database, contexts, targets, modelContext);
     evaluations = new EvaluationRuns(
       database,
-      prompts,
+      contexts,
       targets,
       targetRuns,
       modelContext,
       evaluator,
     );
-    scenarios = new ScenarioRuns(database, prompts, targetRuns, evaluations, modelContext);
+    scenarios = new ScenarioRuns(database, contexts, targetRuns, evaluations, modelContext);
     const auth = new AuthService(database);
     const criterion = new CriterionLibrary(database);
     const evaluationResults = new EvaluationResults(database, search);
     conversations = new ConversationService(new ConversationStore(database, search), {
       auth,
-      prompts,
+      contexts,
       criterion,
       evaluations,
       evaluationResults,
@@ -119,7 +119,7 @@ export async function createApplicationServices(
     });
     const services: ApplicationServices = {
       auth,
-      prompts,
+      contexts,
       targets,
       targetRuns,
       scenarios,

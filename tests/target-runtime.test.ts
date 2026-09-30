@@ -54,6 +54,7 @@ mock.module("../src/vibe-prompting/clients/exa.ts", {
   namedExports: {
     EXA_WEB_SEARCH_TOOL: "web_search_exa",
     getExaMcpConnection: () => ({ url: "https://example.test/mcp" }),
+    searchExaWeb: async () => [],
   },
 });
 mock.module("../src/vibe-prompting/target/adapters/ai-sdk.ts", {
@@ -89,8 +90,8 @@ after(async () => {
 });
 
 const definition: PinnedTargetDefinition = {
-  promptId: "prompt",
-  promptRevisionId: "prompt-revision",
+  contextId: "context",
+  contextRevisionId: "context-revision",
   targetModel: "fake-model",
   reasoningEffort: "high",
   profile: {
@@ -100,7 +101,7 @@ const definition: PinnedTargetDefinition = {
     instructions: "Profile instructions.",
     configuration: { tools: ["web-search"] },
   },
-  effectiveInstructions: "Profile instructions.\n\nPrompt.",
+  effectiveInstructions: "Profile instructions.\n\nContext.",
   effectiveInstructionsHash: "pinned-hash",
 };
 

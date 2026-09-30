@@ -15,7 +15,7 @@ import { SidebarThemeToggle } from "./theme-toggle";
 
 const links = [
   { href: "/", icon: MessageSquareText, label: "Chat" },
-  { href: "/prompts", icon: Sparkles, label: "Prompts" },
+  { href: "/contexts", icon: Sparkles, label: "Context Library" },
   { href: "/evaluations", icon: FlaskConical, label: "Evaluations" },
 ];
 const footerActionClassName =

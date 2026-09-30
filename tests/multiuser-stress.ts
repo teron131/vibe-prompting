@@ -26,7 +26,7 @@ type TestSummary = {
   users: { active: number; pending: number; sessions: number };
   chats: { created: number; acceptedMessages: number; rateLimitedMessages: number };
   conflicts: {
-    prompts: number;
+    contexts: number;
     targetProfiles: number;
     criteria: number;
     settings: number;
@@ -123,7 +123,7 @@ try {
           modelId: MODEL_ID,
           reasoningEffort: "low",
           enabledTools: [],
-          prompts: services.prompts,
+          contexts: services.contexts,
           criterion: services.criterion,
           evaluations: services.evaluations,
           evaluationResults: services.evaluationResults,
@@ -364,7 +364,12 @@ async function exerciseConversationService(
     instruction: "Backend conversation smoke",
     attachments: [],
     quotes: [],
-    workspace: { activePromptId: null, enabledTools: [], panelOpen: false, reasoningEffort: "low" },
+    workspace: {
+      activeContextId: null,
+      enabledTools: [],
+      panelOpen: false,
+      reasoningEffort: "low",
+    },
   };
   const first = await application.conversations.send(actor, input);
   await first.completion;
@@ -446,8 +451,8 @@ async function exerciseChatIsolationAndLimits(
   const registry = new ConversationRunRegistry();
   try {
     const context = {
-      activePromptId: null,
-      enabledTools: ["prompt-library" as const, "evaluations" as const],
+      activeContextId: null,
+      enabledTools: ["context-library" as const, "evaluations" as const],
       panelOpen: false,
       reasoningEffort: "medium" as const,
     };
@@ -585,30 +590,30 @@ async function exerciseChatIsolationAndLimits(
   }
 }
 
-/** Proves definition-only pinning, unchanged instruction hashes, and continuation across prompt/profile edits. */
+/** Proves definition-only pinning, unchanged instruction hashes, and continuation across context/profile edits. */
 async function exerciseTargetPinning(
   application: ApplicationServices,
   actorUserId: string,
   provider: FakeProvider,
 ): Promise<void> {
-  const prompt = await application.prompts.createPrompt(actorUserId, {
-    markdown: "Prompt one.\n",
+  const context = await application.contexts.createContext(actorUserId, {
+    markdown: "Context one.\n",
     title: "Pinned definition",
   });
   const profile = await application.targets.createProfile(actorUserId, {
     configuration: { maxSteps: 1 },
     instructions: "Profile one.",
     name: "Pinned profile",
-    promptId: prompt.id,
+    contextId: context.id,
   });
   const input = {
     actorUserId,
-    promptId: prompt.id,
-    promptRevisionId: prompt.revisionId,
+    contextId: context.id,
+    contextRevisionId: context.revisionId,
     targetModel: MODEL_ID,
   };
   const definition = await application.targets.resolveDefinition(input);
-  assert.equal(definition.effectiveInstructions, "Profile one.\n\nPrompt one.\n");
+  assert.equal(definition.effectiveInstructions, "Profile one.\n\nContext one.\n");
   assert.equal(
     definition.effectiveInstructionsHash,
     "8b11ba3875e63e033e0411e9c82f59fbca01e90ebad472fa962e3098e86b7e21",
@@ -631,10 +636,10 @@ async function exerciseTargetPinning(
   assert.equal(firstTurn.effectiveInstructionsHash, definition.effectiveInstructionsHash);
   assert.equal(completedEvaluation.effectiveInstructionsHash, definition.effectiveInstructionsHash);
 
-  await application.prompts.appendHumanEdit(actorUserId, {
-    promptId: prompt.id,
-    markdown: "Prompt two.",
-    expectedActiveRevisionId: prompt.revisionId,
+  await application.contexts.appendHumanEdit(actorUserId, {
+    contextId: context.id,
+    markdown: "Context two.",
+    expectedActiveRevisionId: context.revisionId,
   });
   const updatedProfile = await application.targets.appendProfileRevision(actorUserId, {
     profileId: profile.id,
@@ -648,7 +653,7 @@ async function exerciseTargetPinning(
     targetModel: "definition-only-model",
   });
   assert.equal(currentDefinition.profile.revisionId, updatedProfile.revisionId);
-  assert.equal(currentDefinition.effectiveInstructions, "Profile two.\n\nPrompt one.\n");
+  assert.equal(currentDefinition.effectiveInstructions, "Profile two.\n\nContext one.\n");
   assert.equal(provider.calls(), callsBeforePinning);
   const originalDefinition = await application.targets.resolveDefinition({
     ...input,
@@ -671,7 +676,7 @@ async function exerciseTargetPinning(
   const continued = await continuation.completion;
   assert.equal(continued.turns.length, 2);
   assert.ok(continued.turns.every(({ status }) => status === "completed"));
-  assert.equal(continued.promptRevisionId, prompt.revisionId);
+  assert.equal(continued.contextRevisionId, context.revisionId);
   assert.equal(continued.targetProfileRevisionId, profile.revisionId);
   assert.equal(continued.effectiveInstructionsHash, definition.effectiveInstructionsHash);
 }
@@ -680,28 +685,28 @@ async function exerciseSharedConflicts(
   application: ApplicationServices,
   users: ActiveUser[],
 ): Promise<TestSummary["conflicts"]> {
-  const prompt = await application.prompts.createPrompt(users[0]!.id, {
-    markdown: "Prompt collision baseline.",
-    title: "Prompt collision",
+  const context = await application.contexts.createContext(users[0]!.id, {
+    markdown: "Context collision baseline.",
+    title: "Context collision",
   });
-  const promptResults = await Promise.allSettled(
+  const contextResults = await Promise.allSettled(
     Array.from({ length: 32 }, (_, index) =>
-      application.prompts.appendHumanEdit(users[index % users.length]!.id, {
-        promptId: prompt.id,
-        markdown: `Prompt collision winner ${index + 1}.`,
-        expectedActiveRevisionId: prompt.activeRevisionId,
+      application.contexts.appendHumanEdit(users[index % users.length]!.id, {
+        contextId: context.id,
+        markdown: `Context collision winner ${index + 1}.`,
+        expectedActiveRevisionId: context.activeRevisionId,
       }),
     ),
   );
-  assertSettledCounts("prompt", promptResults, 1, 31, 409);
-  const savedPrompt = await application.prompts.getPrompt(prompt.id);
-  assert.equal(savedPrompt.revisionCount, 2);
+  assertSettledCounts("context", contextResults, 1, 31, 409);
+  const savedContext = await application.contexts.getContext(context.id);
+  assert.equal(savedContext.revisionCount, 2);
 
   const targetProfile = await application.targets.createProfile(users[0]!.id, {
     configuration: {},
     instructions: "Target collision baseline.",
     name: "Target collision",
-    promptId: prompt.id,
+    contextId: context.id,
   });
   const targetResults = await Promise.allSettled(
     Array.from({ length: 16 }, (_, index) =>
@@ -751,7 +756,7 @@ async function exerciseSharedConflicts(
     ),
   );
   assertSettledCounts("settings", settingsResults, 1, 15, 409);
-  return { prompts: 31, targetProfiles: 15, criteria: 15, settings: 15 };
+  return { contexts: 31, targetProfiles: 15, criteria: 15, settings: 15 };
 }
 
 async function exerciseWorkflows(
@@ -763,7 +768,7 @@ async function exerciseWorkflows(
   scenarioStatus: string;
   targetStatus: string;
 }> {
-  const promptV1 = await application.prompts.createPrompt(users[0]!.id, {
+  const contextV1 = await application.contexts.createContext(users[0]!.id, {
     markdown: "Return a short deterministic response.",
     title: "Workflow pressure",
   });
@@ -771,8 +776,8 @@ async function exerciseWorkflows(
     users[0]!.id,
     {
       instruction: "Generate the pinned response.",
-      promptId: promptV1.id,
-      promptRevisionId: promptV1.revisionId,
+      contextId: contextV1.id,
+      contextRevisionId: contextV1.revisionId,
       reasoningEffort: "low",
       targetModel: MODEL_ID,
     },
@@ -781,8 +786,8 @@ async function exerciseWorkflows(
   const evaluation = await application.evaluations.startAgentRun(
     users[0]!.id,
     {
-      promptId: promptV1.id,
-      promptRevisionId: promptV1.revisionId,
+      contextId: contextV1.id,
+      contextRevisionId: contextV1.revisionId,
       targetModel: MODEL_ID,
       judgeModels: [MODEL_ID],
       cases: [
@@ -797,16 +802,16 @@ async function exerciseWorkflows(
     },
     producingChatId,
   );
-  await application.prompts.appendHumanEdit(users[1]!.id, {
-    promptId: promptV1.id,
+  await application.contexts.appendHumanEdit(users[1]!.id, {
+    contextId: contextV1.id,
     markdown: "This is revision two and must not alter already pinned work.",
-    expectedActiveRevisionId: promptV1.revisionId,
+    expectedActiveRevisionId: contextV1.revisionId,
   });
 
   const completedTarget = await waitForTarget(application, users[0]!.id, targetRun.id);
   const completedEvaluation = await waitForEvaluation(application, users[0]!.id, evaluation.id);
-  assert.equal(completedTarget.promptRevisionId, promptV1.revisionId);
-  assert.equal(completedEvaluation.promptRevisionId, promptV1.revisionId);
+  assert.equal(completedTarget.contextRevisionId, contextV1.revisionId);
+  assert.equal(completedEvaluation.contextRevisionId, contextV1.revisionId);
   assert.equal(completedTarget.chatId, producingChatId);
   assert.equal(completedEvaluation.chatId, producingChatId);
   assert.equal((await application.targetRuns.getRun(users[1]!.id, targetRun.id)).chatId, null);
@@ -831,8 +836,8 @@ async function exerciseWorkflows(
   const scenario = await application.scenarios.startAgentRun(
     users[0]!.id,
     {
-      promptId: promptV1.id,
-      promptRevisionId: promptV1.revisionId,
+      contextId: contextV1.id,
+      contextRevisionId: contextV1.revisionId,
       targetModel: MODEL_ID,
       reasoningEffort: "low",
       mode: "static",
@@ -868,10 +873,10 @@ async function exerciseWorkflows(
   assert.ok(!("targetRunId" in completedScenario.scenario));
   assert.ok(!("evaluationPlan" in completedScenario.scenario));
 
-  const promptV2 = await application.prompts.getPrompt(promptV1.id);
+  const contextV2 = await application.contexts.getContext(contextV1.id);
   const batch = await application.evaluations.startHumanBatch(users[1]!.id, {
-    promptId: promptV2.id,
-    promptRevisionId: promptV2.revisionId,
+    contextId: contextV2.id,
+    contextRevisionId: contextV2.revisionId,
     targetModels: [MODEL_ID],
     judgeModels: [MODEL_ID],
     configurations: Array.from({ length: 6 }, (_, index) => ({
@@ -930,13 +935,13 @@ async function exerciseCriteriaSnapshots(
     name: "Single-rule composition",
     criterionIds: [first.id],
   });
-  const prompt = await application.prompts.createPrompt(actorUserId, {
+  const context = await application.contexts.createContext(actorUserId, {
     title: "Criteria snapshots",
     markdown: "Return a deterministic response.",
   });
   const run = await application.evaluations.startHumanRun(actorUserId, {
-    promptId: prompt.id,
-    promptRevisionId: prompt.revisionId,
+    contextId: context.id,
+    contextRevisionId: context.revisionId,
     targetModel: MODEL_ID,
     judgeModels: [MODEL_ID],
     cases: [{ input: "Check the original rules.", criteria: composition.criterionSequence }],
@@ -990,13 +995,13 @@ async function exerciseEvaluationHistory(
   actorUserId: string,
   databaseUrl: string,
 ): Promise<void> {
-  const prompt = await application.prompts.createPrompt(actorUserId, {
+  const context = await application.contexts.createContext(actorUserId, {
     title: "Historical report parity",
     markdown: "Return a deterministic response.",
   });
   const input = {
-    promptId: prompt.id,
-    promptRevisionId: prompt.revisionId,
+    contextId: context.id,
+    contextRevisionId: context.revisionId,
     targetModel: MODEL_ID,
     judgeModels: [MODEL_ID],
     cases: [
@@ -1012,7 +1017,7 @@ async function exerciseEvaluationHistory(
   await waitForEvaluation(application, actorUserId, second.id);
   const report = await application.evaluationResults.getRun(actorUserId, second.id);
   assert.equal(report.configurationFingerprint, first.configurationFingerprint);
-  assert.equal(report.promptMarkdown, prompt.markdown);
+  assert.equal(report.contextMarkdown, context.markdown);
   assert.equal(report.cases[0]?.scores[0]?.value, true);
   const trend = await application.evaluationResults.getCompatibleBooleanTrend(second.id);
   assert.deepEqual(
@@ -1045,12 +1050,12 @@ async function exerciseEvaluationHistory(
   });
   assert.deepEqual(grouped.rows, [{ label: input.targetModel, value: 1 }]);
   const firstPage = await application.evaluationResults.listResults({
-    promptId: prompt.id,
+    contextId: context.id,
     limit: 1,
   });
   assert.ok(firstPage.nextCursor);
   const nextPage = await application.evaluationResults.listResults({
-    promptId: prompt.id,
+    contextId: context.id,
     limit: 1,
     cursor: firstPage.nextCursor,
   });
@@ -1064,17 +1069,17 @@ async function exerciseEvaluationHistory(
   try {
     const store = new EvaluationRunStore(database);
     const preparation = new EvaluationPreparation(
-      application.prompts,
+      application.contexts,
       application.targets,
       application.targetRuns,
       application.models,
     );
     const record = await preparation.run(actorUserId, input, "human", null);
     await assert.rejects(
-      store.createBatch([record, { ...record, promptRevisionId: randomUUID() }]),
+      store.createBatch([record, { ...record, contextRevisionId: randomUUID() }]),
     );
     assert.equal(
-      (await application.evaluations.listRuns(actorUserId, { promptId: prompt.id })).length,
+      (await application.evaluations.listRuns(actorUserId, { contextId: context.id })).length,
       2,
     );
   } finally {
@@ -1087,13 +1092,13 @@ async function exerciseGenerativeScenarios(
   application: ApplicationServices,
   actorUserId: string,
 ): Promise<void> {
-  const prompt = await application.prompts.createPrompt(actorUserId, {
+  const context = await application.contexts.createContext(actorUserId, {
     title: "Generative Scenario checks",
     markdown: "Respond to the user's question.",
   });
   const input = {
-    promptId: prompt.id,
-    promptRevisionId: prompt.revisionId,
+    contextId: context.id,
+    contextRevisionId: context.revisionId,
     targetModel: MODEL_ID,
     mode: "generative",
     instruction: "Ask one question, then finish.",
@@ -1119,8 +1124,8 @@ async function exerciseGenerativeScenarios(
   assert.equal(limited.target?.turns.length, 1);
 
   const started = await application.scenarios.startHumanRun(actorUserId, {
-    promptId: prompt.id,
-    promptRevisionId: prompt.revisionId,
+    contextId: context.id,
+    contextRevisionId: context.revisionId,
     targetModel: MODEL_ID,
     mode: "static",
     messages: Array.from({ length: 10 }, (_value, index) => `Cancellation turn ${index + 1}.`),
@@ -1142,20 +1147,20 @@ async function exerciseRuntimeShutdown(
   actorUserId: string,
   databaseUrl: string,
 ): Promise<void> {
-  const prompt = await application.prompts.createPrompt(actorUserId, {
+  const context = await application.contexts.createContext(actorUserId, {
     title: "Runtime shutdown",
     markdown: "lifecycle-shutdown: produce a deterministic response.",
   });
   const scenario = await application.scenarios.startHumanRun(actorUserId, {
-    promptId: prompt.id,
-    promptRevisionId: prompt.revisionId,
+    contextId: context.id,
+    contextRevisionId: context.revisionId,
     targetModel: MODEL_ID,
     mode: "static",
     messages: Array.from({ length: 10 }, () => "Keep the Scenario active."),
   });
   const batch = await application.evaluations.startHumanBatch(actorUserId, {
-    promptId: prompt.id,
-    promptRevisionId: prompt.revisionId,
+    contextId: context.id,
+    contextRevisionId: context.revisionId,
     targetModels: [MODEL_ID],
     judgeModels: [MODEL_ID],
     configurations: [
@@ -1171,7 +1176,7 @@ async function exerciseRuntimeShutdown(
   const active = await poll(
     async () => ({
       scenario: await application.scenarios.getRunResponse(actorUserId, scenario.scenario.id),
-      runs: await application.evaluations.listRuns(actorUserId, { promptId: prompt.id }),
+      runs: await application.evaluations.listRuns(actorUserId, { contextId: context.id }),
     }),
     ({ scenario, runs }) =>
       Boolean(scenario.target?.turns.some((turn) => turn.status === "running")) &&
@@ -1261,14 +1266,14 @@ async function cloneEvaluationRun(
   await sql.begin(async (transaction) => {
     await transaction`
       INSERT INTO evaluation_runs (
-        id, prompt_id, prompt_revision_id, chat_id, source, target_model_id,
+        id, context_id, context_revision_id, chat_id, source, target_model_id,
         judge_model_ids, status, configuration_fingerprint, error_message,
         is_synthetic_example, target_profile_id, target_profile_revision_id,
         effective_instructions_hash, target_run_id, target_run_turn_id,
         started_by_user_id, created_at, completed_at
       )
       SELECT
-        ${runId}, prompt_id, prompt_revision_id, chat_id, source, target_model_id,
+        ${runId}, context_id, context_revision_id, chat_id, source, target_model_id,
         judge_model_ids, ${status}, configuration_fingerprint, NULL,
         is_synthetic_example, target_profile_id, target_profile_revision_id,
         effective_instructions_hash, target_run_id, target_run_turn_id,
@@ -1293,7 +1298,7 @@ async function readInvariants(databaseUrl: string): Promise<Record<string, numbe
     const [row] = await sql<Record<string, number>[]>`
       SELECT
         (SELECT count(*)::integer FROM chats WHERE owner_user_id IS NULL) AS ownerless_chats,
-        (SELECT count(*)::integer FROM prompt_revisions WHERE created_by_user_id IS NULL) AS actorless_prompt_revisions,
+        (SELECT count(*)::integer FROM context_revisions WHERE created_by_user_id IS NULL) AS actorless_context_revisions,
         (SELECT count(*)::integer FROM target_profile_revisions WHERE created_by_user_id IS NULL) AS actorless_target_revisions,
         (SELECT count(*)::integer FROM evaluation_runs WHERE started_by_user_id IS NULL) AS actorless_evaluations,
         (SELECT count(*)::integer FROM scenario_runs WHERE started_by_user_id IS NULL) AS actorless_scenarios,
@@ -1304,7 +1309,7 @@ async function readInvariants(databaseUrl: string): Promise<Record<string, numbe
         (SELECT count(*)::integer FROM evaluation_runs WHERE status IN ('queued', 'running')) AS nonterminal_evaluations,
         (SELECT count(*)::integer FROM scenario_runs WHERE status IN ('queued', 'running')) AS nonterminal_scenarios,
         (SELECT count(*)::integer FROM target_run_turns WHERE status = 'running') AS running_target_turns,
-        (SELECT count(*)::integer FROM (SELECT prompt_id, revision_number FROM prompt_revisions GROUP BY prompt_id, revision_number HAVING count(*) > 1) duplicates) AS duplicate_prompt_revisions,
+        (SELECT count(*)::integer FROM (SELECT context_id, revision_number FROM context_revisions GROUP BY context_id, revision_number HAVING count(*) > 1) duplicates) AS duplicate_context_revisions,
         (SELECT count(*)::integer FROM (SELECT target_profile_id, revision_number FROM target_profile_revisions GROUP BY target_profile_id, revision_number HAVING count(*) > 1) duplicates) AS duplicate_target_revisions,
         (SELECT count(*)::integer FROM (SELECT case_id, criterion_position, judge_model_id FROM evaluation_scores GROUP BY case_id, criterion_position, judge_model_id HAVING count(*) > 1) duplicates) AS duplicate_scores
     `;

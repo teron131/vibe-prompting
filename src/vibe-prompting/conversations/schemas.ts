@@ -3,16 +3,16 @@
 export type ChatToolId = (typeof CHAT_TOOL_IDS)[number];
 export type ChatReasoningEffort = "low" | "medium" | "high" | "xhigh";
 export type Attachment = { dataUrl: string; mediaType: string; name: string; size: number };
-export type PromptQuote = {
-  promptId: string;
+export type ContextQuote = {
+  contextId: string;
   revisionId: string;
   text: string;
   title: string;
 };
 export type TargetRunQuote = { runId: string; title: string };
-export type ChatQuote = PromptQuote | TargetRunQuote;
+export type ChatQuote = ContextQuote | TargetRunQuote;
 export type ChatWorkspaceContext = {
-  activePromptId: string | null;
+  activeContextId: string | null;
   enabledTools: ChatToolId[];
   panelOpen: boolean;
   reasoningEffort: ChatReasoningEffort;
@@ -51,8 +51,8 @@ export type MessagePart =
       summary?: string;
       type: "tool";
     }
-  | { promptId: string; revisionId: string; type: "prompt-revision" }
-  | (PromptQuote & { type: "prompt-quote" })
+  | { contextId: string; revisionId: string; type: "context-revision" }
+  | (ContextQuote & { type: "context-quote" })
   | (TargetRunQuote & { type: "target-run-quote" })
   | { report: unknown; runId?: string; type: "evaluation" };
 
@@ -88,7 +88,7 @@ export type RunEvent =
   | { startedAt: string; type: "response-start" }
   | { durationMs: number; type: "response-complete" }
   | { chatId: string; icon: string; title: string; type: "chat-metadata" }
-  | Extract<MessagePart, { type: "reasoning" | "tool" | "evaluation" | "prompt-revision" }>
+  | Extract<MessagePart, { type: "reasoning" | "tool" | "evaluation" | "context-revision" }>
   | { message: string; type: "error" }
   | { type: "stopped" }
   | { type: "finish" };
@@ -112,4 +112,4 @@ export type ChatRun = {
   subscribe(listener: (event: RunEvent) => void): () => void;
 };
 
-export const CHAT_TOOL_IDS = ["prompt-library", "evaluations", "web-search"] as const;
+export const CHAT_TOOL_IDS = ["context-library", "skills", "evaluations", "web-search"] as const;

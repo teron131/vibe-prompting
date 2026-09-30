@@ -7,15 +7,15 @@ export default async function ChatPage({
 }: {
   searchParams: Promise<{
     mode?: string | string[];
-    prompt?: string | string[];
+    context?: string | string[];
     targetRun?: string | string[];
   }>;
 }) {
-  const { mode, prompt, targetRun } = await searchParams;
+  const { mode, context, targetRun } = await searchParams;
   return (
     <Chat
       initialMode={mode === "target" ? "target" : "agent"}
-      initialPromptId={typeof prompt === "string" ? prompt : undefined}
+      initialContextId={typeof context === "string" ? context : undefined}
       initialTargetRunId={typeof targetRun === "string" ? targetRun : undefined}
     />
   );

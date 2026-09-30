@@ -3,7 +3,7 @@
 import { type ChatRunInput, streamChatRun } from "../agents/openai-agents/chat.ts";
 import type { AgentStreamEvent } from "../agents/openai-agents/events.ts";
 import type { AuthService } from "../auth/index.ts";
-import { PromptRevisionNotFoundError, type StoredPrompt } from "../prompt-system/index.ts";
+import { ContextRevisionNotFoundError, type StoredContext } from "../context-system/index.ts";
 import type { StoredTargetRun } from "../target/runs/index.ts";
 import { generateChatMetadata } from "./metadata.ts";
 import {
@@ -29,9 +29,9 @@ import type { ConversationStore } from "./store.ts";
 
 type Dependencies = Pick<
   ChatRunInput,
-  "prompts" | "criterion" | "evaluations" | "evaluationResults" | "targetRuns" | "scenarios"
+  "contexts" | "criterion" | "evaluations" | "evaluationResults" | "targetRuns" | "scenarios"
 > & { auth: AuthService; modelContext: NonNullable<ChatRunInput["modelContext"]> };
-type StoredQuote = Extract<StoredMessagePart, { type: "prompt-quote" | "target-run-quote" }>;
+type StoredQuote = Extract<StoredMessagePart, { type: "context-quote" | "target-run-quote" }>;
 type ResolvedQuote = { context: string; part: StoredQuote };
 const METADATA_EVERY_MESSAGES = 3;
 
@@ -56,9 +56,9 @@ export class ConversationService {
       const { auth, ...services } = this.#dependencies;
       await auth.requireActiveUser(actorUserId);
       this.#requireModel(input.modelId);
-      const [activePrompt, quotes] = await Promise.all([
-        input.workspace.activePromptId
-          ? services.prompts.getPrompt(input.workspace.activePromptId)
+      const [activeContext, quotes] = await Promise.all([
+        input.workspace.activeContextId
+          ? services.contexts.getContext(input.workspace.activeContextId)
           : undefined,
         resolveChatQuotes(services, actorUserId, input.quotes),
       ]);
@@ -108,7 +108,7 @@ export class ConversationService {
                 chatId: input.chatId,
                 instruction: formatWorkspaceInstruction(
                   input.instruction,
-                  activePrompt,
+                  activeContext,
                   quotes.map(({ context }) => context),
                 ),
                 history,
@@ -129,10 +129,11 @@ export class ConversationService {
               chatId: input.chatId,
               metadata: {
                 completedAt: new Date().toISOString(),
-                activePromptId: activePrompt?.id ?? null,
-                activePromptRevisionId: activePrompt?.revisionId ?? null,
+                activeContextId: activeContext?.id ?? null,
+                activeContextRevisionId: activeContext?.revisionId ?? null,
                 enabledTools: input.workspace.enabledTools,
                 modelId: result.model.id,
+                skillRevisions: result.skillRevisions ?? [],
                 reasoningEffort: input.workspace.reasoningEffort,
                 telemetry: result.telemetry,
               },
@@ -276,7 +277,7 @@ export class ConversationService {
 
 class CollectedAssistantParts {
   #activity: StoredMessagePart[] = [];
-  readonly #revisions = new Map<string, Extract<StoredMessagePart, { type: "prompt-revision" }>>();
+  readonly #revisions = new Map<string, Extract<StoredMessagePart, { type: "context-revision" }>>();
   readonly #tools = new Map<string, Extract<StoredMessagePart, { type: "tool" }>>();
 
   add(event: AgentStreamEvent): void {
@@ -292,8 +293,8 @@ class CollectedAssistantParts {
         this.#tools.set(event.callId, tool);
         this.#activity.push(tool);
       }
-    } else if (event.type === "prompt-revision") {
-      this.#revisions.set(`${event.promptId}:${event.revisionId}`, event);
+    } else if (event.type === "context-revision") {
+      this.#revisions.set(`${event.contextId}:${event.revisionId}`, event);
     }
   }
 
@@ -311,10 +312,10 @@ function projectRunHistory(
     const text = message.parts
       .filter(
         (part) =>
-          part.type === "text" || part.type === "prompt-quote" || part.type === "target-run-quote",
+          part.type === "text" || part.type === "context-quote" || part.type === "target-run-quote",
       )
       .map((part) =>
-        part.type === "prompt-quote"
+        part.type === "context-quote"
           ? `Quoted from ${part.title} revision ${part.revisionId.slice(0, 8)}:\n${part.text}`
           : part.type === "target-run-quote"
             ? `Quoted Target Run ${part.runId}: ${part.title}`
@@ -326,7 +327,7 @@ function projectRunHistory(
 }
 
 async function resolveChatQuotes(
-  services: Pick<Dependencies, "prompts" | "targetRuns">,
+  services: Pick<Dependencies, "contexts" | "targetRuns">,
   viewerUserId: string,
   quotes: ChatQuote[],
 ): Promise<ResolvedQuote[]> {
@@ -336,23 +337,23 @@ async function resolveChatQuotes(
         const run = await services.targetRuns.getRun(viewerUserId, quote.runId);
         return {
           context: formatTargetRunContext(run),
-          part: { runId: run.id, title: run.promptTitle, type: "target-run-quote" },
+          part: { runId: run.id, title: run.contextTitle, type: "target-run-quote" },
         };
       }
-      const prompt = await services.prompts.getPrompt(quote.promptId);
-      const revision = await services.prompts
-        .getRevision(quote.promptId, quote.revisionId)
+      const context = await services.contexts.getContext(quote.contextId);
+      const revision = await services.contexts
+        .getRevision(quote.contextId, quote.revisionId)
         .catch((error) => {
-          if (error instanceof PromptRevisionNotFoundError) {
-            throw new ChatRequestError("A quoted prompt revision was not found.", 400);
+          if (error instanceof ContextRevisionNotFoundError) {
+            throw new ChatRequestError("A quoted context revision was not found.", 400);
           }
           throw error;
         });
       if (!revision.markdown.includes(quote.text))
-        throw new ChatRequestError("Quoted prompt text no longer matches its revision.", 400);
+        throw new ChatRequestError("Quoted context text no longer matches its revision.", 400);
       return {
-        context: `Quoted passage from ${prompt.title} (prompt ${quote.promptId}, revision ${quote.revisionId}):\n<prompt_quote>\n${quote.text}\n</prompt_quote>`,
-        part: { ...quote, title: prompt.title, type: "prompt-quote" },
+        context: `Quoted passage from ${context.title} (context ${quote.contextId}, revision ${quote.revisionId}):\n<context_quote>\n${quote.text}\n</context_quote>`,
+        part: { ...quote, title: context.title, type: "context-quote" },
       };
     }),
   );
@@ -360,13 +361,15 @@ async function resolveChatQuotes(
 
 function formatWorkspaceInstruction(
   instruction: string,
-  activePrompt: StoredPrompt | undefined,
+  activeContext: StoredContext | undefined,
   quoteContexts: string[],
 ): string {
   const context: string[] = [];
-  if (activePrompt) {
+  if (activeContext) {
     context.push(
-      `Current prompt: ${activePrompt.title} (prompt ${activePrompt.id}, revision ${activePrompt.revisionId}).\n<prompt_markdown>\n${activePrompt.markdown}\n</prompt_markdown>`,
+      activeContext.skill
+        ? `Selected skill: ${activeContext.skill.name} (${activeContext.title}; context ${activeContext.id}, revision ${activeContext.revisionId}).\nDescription: ${activeContext.skill.description}\nRead the full instructions from the skill workspace when using this skill, or use read_context for editing.`
+        : `Current context: ${activeContext.title} (context ${activeContext.id}, revision ${activeContext.revisionId}).\n<context_markdown>\n${activeContext.markdown}\n</context_markdown>`,
     );
   }
   context.push(...quoteContexts);
@@ -381,11 +384,11 @@ function formatTargetRunContext(run: StoredTargetRun): string {
   const trace = {
     createdAt: run.createdAt,
     id: run.id,
-    prompt: {
-      id: run.promptId,
-      revisionId: run.promptRevisionId,
-      revisionNumber: run.promptRevisionNumber,
-      title: run.promptTitle,
+    context: {
+      id: run.contextId,
+      revisionId: run.contextRevisionId,
+      revisionNumber: run.contextRevisionNumber,
+      title: run.contextTitle,
     },
     runtime: {
       effectiveInstructionsHash: run.effectiveInstructionsHash,

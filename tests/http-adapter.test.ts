@@ -15,15 +15,15 @@ const actor = "10000000-0000-4000-8000-000000000001";
 const id = "20000000-0000-4000-8000-000000000002";
 const criterion = { name: "Helpful", type: "boolean", instruction: "Check helpfulness." };
 const runInput = {
-  promptId: id,
-  promptRevisionId: id,
+  contextId: id,
+  contextRevisionId: id,
   targetModel: "model",
   judgeModels: ["judge"],
   cases: [{ input: "Question", criteria: [criterion] }],
 };
 const batch = {
-  promptId: id,
-  promptRevisionId: id,
+  contextId: id,
+  contextRevisionId: id,
   targetModels: ["model"],
   judgeModels: ["judge"],
   configurations: [{ id: "one", name: "One", criteria: [criterion] }],
@@ -37,12 +37,12 @@ const record =
     calls.push({ method, args });
     return output;
   };
-mock.module("../src/vibe-prompting/agents/openai-agents/prompt-edit.ts", {
+mock.module("../src/vibe-prompting/agents/openai-agents/context-edit.ts", {
   namedExports: {
-    streamPromptEdit: async () => {
+    streamContextEdit: async () => {
       throw new Error("Unexpected streaming edit.");
     },
-    editPrompt: record("editPrompt", {
+    editContext: record("editContext", {
       markdown: "Edited",
       model: { id: "model" },
       message: "Done",
@@ -70,10 +70,10 @@ function application(): ApplicationServices {
     models: {},
     auth: { requireActiveUser: record("requireActiveUser", { id: actor }) },
     getConfiguredModels: record("getConfiguredModels", [{ id: "model" }]),
-    prompts: {
-      createPrompt: record("createPrompt", { id }),
-      listPrompts: record("listPrompts", [{ id }]),
-      getPrompt: record("getPrompt", { id, activeRevisionId: id }),
+    contexts: {
+      createContext: record("createContext", { id }),
+      listContexts: record("listContexts", [{ id }]),
+      getContext: record("getContext", { id, activeRevisionId: id }),
       appendAiEdit: record("appendAiEdit", { id, markdown: "Edited" }),
     },
     evaluations: {
@@ -133,20 +133,20 @@ test("HTTP operations preserve their OpenAPI schemas and dispatch to the expecte
     );
     const requests: Array<[InjectOptions, number, string]> = [
       [{ method: "GET", url: "/api/config" }, 200, "getConfiguredModels"],
-      [{ method: "GET", url: "/api/prompts" }, 200, "listPrompts"],
+      [{ method: "GET", url: "/api/contexts" }, 200, "listContexts"],
       [
         {
           method: "POST",
-          url: "/api/prompts",
+          url: "/api/contexts",
           payload: { actorUserId: actor, title: " Test ", markdown: "Text" },
         },
         200,
-        "createPrompt",
+        "createContext",
       ],
       [
         {
           method: "POST",
-          url: `/api/prompts/${id}/edits`,
+          url: `/api/contexts/${id}/edits`,
           payload: {
             actorUserId: actor,
             revisionId: id,
@@ -274,7 +274,7 @@ test("HTTP operations preserve their OpenAPI schemas and dispatch to the expecte
       );
       if (typeof request.url === "string" && request.url.startsWith("/api/evaluations"))
         assert.equal(response.headers["cache-control"], "no-store");
-      if (method === "createPrompt")
+      if (method === "createContext")
         assert.deepEqual(calls, [
           { method: "requireActiveUser", args: [actor] },
           { method, args: [actor, { title: "Test", markdown: "Text" }] },
@@ -282,7 +282,7 @@ test("HTTP operations preserve their OpenAPI schemas and dispatch to the expecte
       if (method === "appendAiEdit")
         assert.deepEqual(
           calls.map((call) => call.method),
-          ["requireActiveUser", "getPrompt", "editPrompt", "appendAiEdit"],
+          ["requireActiveUser", "getContext", "editContext", "appendAiEdit"],
         );
       if (method === "listRuns") assert.deepEqual(calls.at(-1)?.args, [actor, { limit: 50 }]);
       if (method === "getRunSummary")
@@ -300,7 +300,7 @@ test("HTTP validation and active-user checks precede effects, and internal failu
   const server = await createApiServer(app);
   const request: InjectOptions = {
     method: "POST",
-    url: "/api/prompts",
+    url: "/api/contexts",
     payload: { actorUserId: actor, title: "Test", markdown: "Text" },
   };
   try {
@@ -328,11 +328,11 @@ test("HTTP validation and active-user checks precede effects, and internal failu
     assert.equal((await server.inject(request)).statusCode, 403);
     assert.equal(calls.length, 0);
     app.auth.requireActiveUser = record("requireActiveUser", { id: actor }) as never;
-    app.prompts.createPrompt = async () => {
+    app.contexts.createContext = async () => {
       throw Object.assign(new Error("Conflict."), { statusCode: 409 });
     };
     assert.deepEqual((await server.inject(request)).json(), { error: "Conflict." });
-    app.prompts.createPrompt = async () => {
+    app.contexts.createContext = async () => {
       throw new Error("private database details");
     };
     const internal = await server.inject(request);

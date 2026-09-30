@@ -13,7 +13,7 @@ import {
   requireRunRow,
   selectCases,
   selectRunRows,
-  selectRunRowsForPrompt,
+  selectRunRowsForContext,
 } from "./queries.ts";
 import {
   EvaluationRunNotFoundError,
@@ -24,8 +24,8 @@ import {
 
 /** Carries the complete immutable configuration required before a running record can become visible. */
 export type NewEvaluationRun = {
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   targetProfileId: string;
   targetProfileRevisionId: string;
   targetModel: string;
@@ -43,8 +43,8 @@ export type NewEvaluationRun = {
 };
 
 export type EvaluationExecution = {
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   targetProfileId: string | null;
   targetProfileRevisionId: string | null;
   targetModel: string;
@@ -161,8 +161,8 @@ export class EvaluationRunStore {
     return this.#database.run(async (sql) => {
       const row = await requireRunRow(sql, runId);
       return {
-        promptId: row.promptId,
-        promptRevisionId: row.promptRevisionId,
+        contextId: row.contextId,
+        contextRevisionId: row.contextRevisionId,
         targetProfileId: row.targetProfileId,
         targetProfileRevisionId: row.targetProfileRevisionId,
         targetModel: row.targetModel,
@@ -186,12 +186,12 @@ export class EvaluationRunStore {
 
   async list(
     viewerUserId: string,
-    input: { limit?: number; promptId?: string } = {},
+    input: { limit?: number; contextId?: string } = {},
   ): Promise<EvaluationRunSummary[]> {
     const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
     return this.#database.run(async (sql) => {
-      const rows = input.promptId
-        ? await selectRunRowsForPrompt(sql, input.promptId, limit)
+      const rows = input.contextId
+        ? await selectRunRowsForContext(sql, input.contextId, limit)
         : await selectRunRows(sql, limit);
       return rows.map((row) => projectRunSummary(row, viewerUserId));
     });
@@ -202,14 +202,14 @@ async function insertRun(sql: DatabaseClient, input: NewEvaluationRun): Promise<
   const runId = randomUUID();
   await sql`
     INSERT INTO evaluation_runs (
-      id, prompt_id, prompt_revision_id, chat_id, source, target_model_id,
+      id, context_id, context_revision_id, chat_id, source, target_model_id,
       judge_model_ids, status, configuration_fingerprint, is_synthetic_example,
       target_profile_id, target_profile_revision_id, effective_instructions_hash,
       target_run_id, target_run_turn_id,
       completed_at, started_by_user_id
     )
     VALUES (
-      ${runId}, ${input.promptId}, ${input.promptRevisionId}, ${input.chatId}, ${input.source},
+      ${runId}, ${input.contextId}, ${input.contextRevisionId}, ${input.chatId}, ${input.source},
       ${input.targetModel}, ${sql.array(input.judgeModels)}, 'queued',
       ${input.configurationFingerprint}, ${input.isSyntheticExample}, ${input.targetProfileId},
       ${input.targetProfileRevisionId}, ${input.effectiveInstructionsHash},

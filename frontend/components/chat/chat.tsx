@@ -28,16 +28,17 @@ import type {
   ChatToolId,
   ConfiguredModel,
   ConfiguredModelsResponse,
+  ContextQuote,
   Conversation,
-  PromptQuote,
   RunEvent,
   SteerChatResponse,
   StopChatResponse,
   TargetRunQuote,
 } from "@/contracts/chat";
-import type { PromptsResponse, PromptSummary } from "@/contracts/prompts";
+import type { ContextsResponse, ContextSummary } from "@/contracts/contexts";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 import { createApiRequester, createErrorReader, readResponseError } from "@/shared/api";
+import { readContextStorage } from "@/shared/context-storage";
 
 import {
   applyAssistantEvent,
@@ -49,20 +50,20 @@ import { ChatComposer } from "./chat-composer";
 import { ChatHistoryIcon } from "./history-icon";
 import { summarizeResponseTelemetry } from "./response-telemetry";
 
-const PromptContextPanel = dynamic(() =>
-  import("@/components/prompts/context-panel").then(({ PromptContextPanel }) => PromptContextPanel),
+const ContextPanel = dynamic(() =>
+  import("@/components/contexts/context-panel").then(({ ContextPanel }) => ContextPanel),
 );
 const TargetWorkspace = dynamic(() =>
   import("./target/workspace").then(({ TargetWorkspace }) => TargetWorkspace),
 );
 
-const DEFAULT_TOOLS: ChatToolId[] = ["prompt-library", "evaluations", "web-search"];
-const PROMPT_PANEL_MEDIA_QUERY = "(min-width: 800px)";
+const DEFAULT_TOOLS: ChatToolId[] = ["context-library", "skills", "evaluations", "web-search"];
+const CONTEXT_PANEL_MEDIA_QUERY = "(min-width: 800px)";
 const chatApi = createApiRequester({ cache: "no-store" });
 const readError = createErrorReader("The request failed.");
 
 type WorkspaceDraft = {
-  activePromptId: string | null;
+  activeContextId: string | null;
   enabledTools: ChatToolId[];
   instruction: string;
   panelOpen: boolean;
@@ -79,15 +80,15 @@ type ReplacementSubmission = {
 };
 
 type UseChatRunInput = {
-  activePromptId: string | null;
+  activeContextId: string | null;
   attachments: Attachment[];
   enabledTools: ChatToolId[];
   initialChatId?: string;
   instruction: string;
   onAttachmentsChange(value: Attachment[]): void;
   onInstructionChange(value: string): void;
-  onPromptsRefresh(): Promise<unknown>;
-  onPromptRevision(reference: PromptRevisionReference): void;
+  onContextsRefresh(): Promise<unknown>;
+  onContextRevision(reference: ContextRevisionReference): void;
   onQuotesChange(value: ChatQuote[]): void;
   panelOpen: boolean;
   quotes: ChatQuote[];
@@ -95,51 +96,51 @@ type UseChatRunInput = {
   selectedModelId: string;
 };
 
-type PromptRevisionReference = { promptId: string; revisionId: string };
+type ContextRevisionReference = { contextId: string; revisionId: string };
 
 export function Chat({
   chatId: initialChatId,
-  initialPromptId,
+  initialContextId,
   initialTargetRunId,
   initialMode = "agent",
 }: {
   chatId?: string;
-  initialPromptId?: string;
+  initialContextId?: string;
   initialTargetRunId?: string;
   initialMode?: "agent" | "target";
 }) {
   const router = useRouter();
   const [models, setModels] = useState<ConfiguredModel[]>([]);
-  const [prompts, setPrompts] = useState<PromptSummary[]>([]);
+  const [contexts, setContexts] = useState<ContextSummary[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [enabledTools, setEnabledTools] = useState<ChatToolId[]>(DEFAULT_TOOLS);
   const [reasoningEffort, setReasoningEffort] = useState<ChatReasoningEffort>("medium");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [activePromptId, setActivePromptId] = useState<string | null>(initialPromptId ?? null);
+  const [activeContextId, setActiveContextId] = useState<string | null>(initialContextId ?? null);
   const [quotes, setQuotes] = useState<ChatQuote[]>([]);
-  const [highlightedQuote, setHighlightedQuote] = useState<PromptQuote>();
-  const [reviewRevision, setReviewRevision] = useState<PromptRevisionReference>();
-  const [panelOpen, setPanelOpen] = useState(Boolean(initialPromptId));
-  const [panelMounted, setPanelMounted] = useState(Boolean(initialPromptId));
+  const [highlightedQuote, setHighlightedQuote] = useState<ContextQuote>();
+  const [reviewRevision, setReviewRevision] = useState<ContextRevisionReference>();
+  const [panelOpen, setPanelOpen] = useState(Boolean(initialContextId));
+  const [panelMounted, setPanelMounted] = useState(Boolean(initialContextId));
   const [instruction, setInstruction] = useState("");
   const [loading, setLoading] = useState(true);
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [workspaceMode, setWorkspaceMode] = useState<"agent" | "target">(initialMode);
   const panelWasOpen = useRef(panelOpen);
 
-  const loadPrompts = useCallback(async () => {
-    const data = await chatApi.json<PromptsResponse>("/api/prompts");
-    setPrompts(data.prompts);
-    return data.prompts;
+  const loadContexts = useCallback(async () => {
+    const data = await chatApi.json<ContextsResponse>("/api/contexts");
+    setContexts(data.contexts);
+    return data.contexts;
   }, []);
-  const handlePromptRevision = useCallback((reference: PromptRevisionReference) => {
-    setActivePromptId(reference.promptId);
+  const handleContextRevision = useCallback((reference: ContextRevisionReference) => {
+    setActiveContextId(reference.contextId);
     setHighlightedQuote(undefined);
     setReviewRevision(reference);
     setPanelOpen(true);
   }, []);
-  const handleTargetPromptResolved = useCallback((promptId: string) => {
-    setActivePromptId(promptId);
+  const handleTargetContextResolved = useCallback((contextId: string) => {
+    setActiveContextId(contextId);
     setPanelOpen(false);
   }, []);
 
@@ -156,15 +157,15 @@ export function Chat({
     stop,
     submit,
   } = useChatRun({
-    activePromptId,
+    activeContextId,
     attachments,
     enabledTools,
     initialChatId,
     instruction,
     onAttachmentsChange: setAttachments,
     onInstructionChange: setInstruction,
-    onPromptsRefresh: loadPrompts,
-    onPromptRevision: handlePromptRevision,
+    onContextsRefresh: loadContexts,
+    onContextRevision: handleContextRevision,
     onQuotesChange: setQuotes,
     panelOpen,
     quotes,
@@ -182,38 +183,38 @@ export function Chat({
   }, [messages]);
   const telemetrySummary = useMemo(() => summarizeResponseTelemetry(messages), [messages]);
   const { containerRef, isAtBottom, onScroll, scrollToBottom } = useScrollToBottom(messages);
-  const activePrompt = prompts.find(({ id }) => id === activePromptId);
+  const activeContext = contexts.find(({ id }) => id === activeContextId);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     Promise.all([
       chatApi.json<ConfiguredModelsResponse>("/api/config"),
-      loadPrompts(),
+      loadContexts(),
       chatId ? loadConversation(chatId) : Promise.resolve(undefined),
     ])
-      .then(([config, promptList, chatData]) => {
+      .then(([config, contextList, chatData]) => {
         if (!active) return;
         setModels(config.models);
         const stored = readWorkspaceDraft(workspaceStorageKey(chatId));
         const context = chatData?.conversation.context;
-        const requestedPrompt = initialPromptId
-          ? promptList.find(({ id }) => id === initialPromptId)
+        const requestedContext = initialContextId
+          ? contextList.find(({ id }) => id === initialContextId)
           : undefined;
-        const restoredPrompt = promptList.find(
-          ({ id }) => id === (stored?.activePromptId ?? context?.activePromptId),
+        const restoredContext = contextList.find(
+          ({ id }) => id === (stored?.activeContextId ?? context?.activeContextId),
         );
-        setActivePromptId(requestedPrompt?.id ?? restoredPrompt?.id ?? null);
+        setActiveContextId(requestedContext?.id ?? restoredContext?.id ?? null);
         setEnabledTools(stored?.enabledTools ?? context?.enabledTools ?? DEFAULT_TOOLS);
         setInstruction(stored?.instruction ?? "");
-        setPanelOpen(requestedPrompt ? true : (stored?.panelOpen ?? context?.panelOpen ?? false));
+        setPanelOpen(requestedContext ? true : (stored?.panelOpen ?? context?.panelOpen ?? false));
         setQuotes(stored?.quotes ?? []);
         setReasoningEffort(stored?.reasoningEffort ?? context?.reasoningEffort ?? "medium");
         const restoredModelId = stored?.selectedModelId ?? chatData?.conversation.chat.modelId;
         setSelectedModelId(
           config.models.find(({ id }) => id === restoredModelId)?.id ?? config.models[0]?.id ?? "",
         );
-        if (initialPromptId && !requestedPrompt) setError("The requested prompt was not found.");
+        if (initialContextId && !requestedContext) setError("The requested context was not found.");
         setWorkspaceReady(true);
       })
       .catch((cause) => active && setError(readError(cause)))
@@ -221,12 +222,12 @@ export function Chat({
     return () => {
       active = false;
     };
-  }, [chatId, initialPromptId, loadConversation, loadPrompts]);
+  }, [chatId, initialContextId, loadConversation, loadContexts]);
 
   useEffect(() => {
     if (!workspaceReady) return;
     const draft: WorkspaceDraft = {
-      activePromptId,
+      activeContextId,
       enabledTools,
       instruction,
       panelOpen,
@@ -236,7 +237,7 @@ export function Chat({
     };
     window.localStorage.setItem(workspaceStorageKey(chatId), JSON.stringify(draft));
   }, [
-    activePromptId,
+    activeContextId,
     chatId,
     enabledTools,
     instruction,
@@ -255,32 +256,32 @@ export function Chat({
     const opened = panelOpen && !panelWasOpen.current;
     panelWasOpen.current = panelOpen;
     if (!workspaceReady || !opened) return;
-    void loadPrompts().catch((cause) => setError(readError(cause)));
-  }, [loadPrompts, panelOpen, setError, workspaceReady]);
+    void loadContexts().catch((cause) => setError(readError(cause)));
+  }, [loadContexts, panelOpen, setError, workspaceReady]);
 
-  function activatePrompt(prompt: PromptSummary, showPanel: boolean) {
-    setActivePromptId(prompt.id);
+  function activateContext(context: ContextSummary, showPanel: boolean) {
+    setActiveContextId(context.id);
     setHighlightedQuote(undefined);
     setReviewRevision(undefined);
     window.history.replaceState(
       null,
       "",
       workspaceMode === "target"
-        ? `/?mode=target&prompt=${encodeURIComponent(prompt.id)}`
+        ? `/?mode=target&context=${encodeURIComponent(context.id)}`
         : chatId
           ? `/chat/${chatId}`
           : showPanel
-            ? `/?prompt=${encodeURIComponent(prompt.id)}`
+            ? `/?context=${encodeURIComponent(context.id)}`
             : "/",
     );
     if (showPanel) setPanelOpen(true);
     setEnabledTools((current) =>
-      current.includes("prompt-library") ? current : ["prompt-library", ...current],
+      current.includes("context-library") ? current : ["context-library", ...current],
     );
   }
 
-  function detachPrompt() {
-    setActivePromptId(null);
+  function detachContext() {
+    setActiveContextId(null);
     setHighlightedQuote(undefined);
     setReviewRevision(undefined);
     window.history.replaceState(null, "", chatId ? `/chat/${chatId}` : "/");
@@ -292,27 +293,27 @@ export function Chat({
       window.history.replaceState(null, "", chatId ? `/chat/${chatId}` : "/");
       return;
     }
-    if (!activePromptId) setPanelOpen(true);
+    if (!activeContextId) setPanelOpen(true);
     window.history.replaceState(
       null,
       "",
-      activePromptId
-        ? `/?mode=target&prompt=${encodeURIComponent(activePromptId)}`
+      activeContextId
+        ? `/?mode=target&context=${encodeURIComponent(activeContextId)}`
         : "/?mode=target",
     );
   }
 
-  function openPromptWorkspace() {
-    if (window.matchMedia(PROMPT_PANEL_MEDIA_QUERY).matches) {
+  function openContextWorkspace() {
+    if (window.matchMedia(CONTEXT_PANEL_MEDIA_QUERY).matches) {
       setPanelOpen(true);
       return;
     }
-    router.push(activePrompt ? `/prompts/${activePrompt.id}` : "/prompts");
+    router.push(activeContext ? `/contexts/${activeContext.id}` : "/contexts");
   }
 
   function addQuote(quote: ChatQuote) {
-    if (isPromptQuote(quote)) {
-      setActivePromptId(quote.promptId);
+    if (isContextQuote(quote)) {
+      setActiveContextId(quote.contextId);
       setHighlightedQuote(quote);
     }
     setQuotes((current) => {
@@ -325,25 +326,25 @@ export function Chat({
     });
   }
 
-  function openPromptReference(reference: {
-    promptId: string;
-    quote?: PromptQuote;
+  function openContextReference(reference: {
+    contextId: string;
+    quote?: ContextQuote;
     revisionId?: string;
   }) {
-    const prompt = prompts.find(({ id }) => id === reference.promptId);
-    if (!prompt) {
-      toast.error("The referenced prompt is no longer available.");
+    const context = contexts.find(({ id }) => id === reference.contextId);
+    if (!context) {
+      toast.error("The referenced context is no longer available.");
       return;
     }
-    if (!window.matchMedia(PROMPT_PANEL_MEDIA_QUERY).matches) {
-      router.push(`/prompts/${prompt.id}`);
+    if (!window.matchMedia(CONTEXT_PANEL_MEDIA_QUERY).matches) {
+      router.push(`/contexts/${context.id}`);
       return;
     }
-    setActivePromptId(prompt.id);
+    setActiveContextId(context.id);
     setHighlightedQuote(undefined);
     setReviewRevision(
       reference.revisionId
-        ? { promptId: reference.promptId, revisionId: reference.revisionId }
+        ? { contextId: reference.contextId, revisionId: reference.revisionId }
         : undefined,
     );
     if (reference.quote) {
@@ -393,15 +394,15 @@ export function Chat({
               aria-expanded={panelOpen}
               aria-label={
                 panelOpen
-                  ? "Close prompt editor"
-                  : activePrompt
-                    ? `Open prompt editor for ${activePrompt.title}`
-                    : "Open prompt editor"
+                  ? "Close context editor"
+                  : activeContext
+                    ? `Open context editor for ${activeContext.title}`
+                    : "Open context editor"
               }
               className={`max-w-[min(20rem,45vw)] shrink-0 rounded-full border-border/80 px-2 min-[640px]:px-3 ${panelOpen ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              href={activePrompt ? `/prompts/${activePrompt.id}` : "/prompts"}
+              href={activeContext ? `/contexts/${activeContext.id}` : "/contexts"}
               onClick={(event) => {
-                if (!window.matchMedia(PROMPT_PANEL_MEDIA_QUERY).matches) return;
+                if (!window.matchMedia(CONTEXT_PANEL_MEDIA_QUERY).matches) return;
                 event.preventDefault();
                 setPanelOpen((open) => !open);
               }}
@@ -413,10 +414,10 @@ export function Chat({
               ) : (
                 <PanelRightOpen aria-hidden="true" className="size-3.5 shrink-0" />
               )}
-              <span className="hidden shrink-0 min-[640px]:inline">Prompt Editor</span>
-              {activePrompt ? (
+              <span className="hidden shrink-0 min-[640px]:inline">Context Editor</span>
+              {activeContext ? (
                 <span className="hidden truncate text-muted-foreground min-[1120px]:inline">
-                  {activePrompt.title}
+                  {activeContext.title}
                 </span>
               ) : null}
             </ButtonLink>
@@ -437,14 +438,14 @@ export function Chat({
         <div className="flex min-h-0 flex-1">
           {workspaceMode === "target" ? (
             <TargetWorkspace
-              activePrompt={activePrompt}
+              activeContext={activeContext}
               initialRunId={initialTargetRunId}
               models={models}
               onModelChange={setSelectedModelId}
-              onOpenPrompt={openPromptWorkspace}
-              onPromptResolved={handleTargetPromptResolved}
-              onQuoteInAgent={({ promptId, runId, title }) => {
-                setActivePromptId(promptId);
+              onOpenContext={openContextWorkspace}
+              onContextResolved={handleTargetContextResolved}
+              onQuoteInAgent={({ contextId, runId, title }) => {
+                setActiveContextId(contextId);
                 addQuote({ runId, title });
                 switchWorkspaceMode("agent");
               }}
@@ -481,7 +482,7 @@ export function Chat({
                         message={message}
                         modelId={modelId}
                         onEdit={message.role === "user" ? editUserMessage : undefined}
-                        onPromptReference={openPromptReference}
+                        onContextReference={openContextReference}
                         onRerun={rerunSource ? () => rerunFromUserMessage(rerunSource) : undefined}
                         streaming={
                           running && index === messages.length - 1 && message.role === "assistant"
@@ -501,7 +502,7 @@ export function Chat({
                 ) : null}
               </ConversationView>
               <ChatComposer
-                activePrompt={activePrompt}
+                activeContext={activeContext}
                 attachments={attachments}
                 enabledTools={enabledTools}
                 instruction={instruction}
@@ -509,9 +510,9 @@ export function Chat({
                 onAttachmentsChange={setAttachments}
                 onInstructionChange={setInstruction}
                 onModelChange={setSelectedModelId}
-                onOpenPrompt={openPromptWorkspace}
-                onPromptChange={(prompt) =>
-                  prompt ? activatePrompt(prompt, false) : detachPrompt()
+                onOpenContext={openContextWorkspace}
+                onContextChange={(context) =>
+                  context ? activateContext(context, false) : detachContext()
                 }
                 onQuoteRemove={(quote) =>
                   setQuotes((current) => current.filter((candidate) => candidate !== quote))
@@ -520,7 +521,7 @@ export function Chat({
                 onStop={stop}
                 onSubmit={() => void submit()}
                 onToolsChange={setEnabledTools}
-                prompts={prompts}
+                contexts={contexts}
                 quotes={quotes}
                 reasoningEffort={reasoningEffort}
                 running={running}
@@ -530,19 +531,19 @@ export function Chat({
             </section>
           )}
           {panelMounted || panelOpen ? (
-            <PromptContextPanel
-              activePrompt={activePrompt}
+            <ContextPanel
+              activeContext={activeContext}
               highlightedQuote={highlightedQuote}
               onClose={() => setPanelOpen(false)}
-              onPromptUpdated={(prompt) =>
-                setPrompts((current) =>
-                  current.map((candidate) => (candidate.id === prompt.id ? prompt : candidate)),
+              onContextUpdated={(context) =>
+                setContexts((current) =>
+                  current.map((candidate) => (candidate.id === context.id ? context : candidate)),
                 )
               }
               onQuote={addQuote}
-              onSelectPrompt={(prompt) => activatePrompt(prompt, true)}
+              onSelectContext={(context) => activateContext(context, true)}
               open={panelOpen}
-              prompts={prompts}
+              contexts={contexts}
               reviewRevision={reviewRevision}
             />
           ) : null}
@@ -553,15 +554,15 @@ export function Chat({
 }
 
 function useChatRun({
-  activePromptId,
+  activeContextId,
   attachments,
   enabledTools,
   initialChatId,
   instruction,
   onAttachmentsChange,
   onInstructionChange,
-  onPromptsRefresh,
-  onPromptRevision,
+  onContextsRefresh,
+  onContextRevision,
   onQuotesChange,
   panelOpen,
   quotes,
@@ -596,11 +597,11 @@ function useChatRun({
           return current?.chatId === id ? { ...replayed, createdAt: current.createdAt } : replayed;
         });
       }
-      const revision = findLatestPromptRevision(data.conversation.messages);
-      if (revision) onPromptRevision(revision);
+      const revision = findLatestContextRevision(data.conversation.messages);
+      if (revision) onContextRevision(revision);
       return data;
     },
-    [onPromptRevision],
+    [onContextRevision],
   );
 
   useEffect(() => {
@@ -624,7 +625,7 @@ function useChatRun({
         const data = await loadConversation(chatId);
         if (!active) return;
         if (data.active) schedule(Math.max(0, intervalMs - (performance.now() - startedAt)));
-        else void onPromptsRefresh().catch((cause) => setError(readError(cause)));
+        else void onContextsRefresh().catch((cause) => setError(readError(cause)));
       } catch (cause) {
         if (!active) return;
         setError(readError(cause));
@@ -649,7 +650,7 @@ function useChatRun({
       if (timer !== undefined) window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [chatId, detached, loadConversation, onPromptsRefresh]);
+  }, [chatId, detached, loadConversation, onContextsRefresh]);
 
   async function submit(replacement?: ReplacementSubmission) {
     if (running) {
@@ -669,7 +670,7 @@ function useChatRun({
       (requestQuotes.length
         ? requestQuotes.some(isTargetRunQuote)
           ? "Please review the quoted Target Run."
-          : "Please review the quoted prompt passage."
+          : "Please review the quoted context passage."
         : "Please review the attached files.");
     const runChatId = chatId ?? crypto.randomUUID();
     const optimisticUser: ChatMessage = {
@@ -682,7 +683,7 @@ function useChatRun({
         ...requestQuotes.map((quote) =>
           isTargetRunQuote(quote)
             ? { ...quote, type: "target-run-quote" as const }
-            : { ...quote, type: "prompt-quote" as const },
+            : { ...quote, type: "context-quote" as const },
         ),
         { type: "text", text: requestInstruction },
       ],
@@ -697,7 +698,7 @@ function useChatRun({
         title: requestInstruction.slice(0, 72),
         updatedAt: optimisticUser.createdAt,
       },
-      context: { activePromptId, enabledTools, panelOpen, reasoningEffort },
+      context: { activeContextId, enabledTools, panelOpen, reasoningEffort },
       messages: [],
     };
     const replacementIndex = replacement
@@ -732,7 +733,7 @@ function useChatRun({
           modelId: selectedModelId,
           quotes: requestQuotes,
           replaceFromMessageId: replacement?.messageId,
-          workspace: { activePromptId, enabledTools, panelOpen, reasoningEffort },
+          workspace: { activeContextId, enabledTools, panelOpen, reasoningEffort },
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -748,9 +749,9 @@ function useChatRun({
       ownedRunIdRef.current = undefined;
       await loadConversation(runChatId);
       try {
-        await onPromptsRefresh();
+        await onContextsRefresh();
       } catch (cause) {
-        toast.error(`The prompt workspace could not refresh: ${readError(cause)}`);
+        toast.error(`The context workspace could not refresh: ${readError(cause)}`);
       }
       setLiveMessage(undefined);
       setRunning(false);
@@ -803,7 +804,7 @@ function useChatRun({
           instruction: steeringInstruction,
           messageId,
           modelId: selectedModelId,
-          workspace: { activePromptId, enabledTools, panelOpen, reasoningEffort },
+          workspace: { activeContextId, enabledTools, panelOpen, reasoningEffort },
         }),
         headers: { "content-type": "application/json" },
         method: "PUT",
@@ -836,7 +837,7 @@ function useChatRun({
       window.dispatchEvent(new Event("vibe:history"));
       return;
     }
-    if (event.type === "prompt-revision") onPromptRevision(event);
+    if (event.type === "context-revision") onContextRevision(event);
     setLiveMessage((current) =>
       applyAssistantEvent(
         current ?? createAssistantMessage(chatId ?? "pending", selectedModelId),
@@ -881,8 +882,8 @@ function useChatRun({
 
 function EmptyState({ onSelect }: { onSelect(value: string): void }) {
   const description =
-    "Brainstorm possibilities, sharpen a prompt, or diagnose exactly what is not working.";
-  const suggestions = ["Explore an idea", "Sharpen a prompt", "Diagnose a problem"];
+    "Brainstorm possibilities, sharpen a context, or diagnose exactly what is not working.";
+  const suggestions = ["Explore an idea", "Sharpen a context", "Diagnose a problem"];
   return (
     <div className="grid min-h-[46vh] place-items-center text-center">
       <div className="max-w-xl">
@@ -916,9 +917,9 @@ function createReplacementSubmission(
     .filter((part) => part.type === "file")
     .map(({ dataUrl, mediaType, name, size }) => ({ dataUrl, mediaType, name, size }));
   const quotes = message.parts.flatMap((part): ChatQuote[] => {
-    if (part.type === "prompt-quote") {
-      const { promptId, revisionId, text, title } = part;
-      return [{ promptId, revisionId, text, title }];
+    if (part.type === "context-quote") {
+      const { contextId, revisionId, text, title } = part;
+      return [{ contextId, revisionId, text, title }];
     }
     if (part.type === "target-run-quote") {
       const { runId, title } = part;
@@ -940,12 +941,12 @@ function createReplacementSubmission(
   };
 }
 
-function findLatestPromptRevision(messages: ChatMessage[]): PromptRevisionReference | undefined {
+function findLatestContextRevision(messages: ChatMessage[]): ContextRevisionReference | undefined {
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
     const message = messages[messageIndex];
     for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
       const part = message.parts[partIndex];
-      if (part.type === "prompt-revision") return part;
+      if (part.type === "context-revision") return part;
     }
   }
   return undefined;
@@ -976,7 +977,7 @@ function workspaceStorageKey(chatId: string | undefined): string {
 
 function readWorkspaceDraft(key: string): WorkspaceDraft | undefined {
   try {
-    const raw = window.localStorage.getItem(key);
+    const raw = readContextStorage(key);
     if (!raw) return undefined;
     const value = JSON.parse(raw) as Partial<WorkspaceDraft>;
     const tools = Array.isArray(value.enabledTools)
@@ -984,7 +985,7 @@ function readWorkspaceDraft(key: string): WorkspaceDraft | undefined {
       : DEFAULT_TOOLS;
     const quotes = Array.isArray(value.quotes) ? value.quotes.filter(isChatQuote) : [];
     return {
-      activePromptId: typeof value.activePromptId === "string" ? value.activePromptId : null,
+      activeContextId: typeof value.activeContextId === "string" ? value.activeContextId : null,
       enabledTools: tools,
       instruction: typeof value.instruction === "string" ? value.instruction : "",
       panelOpen: value.panelOpen === true,
@@ -998,18 +999,23 @@ function readWorkspaceDraft(key: string): WorkspaceDraft | undefined {
 }
 
 function isChatToolId(value: unknown): value is ChatToolId {
-  return value === "prompt-library" || value === "evaluations" || value === "web-search";
+  return (
+    value === "context-library" ||
+    value === "skills" ||
+    value === "evaluations" ||
+    value === "web-search"
+  );
 }
 
 function isReasoningEffort(value: unknown): value is ChatReasoningEffort {
   return value === "low" || value === "medium" || value === "high" || value === "xhigh";
 }
 
-function isPromptQuote(value: unknown): value is PromptQuote {
+function isContextQuote(value: unknown): value is ContextQuote {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const quote = value as Partial<PromptQuote>;
+  const quote = value as Partial<ContextQuote>;
   return (
-    typeof quote.promptId === "string" &&
+    typeof quote.contextId === "string" &&
     typeof quote.revisionId === "string" &&
     typeof quote.text === "string" &&
     typeof quote.title === "string"
@@ -1023,7 +1029,7 @@ function isTargetRunQuote(value: unknown): value is TargetRunQuote {
 }
 
 function isChatQuote(value: unknown): value is ChatQuote {
-  return isPromptQuote(value) || isTargetRunQuote(value);
+  return isContextQuote(value) || isTargetRunQuote(value);
 }
 
 function sameQuote(left: ChatQuote, right: ChatQuote): boolean {
@@ -1031,7 +1037,7 @@ function sameQuote(left: ChatQuote, right: ChatQuote): boolean {
     return isTargetRunQuote(left) && isTargetRunQuote(right) && left.runId === right.runId;
   }
   return (
-    left.promptId === right.promptId &&
+    left.contextId === right.contextId &&
     left.revisionId === right.revisionId &&
     left.text === right.text
   );

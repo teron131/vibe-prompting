@@ -153,7 +153,7 @@ function fixture() {
       conversation = undefined;
     },
   } as unknown as ConversationStore;
-  const promptId = randomUUID(),
+  const contextId = randomUUID(),
     revisionId = randomUUID();
   const dependencies = {
     auth: {
@@ -165,12 +165,12 @@ function fixture() {
       },
     },
     modelContext: { readConfig: () => ({ models: [{ id: "model" }] }) },
-    prompts: {
-      async getPrompt() {
+    contexts: {
+      async getContext() {
         return {
-          id: promptId,
+          id: contextId,
           revisionId,
-          title: "Canonical prompt",
+          title: "Canonical context",
           markdown: "Exact quoted text",
         };
       },
@@ -180,13 +180,13 @@ function fixture() {
     },
     targetRuns: {
       async getRun(_actor: string, runId: string) {
-        return { id: runId, promptTitle: "Target", turns: [] };
+        return { id: runId, contextTitle: "Target", turns: [] };
       },
     },
   } as unknown as ConstructorParameters<typeof ConversationService>[1];
   const service = new ConversationService(store, dependencies);
   opened.push(service);
-  return { service, store, writes, promptId, revisionId };
+  return { service, store, writes, contextId, revisionId };
 }
 
 function request(overrides: Partial<ChatRequest> = {}): ChatRequest {
@@ -197,7 +197,12 @@ function request(overrides: Partial<ChatRequest> = {}): ChatRequest {
     modelId: "model",
     attachments: [],
     quotes: [],
-    workspace: { activePromptId: null, enabledTools: [], panelOpen: false, reasoningEffort: "low" },
+    workspace: {
+      activeContextId: null,
+      enabledTools: [],
+      panelOpen: false,
+      reasoningEffort: "low",
+    },
     ...overrides,
   };
 }
@@ -235,22 +240,22 @@ function pauseUntilStopped(): void {
 }
 
 test("send resolves pinned quotes and attachments, persists activity, and replays a completed reply", async () => {
-  const { service, promptId, revisionId } = fixture();
+  const { service, contextId, revisionId } = fixture();
   respond = async (_input, emit) => {
     emit({ type: "reasoning", summary: "Discarded attempt" });
     emit({ type: "response-reset" });
     emit({ type: "reasoning", summary: "Final reasoning" });
     emit({ type: "tool", callId: "tool", name: "read", state: "running" });
     emit({ type: "tool", callId: "tool", name: "read", state: "completed", output: "read result" });
-    emit({ type: "prompt-revision", promptId, revisionId });
-    emit({ type: "prompt-revision", promptId, revisionId });
+    emit({ type: "context-revision", contextId, revisionId });
+    emit({ type: "context-revision", contextId, revisionId });
     emit({ type: "text-delta", delta: "Reply" });
     return result();
   };
   const targetRunId = randomUUID();
   const input = request({
     quotes: [
-      { promptId, revisionId, text: "Exact quoted text", title: "Untrusted title" },
+      { contextId, revisionId, text: "Exact quoted text", title: "Untrusted title" },
       { runId: targetRunId, title: "Untrusted Target title" },
     ],
     attachments: [
@@ -262,8 +267,8 @@ test("send resolves pinned quotes and attachments, persists activity, and replay
       },
     ],
     workspace: {
-      activePromptId: promptId,
-      enabledTools: ["prompt-library"],
+      activeContextId: contextId,
+      enabledTools: ["context-library"],
       panelOpen: true,
       reasoningEffort: "high",
     },
@@ -273,7 +278,7 @@ test("send resolves pinned quotes and attachments, persists activity, and replay
   const events: RunEvent[] = [];
   run.subscribe((event) => events.push(event));
   assert.equal(events.at(-1)?.type, "finish");
-  assert.match(calls[0]!.instruction, /Current prompt: Canonical prompt/);
+  assert.match(calls[0]!.instruction, /Current context: Canonical context/);
   assert.match(calls[0]!.instruction, new RegExp(revisionId));
   assert.match(calls[0]!.instruction, new RegExp(targetRunId));
   assert.deepEqual(calls[0]!.attachments, input.attachments);
@@ -282,7 +287,7 @@ test("send resolves pinned quotes and attachments, persists activity, and replay
   assert.equal(saved.active, false);
   assert.equal(saved.conversation.messages.length, 2);
   const userParts = saved.conversation.messages[0]!.parts;
-  assert.equal(userParts.find((part) => part.type === "prompt-quote")?.title, "Canonical prompt");
+  assert.equal(userParts.find((part) => part.type === "context-quote")?.title, "Canonical context");
   assert.deepEqual(
     userParts.find((part) => part.type === "target-run-quote"),
     {
@@ -294,10 +299,10 @@ test("send resolves pinned quotes and attachments, persists activity, and replay
   const assistant = saved.conversation.messages[1]!;
   assert.deepEqual(
     assistant.parts.map((part) => part.type),
-    ["reasoning", "tool", "text", "prompt-revision"],
+    ["reasoning", "tool", "text", "context-revision"],
   );
   assert.deepEqual(assistant.parts[0], { type: "reasoning", summary: "Final reasoning" });
-  assert.equal(assistant.metadata.activePromptRevisionId, revisionId);
+  assert.equal(assistant.metadata.activeContextRevisionId, revisionId);
   assert.deepEqual(assistant.metadata.telemetry, result().telemetry);
 });
 
@@ -425,11 +430,11 @@ test("delete aborts the run and waits for pending metadata before removing stora
 });
 
 test("invalid input and stale quotes fail before storage or model effects", async () => {
-  const { service, promptId, revisionId, writes } = fixture();
+  const { service, contextId, revisionId, writes } = fixture();
   for (const input of [
     request({ modelId: "unknown" }),
     request({ replaceFromMessageId: randomUUID() }),
-    request({ quotes: [{ promptId, revisionId, title: "Prompt", text: "Not in revision" }] }),
+    request({ quotes: [{ contextId, revisionId, title: "Context", text: "Not in revision" }] }),
     request({
       attachments: [
         {

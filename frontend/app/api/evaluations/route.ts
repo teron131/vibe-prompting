@@ -1,4 +1,4 @@
-/** Starts detached prompt-bound browser evaluations and lists their durable application-facing attempts. */
+/** Starts detached context-bound browser evaluations and lists their durable application-facing attempts. */
 
 import { getApplicationServices } from "vibe-prompting/server";
 
@@ -14,12 +14,12 @@ export async function GET(request: Request) {
   try {
     const user = await requireActiveSessionUser();
     const params = new URL(request.url).searchParams;
-    const promptId = params.get("promptId") ?? undefined;
-    if (promptId) requireUuid(promptId, "Prompt ID");
+    const contextId = params.get("contextId") ?? undefined;
+    if (contextId) requireUuid(contextId, "Context ID");
     const services = await getApplicationServices();
     return Response.json(
       {
-        runs: await services.evaluations.listRuns(user.id, { promptId }),
+        runs: await services.evaluations.listRuns(user.id, { contextId }),
       } satisfies EvaluationRunsResponse,
       { headers: NO_STORE_HEADERS },
     );

@@ -12,7 +12,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL("http://localhost:8001"),
   title: "Vibe Prompting",
-  description: "Edit, inspect, and evaluate durable prompts.",
+  description: "Edit, inspect, and evaluate durable contexts.",
 };
 
 export const viewport: Viewport = {

@@ -1,4 +1,4 @@
-/** Projects cursor-paginated prompt-bound chat history for the workspace sidebar. */
+/** Projects cursor-paginated context-bound chat history for the workspace sidebar. */
 
 import { getApplicationServices } from "vibe-prompting/server";
 

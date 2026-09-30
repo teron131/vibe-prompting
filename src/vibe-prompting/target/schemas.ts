@@ -2,6 +2,8 @@
 
 import { z } from "zod";
 
+import type { SkillMetadata } from "../context-system/skills.ts";
+
 export type Target<INPUT = unknown, OUTPUT = unknown> = {
   readonly model: string;
   invoke(input: INPUT): PromiseLike<OUTPUT>;
@@ -63,7 +65,7 @@ export type CreateProfileInput = {
   configuration: TargetConfiguration;
   instructions: string;
   name: string;
-  promptId: string;
+  contextId: string;
 };
 
 export type ProfileRevisionInput = {
@@ -75,8 +77,8 @@ export type ProfileRevisionInput = {
 
 export type TargetPinInput = {
   actorUserId: string;
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   targetProfileId?: string;
   targetProfileRevisionId?: string;
   targetModel: string;
@@ -84,11 +86,12 @@ export type TargetPinInput = {
 };
 
 export type PinnedTargetDefinition = {
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   targetModel: string;
   reasoningEffort?: TargetPinInput["reasoningEffort"];
   profile: TargetProfile;
   effectiveInstructions: string;
   effectiveInstructionsHash: string;
+  skill?: SkillMetadata & { markdown: string };
 };

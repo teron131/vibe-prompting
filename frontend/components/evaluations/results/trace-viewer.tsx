@@ -229,7 +229,7 @@ function EvaluationTraceDialog({ item, onClose }: { item: EvaluationResultItem; 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h2 className="text-base font-semibold" id={`trace-dialog-title-${item.caseId}`}>
-                  {item.promptTitle} · v{item.promptRevisionNumber}
+                  {item.contextTitle} · v{item.contextRevisionNumber}
                 </h2>
                 <span className="font-mono text-[11px] text-muted-foreground">
                   {turnCount} {turnCount === 1 ? "turn" : "turns"}
@@ -349,12 +349,12 @@ function FullTraceMessages({ messages, modelId }: { messages: ChatMessage[]; mod
       key={message.id}
       message={message}
       modelId={modelId}
-      onPromptReference={ignorePromptReference}
+      onContextReference={ignoreContextReference}
     />
   ));
 }
 
-function ignorePromptReference() {}
+function ignoreContextReference() {}
 
 async function loadLinkedTargetRun(
   item: EvaluationResultItem,

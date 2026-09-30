@@ -20,13 +20,13 @@ export type EvaluationExplorerResponse = EvaluationQueryResponse & {
   };
 };
 
-const SYSTEM_PROMPT = `Translate one evaluation-data question into exactly one safe structured query.
+const SYSTEM_CONTEXT = `Translate one evaluation-data question into exactly one safe structured query.
 The database contains immutable runs, their cases, and typed score facts.
 Use count for totals, keyword_count only for case-level phrase totals, group_count for breakdowns, and average only for numeric scores.
 When the user asks how many runs or scores mention a phrase, use count with the requested entity and put the phrase and field in search and searchField.
 Keyword fields are input, output, comment, evidence, or all.
-Available grouping fields are dataType, judge, prompt, revision, status, and targetModel; numeric averages may group by criterion, judge, prompt, revision, or targetModel.
-Preserve explicit filters for run, prompt, revision, target model, judge, status, score data type, and date range when they are present.
+Available grouping fields are dataType, judge, context, revision, status, and targetModel; numeric averages may group by criterion, judge, context, revision, or targetModel.
+Preserve explicit filters for run, context, revision, target model, judge, status, score data type, and date range when they are present.
 Never invent identifiers, SQL, fields, operations, joins, or write actions.
 When a question cannot be represented exactly, choose the closest conservative read query instead of broadening its scope.
 Return one JSON object and no Markdown.
@@ -56,7 +56,7 @@ export async function exploreEvaluations(
     name: "evaluationExplorerQuery",
   });
   const query = await model.invoke([
-    new SystemMessage(SYSTEM_PROMPT),
+    new SystemMessage(SYSTEM_CONTEXT),
     new HumanMessage(`QUESTION:\n${question}`),
   ]);
   const result = await evaluationResults.query(query);

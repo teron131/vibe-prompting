@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="876" viewBox="0 0 1600 876" role="img" aria-labelledby="title desc">
   <title id="title">Vibe Prompting architecture</title>
-  <desc id="desc">Interfaces reach shared application services directly through Next.js browser routes and the trusted local Fastify API, or through toolkits used by the Core Agent and external coding agents over MCP. Web search is an optional Core Agent capability. Prompt tools edit database-backed prompt content rather than host files. The four conceptual modules cover Prompt, Target, Evaluation, and Criteria. Target pins prompt revisions; Evaluation judges target outputs using Criteria. Evaluation is requested explicitly or configured in a scenario plan, and recorded turns can be scored without running the target again. Storage, authentication, and internal workflow wiring are omitted from this capability overview.</desc>
+  <desc id="desc">Interfaces reach shared application services directly through Next.js browser routes and the trusted local Fastify API, or through toolkits used by the Core Agent and external coding agents over MCP. Web search is an optional Core Agent capability. Context tools edit database-backed context content rather than host files. The four conceptual modules cover Context, Target, Evaluation, and Criteria. Target pins context revisions; Evaluation judges target outputs using Criteria. Evaluation is requested explicitly or configured in a scenario plan, and recorded turns can be scored without running the target again. Storage, authentication, and internal workflow wiring are omitted from this capability overview.</desc>
 
   <defs>
     <!-- SDK marks: bundled OpenAI asset; Vercel Geist brands; LangChain official site. -->
@@ -133,9 +133,9 @@
     <g id="tool-ports">
       <line x1="94" y1="492" x2="1490" y2="492" stroke="#a8b8ff" stroke-width="1"/>
 
-      <g id="prompt-tools">
+      <g id="context-tools">
         <rect x="104" y="510" width="240" height="32" class="tool-item"/>
-        <text x="224" y="531" class="tool-name" text-anchor="middle">Prompt Operations</text>
+        <text x="224" y="531" class="tool-name" text-anchor="middle">Context Operations</text>
       </g>
       <g id="target-tools">
         <rect x="476" y="510" width="240" height="32" class="tool-item"/>
@@ -162,17 +162,17 @@
     <g id="domain-lane" transform="translate(0 24)">
     <text x="64" y="607" class="lane-label">MODULES</text>
 
-    <g id="prompt-system">
+    <g id="context-system">
       <rect x="64" y="638" width="320" height="246" fill="#ffffff" stroke="#151719" stroke-width="2"/>
       <rect x="64" y="638" width="320" height="74" fill="#a78bfa" stroke="#151719" stroke-width="2"/>
       <text x="86" y="660" class="module-kicker">VERSION CONTROL</text>
-      <text x="86" y="691" class="module-title">Prompt System</text>
-      <text x="86" y="742" class="module-detail">Versioned prompt content</text>
+      <text x="86" y="691" class="module-title">Context System</text>
+      <text x="86" y="742" class="module-detail">Versioned prompts and skills</text>
       <line x1="86" y1="760" x2="362" y2="760" stroke="#c8ced1"/>
       <rect x="86" y="779" width="276" height="30" fill="#eef1f2"/>
-      <text x="100" y="800" class="item">Prompt</text>
+      <text x="100" y="800" class="item">Prompts &amp; Skills</text>
       <rect x="86" y="815" width="276" height="30" fill="#eef1f2"/>
-      <text x="100" y="836" class="item">Prompt Revision</text>
+      <text x="100" y="836" class="item">Context Revision</text>
     </g>
 
     <g id="target-system">

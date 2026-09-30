@@ -2,9 +2,9 @@
 
 import { RunQueue } from "../app/queue.ts";
 import { type ModelContext, standaloneModelContext } from "../clients/llm/context.ts";
+import type { ContextSystem } from "../context-system/index.ts";
 import type { Database } from "../database/index.ts";
 import type { EvaluationRuns } from "../evaluation/runs/index.ts";
-import type { PromptSystem } from "../prompt-system/index.ts";
 import type { TargetRuns, TargetRunSource } from "../target/runs/index.ts";
 import { runScenarioGraph, type ScenarioGraphDependencies } from "./graph.ts";
 import {
@@ -22,20 +22,20 @@ export class ScenarioRuns {
   readonly #queue: RunQueue;
   readonly #models: ModelContext;
   readonly #evaluations: EvaluationRuns;
-  readonly #prompts: PromptSystem;
+  readonly #contexts: ContextSystem;
   readonly #store: ScenarioRunStore;
   readonly #targetRuns: TargetRuns;
   readonly #graphDependencies: ScenarioGraphDependencies;
 
   constructor(
     database: Database,
-    prompts: PromptSystem,
+    contexts: ContextSystem,
     targetRuns: TargetRuns,
     evaluations: EvaluationRuns,
     models: ModelContext = standaloneModelContext,
   ) {
     this.#evaluations = evaluations;
-    this.#prompts = prompts;
+    this.#contexts = contexts;
     this.#store = new ScenarioRunStore(database);
     this.#targetRuns = targetRuns;
     this.#graphDependencies = { evaluations, scenarioStore: this.#store, targetRuns, models };
@@ -122,10 +122,10 @@ export class ScenarioRuns {
         ],
         this.#models,
       );
-      await this.#prompts.getRevision(input.promptId, input.promptRevisionId);
+      await this.#contexts.getRevision(input.contextId, input.contextRevisionId);
       const common = {
-        promptId: input.promptId,
-        promptRevisionId: input.promptRevisionId,
+        contextId: input.contextId,
+        contextRevisionId: input.contextRevisionId,
         targetModel: input.targetModel,
         reasoningEffort: input.reasoningEffort,
         evaluationPlan: input.evaluationPlan ?? null,

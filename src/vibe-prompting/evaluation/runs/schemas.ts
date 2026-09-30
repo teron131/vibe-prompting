@@ -39,10 +39,10 @@ export type EvaluationBatchStart = {
 
 export type EvaluationRunSummary = {
   id: string;
-  promptId: string;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextId: string;
+  contextRevisionId: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetProfileId: string | null;
   targetProfileRevisionId: string | null;
   targetProfileName: string | null;
@@ -63,10 +63,10 @@ export type EvaluationRunSummary = {
   completedAt: string | null;
 };
 
-/** Validates one durable run request and its exact prompt, model, and provenance pins. */
+/** Validates one durable run request and its exact context, model, and provenance pins. */
 export const evaluationRunInputSchema = requestSchema.extend({
-  promptId: z.uuid(),
-  promptRevisionId: z.uuid(),
+  contextId: z.uuid(),
+  contextRevisionId: z.uuid(),
   targetModel: z.string().trim().min(1),
   cases: requestSchema.shape.cases.element
     .extend({ input: z.string().trim().min(1) })
@@ -85,8 +85,8 @@ export const recordedEvaluationRunInputSchema = z.object({
 
 /** Bounds the batch fan-out before the server expands it into independently durable runs. */
 export const evaluationBatchInputSchema = z.object({
-  promptId: z.uuid(),
-  promptRevisionId: z.uuid(),
+  contextId: z.uuid(),
+  contextRevisionId: z.uuid(),
   targetModels: z
     .array(z.string().trim().min(1))
     .min(1)

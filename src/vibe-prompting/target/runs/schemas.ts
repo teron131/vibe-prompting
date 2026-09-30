@@ -1,4 +1,4 @@
-/** Owns durable Target Run request validation and public prompt-revision-pinned trace shapes. */
+/** Owns durable Target Run request validation and public context-revision-pinned trace shapes. */
 
 import { z } from "zod";
 
@@ -31,10 +31,10 @@ export type TargetRunTurn = {
 
 export type TargetRunSummary = {
   id: string;
-  promptId: string;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextId: string;
+  contextRevisionId: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetProfileId: string;
   targetProfileName: string;
   targetProfileRevisionId: string;
@@ -67,8 +67,8 @@ export type TargetRunResponse = {
 
 export const targetRunCreateInputSchema = z.object({
   instruction: z.string().trim().min(1),
-  promptId: z.uuid(),
-  promptRevisionId: z.uuid(),
+  contextId: z.uuid(),
+  contextRevisionId: z.uuid(),
   reasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).default("medium"),
   targetModel: z.string().trim().min(1),
 });

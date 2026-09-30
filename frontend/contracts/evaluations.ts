@@ -19,10 +19,10 @@ export type EvaluationRunStatus =
 
 export type EvaluationRunSummary = {
   id: string;
-  promptId: string;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextId: string;
+  contextRevisionId: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetProfileId: string | null;
   targetProfileName: string | null;
   targetProfileRevisionId: string | null;
@@ -64,7 +64,7 @@ export type EvaluationCase = {
 };
 
 export type EvaluationRun = EvaluationRunSummary & {
-  promptMarkdown: string;
+  contextMarkdown: string;
   targetConfiguration: Record<string, unknown> | null;
   cases: EvaluationCase[];
 };
@@ -76,8 +76,8 @@ export type EvaluationBatchConfiguration = {
 };
 
 export type EvaluationBatchRequest = {
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   targetModels: string[];
   judgeModels: string[];
   configurations: EvaluationBatchConfiguration[];

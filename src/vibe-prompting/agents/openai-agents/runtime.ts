@@ -1,15 +1,17 @@
 /** Constructs the OpenAI Agents SDK runner and adapts framework-neutral tools without owning chat or editing workflows. */
 
 import { Agent as OpenAIAgent, Runner, tool, type Tool } from "@openai/agents";
+import { SandboxAgent, shell, type SkillDescriptor, skills } from "@openai/agents/sandbox";
 
 import { type ModelContext, standaloneModelContext } from "../../clients/llm/context.ts";
 import type { ModelConfig } from "../../config/index.ts";
 import type { ChatReasoningEffort } from "../../conversations/schemas.ts";
 import type { AgentTool, AgentToolExecutionContext } from "../tools/api.ts";
 import { createModel } from "./model.ts";
+import { SKILL_WORKSPACE_INSTRUCTIONS } from "./skills.ts";
 
 const AGENT_INSTRUCTIONS = [
-  "You are the Vibe Prompting assistant, a general-purpose collaborator for creating, running, inspecting, and evaluating prompts.",
+  "You are the Vibe Prompting assistant, a general-purpose collaborator for creating, running, inspecting, and evaluating contexts.",
   "Answer ordinary questions directly. Use available tools where they materially improve the result, and represent returned records, statuses, and provenance accurately.",
 ].join("\n");
 
@@ -25,17 +27,24 @@ export function createAgentRuntime(
   tools: Tool[] = [],
   reasoningEffort: ChatReasoningEffort = "medium",
   modelContext: ModelContext = standaloneModelContext,
+  options: { skills?: SkillDescriptor[]; instructions?: string; maxOutputTokens?: number } = {},
 ): AgentRuntime {
   const { config, provider } = createModel(modelId, modelContext);
   const usesResponses = config.id.startsWith("gpt-");
 
+  const Agent = options.skills?.length ? SandboxAgent : OpenAIAgent;
   return {
     model: config,
-    agent: new OpenAIAgent({
-      instructions: AGENT_INSTRUCTIONS,
+    agent: new Agent({
+      instructions: options.instructions ?? AGENT_INSTRUCTIONS,
+      ...(options.skills?.length && {
+        baseInstructions: SKILL_WORKSPACE_INSTRUCTIONS,
+        capabilities: [shell(), skills({ skills: options.skills })],
+      }),
       model: config.id,
-      modelSettings:
-        config.platform === "gemini"
+      modelSettings: {
+        maxTokens: options.maxOutputTokens,
+        ...(config.platform === "gemini"
           ? {
               providerData: {
                 extra_body: {
@@ -53,7 +62,8 @@ export function createAgentRuntime(
                 effort: reasoningEffort,
                 summary: usesResponses ? "detailed" : "auto",
               },
-            },
+            }),
+      },
       name: "Vibe Prompting",
       tools,
     }),

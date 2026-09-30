@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 
 import type postgres from "postgres";
 
+import { readSkillMetadata, SkillFormatError } from "../context-system/skills.ts";
+
 const SCHEMA_MIGRATION_LOCK = 1_450_701_647;
 const MIGRATIONS = [
   {
@@ -25,6 +27,16 @@ const MIGRATIONS = [
       readFile(new URL("../../../migrations/009_named_criteria.sql", import.meta.url), "utf8"),
     version: 9,
   },
+  {
+    load: () =>
+      readFile(new URL("../../../migrations/010_skill_metadata.sql", import.meta.url), "utf8"),
+    version: 10,
+  },
+  {
+    load: () =>
+      readFile(new URL("../../../migrations/011_context_library.sql", import.meta.url), "utf8"),
+    version: 11,
+  },
 ];
 
 export async function applyMigrations(database: postgres.Sql): Promise<void> {
@@ -45,6 +57,21 @@ export async function applyMigrations(database: postgres.Sql): Promise<void> {
       if (applied) continue;
       const source = await migration.load();
       await sql.unsafe(source).simple();
+      if (migration.version === 10) {
+        const revisions = await sql<
+          { id: string; markdown: string }[]
+        >`SELECT id, markdown FROM prompt_revisions`;
+        for (const revision of revisions) {
+          try {
+            const skill = readSkillMetadata(revision.markdown);
+            if (skill)
+              await sql`UPDATE prompt_revisions SET skill = ${sql.json(skill)} WHERE id = ${revision.id}`;
+          } catch (error) {
+            // Existing nonstandard frontmatter remains a context; new revisions must pass skill validation.
+            if (!(error instanceof SkillFormatError)) throw error;
+          }
+        }
+      }
       await sql`
         INSERT INTO schema_migrations (version)
         VALUES (${migration.version})

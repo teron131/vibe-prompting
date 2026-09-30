@@ -19,7 +19,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { usePromptSearch } from "@/components/prompts/use-search";
+import { useContextSearch } from "@/components/contexts/use-search";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import type {
@@ -30,7 +30,7 @@ import type {
   ConfiguredModel,
   TargetRunQuote,
 } from "@/contracts/chat";
-import type { PromptSummary } from "@/contracts/prompts";
+import type { ContextSummary } from "@/contracts/contexts";
 import { useDismissibleDetails } from "@/hooks/use-dismissible-details";
 
 import { ComposerMenu } from "./composer-menu";
@@ -39,9 +39,14 @@ import { type ResponseTelemetrySummary, ResponseTelemetryTotal } from "./respons
 
 const TOOL_OPTIONS: Array<{ id: ChatToolId; label: string; description: string }> = [
   {
-    id: "prompt-library",
-    label: "Prompt Library",
-    description: "Create, read, and edit saved prompts.",
+    id: "skills",
+    label: "Skills",
+    description: "Discover saved skills and read their instructions when the task needs them.",
+  },
+  {
+    id: "context-library",
+    label: "Context Library",
+    description: "Create, read, and edit saved contexts.",
   },
   {
     id: "evaluations",
@@ -64,10 +69,10 @@ const REASONING_OPTIONS: Array<{ value: ChatReasoningEffort; label: string }> = 
 
 export function ChatComposer({
   variant = "agent",
-  activePrompt,
-  prompts,
-  onPromptChange,
-  onOpenPrompt,
+  activeContext,
+  contexts,
+  onContextChange,
+  onOpenContext,
   instruction,
   onInstructionChange,
   attachments,
@@ -88,10 +93,10 @@ export function ChatComposer({
   telemetrySummary,
 }: {
   variant?: "agent" | "target";
-  activePrompt?: PromptSummary;
-  prompts: PromptSummary[];
-  onPromptChange(prompt: PromptSummary | undefined): void;
-  onOpenPrompt(): void;
+  activeContext?: ContextSummary;
+  contexts: ContextSummary[];
+  onContextChange(context: ContextSummary | undefined): void;
+  onOpenContext(): void;
   instruction: string;
   onInstructionChange(value: string): void;
   attachments: Attachment[];
@@ -142,26 +147,26 @@ export function ChatComposer({
   const {
     error: mentionSearchError,
     loading: mentionSearchLoading,
-    results: matchingPrompts,
-  } = usePromptSearch({
+    results: matchingContexts,
+  } = useContextSearch({
     enabled: variant === "agent" && mentionOpen,
     limit: 6,
-    prompts,
+    contexts,
     query: mentionQuery,
   });
-  const activeMentionPrompt = matchingPrompts[activeMentionIndex] ?? matchingPrompts[0];
-  const effectiveMentionIndex = matchingPrompts[activeMentionIndex] ? activeMentionIndex : 0;
+  const activeMentionContext = matchingContexts[activeMentionIndex] ?? matchingContexts[0];
+  const effectiveMentionIndex = matchingContexts[activeMentionIndex] ? activeMentionIndex : 0;
 
   useEffect(() => {
     setActiveMentionIndex(0);
   }, [mentionOpen, mentionQuery]);
 
   useEffect(() => {
-    if (!mentionOpen || !activeMentionPrompt) return;
+    if (!mentionOpen || !activeMentionContext) return;
     document
-      .getElementById(`prompt-mention-option-${activeMentionPrompt.id}`)
+      .getElementById(`context-mention-option-${activeMentionContext.id}`)
       ?.scrollIntoView({ block: "nearest" });
-  }, [activeMentionPrompt, mentionOpen]);
+  }, [activeMentionContext, mentionOpen]);
 
   useEffect(() => {
     if (!mentionOpen) return;
@@ -178,13 +183,13 @@ export function ChatComposer({
     setMentionOpen(false);
   }
 
-  function selectPrompt(prompt: PromptSummary) {
+  function selectContext(context: ContextSummary) {
     if (mentionQuery !== null) {
       onInstructionChange(
         instruction.replace(/(?:^|\s)@([^@\n]*)$/, (match) => (match.startsWith(" ") ? " " : "")),
       );
     }
-    onPromptChange(prompt);
+    onContextChange(context);
     setMentionOpen(false);
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }
@@ -212,20 +217,20 @@ export function ChatComposer({
         {variant === "agent" && attachments.length ? (
           <AttachmentPreviews attachments={attachments} onChange={onAttachmentsChange} />
         ) : null}
-        {variant === "agent" && (activePrompt || quotes.length) ? (
+        {variant === "agent" && (activeContext || quotes.length) ? (
           <div className="mb-2 flex flex-wrap gap-1.5 px-1">
-            {activePrompt ? (
+            {activeContext ? (
               <span className="inline-flex max-w-full items-center rounded-full bg-secondary text-xs font-medium">
                 <button
-                  aria-label={`Open prompt editor for ${activePrompt.title}`}
+                  aria-label={`Open context editor for ${activeContext.title}`}
                   className="inline-flex min-w-0 items-center gap-1.5 rounded-l-full py-1 pl-2.5 pr-1.5 hover:bg-secondary/80"
-                  onClick={onOpenPrompt}
+                  onClick={onOpenContext}
                   type="button"
                 >
                   <FileText aria-hidden="true" className="size-3.5 shrink-0" />
-                  <span className="truncate">{activePrompt.title}</span>
+                  <span className="truncate">{activeContext.title}</span>
                   <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                    {activePrompt.revisionId.slice(0, 8)}
+                    {activeContext.revisionId.slice(0, 8)}
                   </span>
                   <PanelRightOpen
                     aria-hidden="true"
@@ -234,9 +239,9 @@ export function ChatComposer({
                 </button>
                 {variant === "agent" ? (
                   <button
-                    aria-label={`Detach ${activePrompt.title} from this chat`}
+                    aria-label={`Detach ${activeContext.title} from this chat`}
                     className="mr-0.5 grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-background/70 hover:text-foreground"
-                    onClick={() => onPromptChange(undefined)}
+                    onClick={() => onContextChange(undefined)}
                     type="button"
                   >
                     <X aria-hidden="true" className="size-3" />
@@ -268,7 +273,7 @@ export function ChatComposer({
                   ) : (
                     <span
                       className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
-                      key={`${quote.promptId}-${quote.revisionId}-${quote.text}`}
+                      key={`${quote.contextId}-${quote.revisionId}-${quote.text}`}
                     >
                       <span className="truncate">Quoted from {quote.title}</span>
                       <button
@@ -287,12 +292,12 @@ export function ChatComposer({
         ) : null}
         <textarea
           aria-activedescendant={
-            mentionOpen && activeMentionPrompt
-              ? `prompt-mention-option-${activeMentionPrompt.id}`
+            mentionOpen && activeMentionContext
+              ? `context-mention-option-${activeMentionContext.id}`
               : undefined
           }
           aria-autocomplete="list"
-          aria-controls={mentionOpen ? "prompt-mention-listbox" : undefined}
+          aria-controls={mentionOpen ? "context-mention-listbox" : undefined}
           aria-expanded={mentionOpen}
           aria-haspopup="listbox"
           aria-label={variant === "target" ? "Target Test message" : "Message"}
@@ -306,15 +311,15 @@ export function ChatComposer({
             if (mentionOpen && event.key === "ArrowDown") {
               event.preventDefault();
               setActiveMentionIndex((index) =>
-                matchingPrompts.length ? (index + 1) % matchingPrompts.length : 0,
+                matchingContexts.length ? (index + 1) % matchingContexts.length : 0,
               );
               return;
             }
             if (mentionOpen && event.key === "ArrowUp") {
               event.preventDefault();
               setActiveMentionIndex((index) =>
-                matchingPrompts.length
-                  ? (index - 1 + matchingPrompts.length) % matchingPrompts.length
+                matchingContexts.length
+                  ? (index - 1 + matchingContexts.length) % matchingContexts.length
                   : 0,
               );
               return;
@@ -328,7 +333,7 @@ export function ChatComposer({
               if (event.nativeEvent.isComposing) return;
               event.preventDefault();
               if (mentionOpen) {
-                if (activeMentionPrompt) selectPrompt(activeMentionPrompt);
+                if (activeMentionContext) selectContext(activeMentionContext);
                 return;
               }
               if (running ? canSteer : canSubmit) composerRef.current?.requestSubmit();
@@ -350,7 +355,7 @@ export function ChatComposer({
                 : "Add guidance while the agent works…"
               : variant === "target"
                 ? "Test this target…"
-                : "Ask anything, or use @ to reference a prompt…"
+                : "Ask anything, or use @ to reference a context…"
           }
           ref={textareaRef}
           role="combobox"
@@ -373,9 +378,9 @@ export function ChatComposer({
               ) : null}
               {variant === "agent" ? (
                 <button
-                  aria-controls={mentionOpen ? "prompt-mention-listbox" : undefined}
+                  aria-controls={mentionOpen ? "context-mention-listbox" : undefined}
                   aria-expanded={mentionOpen}
-                  aria-label="Search prompts"
+                  aria-label="Search contexts"
                   className={cn(
                     "grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground",
                     mentionOpen && "bg-accent text-foreground",
@@ -427,17 +432,17 @@ export function ChatComposer({
         {variant === "agent" && mentionOpen ? (
           <div className="absolute bottom-[calc(100%+8px)] left-3 z-50 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl">
             <div className="border-b px-3 py-2">
-              <div className="text-xs font-medium">Reference a Prompt</div>
+              <div className="text-xs font-medium">Reference a Context</div>
               <div className="mt-0.5 text-[11px] text-muted-foreground">
                 {mentionQuery !== null
                   ? "Keep typing after @ to filter the library."
-                  : "Choose a prompt from the library."}
+                  : "Choose a context from the library."}
               </div>
             </div>
             <div
-              aria-label="Matching prompts"
+              aria-label="Matching contexts"
               className="max-h-64 overflow-y-auto p-1.5"
-              id="prompt-mention-listbox"
+              id="context-mention-listbox"
               role="listbox"
             >
               {mentionSearchLoading ? (
@@ -451,18 +456,18 @@ export function ChatComposer({
                 <div className="px-2.5 py-5 text-center text-xs text-destructive" role="alert">
                   {mentionSearchError}
                 </div>
-              ) : matchingPrompts.length ? (
-                matchingPrompts.map((prompt, index) => (
+              ) : matchingContexts.length ? (
+                matchingContexts.map((context, index) => (
                   <button
                     aria-selected={index === effectiveMentionIndex}
                     className={cn(
                       "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-accent",
                       index === effectiveMentionIndex && "bg-accent",
                     )}
-                    id={`prompt-mention-option-${prompt.id}`}
-                    key={prompt.id}
+                    id={`context-mention-option-${context.id}`}
+                    key={context.id}
                     onMouseEnter={() => setActiveMentionIndex(index)}
-                    onClick={() => selectPrompt(prompt)}
+                    onClick={() => selectContext(context)}
                     role="option"
                     tabIndex={-1}
                     type="button"
@@ -472,19 +477,19 @@ export function ChatComposer({
                       className="size-4 shrink-0 text-muted-foreground"
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{prompt.title}</span>
+                      <span className="block truncate text-sm font-medium">{context.title}</span>
                       <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                        {prompt.passages[0]?.text}
+                        {context.passages[0]?.text}
                       </span>
                       <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
-                        revision {prompt.revisionId.slice(0, 8)}
+                        revision {context.revisionId.slice(0, 8)}
                       </span>
                     </span>
                   </button>
                 ))
               ) : (
                 <div className="px-2.5 py-5 text-center text-xs text-muted-foreground">
-                  No prompts match this search.
+                  No contexts match this search.
                 </div>
               )}
             </div>

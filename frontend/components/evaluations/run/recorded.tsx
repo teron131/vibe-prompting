@@ -141,8 +141,8 @@ export function RecordedEvaluationBuilder({
         </div>
         <div className="mt-6 border bg-background">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-muted/20 px-4 py-3 text-xs">
-            <span className="font-semibold">{run.promptTitle}</span>
-            <span className="text-muted-foreground">v{run.promptRevisionNumber}</span>
+            <span className="font-semibold">{run.contextTitle}</span>
+            <span className="text-muted-foreground">v{run.contextRevisionNumber}</span>
             <span className="text-muted-foreground">{run.targetProfileName}</span>
             <ModelIdentityLabel
               className="text-muted-foreground"

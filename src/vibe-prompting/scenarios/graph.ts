@@ -127,8 +127,8 @@ function createScenarioGraph() {
       : await targetRuns.startRunAndWait(
           execution.startedByUserId,
           {
-            promptId: execution.promptId,
-            promptRevisionId: execution.promptRevisionId,
+            contextId: execution.contextId,
+            contextRevisionId: execution.contextRevisionId,
             targetModel: execution.targetModel,
             reasoningEffort: execution.reasoningEffort,
             instruction: decision.message,

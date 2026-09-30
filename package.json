@@ -1,13 +1,14 @@
 {
   "name": "vibe-prompting",
-  "version": "2.4.8",
+  "version": "2.5.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/vibe-prompting/index.ts",
     "./mcp": "./src/vibe-prompting/app/mcp.ts",
     "./server": "./src/vibe-prompting/server.ts",
-    "./conversations": "./src/vibe-prompting/conversations/schemas.ts"
+    "./conversations": "./src/vibe-prompting/conversations/schemas.ts",
+    "./skills": "./src/vibe-prompting/context-system/skills.ts"
   },
   "scripts": {
     "db:seed-example": "node scripts/seed-default-workspace.ts",

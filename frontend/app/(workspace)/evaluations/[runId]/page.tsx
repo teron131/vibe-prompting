@@ -1,4 +1,4 @@
-/** Presents one durable prompt-bound evaluation report inside the shared evaluation workspace. */
+/** Presents one durable context-bound evaluation report inside the shared evaluation workspace. */
 
 import { EvaluationReport } from "@/components/evaluations/results/report";
 

@@ -48,10 +48,10 @@ export function parseSteeringRequest(value: unknown): SteerChatRequest {
 function requireWorkspaceContext(value: unknown): ChatWorkspaceContext {
   const record = requireRecord(value);
   return {
-    activePromptId:
-      record.activePromptId === null
+    activeContextId:
+      record.activeContextId === null
         ? null
-        : requireUuid(record.activePromptId, "Active prompt ID"),
+        : requireUuid(record.activeContextId, "Active context ID"),
     enabledTools: requireToolIds(record.enabledTools),
     panelOpen: record.panelOpen !== false,
     reasoningEffort: requireReasoningEffort(record.reasoningEffort),
@@ -70,14 +70,17 @@ function requireChatQuotes(value: unknown): ChatQuote[] {
         title: requireText(record.title, "Quoted Target Run title"),
       } satisfies TargetRunQuote;
     }
-    const text = requireText(record.text, "Quoted prompt text");
+    const text = requireText(record.text, "Quoted context text");
     if (text.length > 4_000)
-      throw new ChatRequestError("Each prompt quote must be no longer than 4,000 characters.", 400);
+      throw new ChatRequestError(
+        "Each context quote must be no longer than 4,000 characters.",
+        400,
+      );
     return {
-      promptId: requireUuid(record.promptId, "Quoted prompt ID"),
+      contextId: requireUuid(record.contextId, "Quoted context ID"),
       revisionId: requireUuid(record.revisionId, "Quoted revision ID"),
       text,
-      title: requireText(record.title, "Quoted prompt title"),
+      title: requireText(record.title, "Quoted context title"),
     };
   });
 }

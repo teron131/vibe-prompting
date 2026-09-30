@@ -1,4 +1,4 @@
-/** Exposes evaluation execution through a framework-neutral agent tool without owning prompt operations. */
+/** Exposes evaluation execution through a framework-neutral agent tool without owning context operations. */
 
 import { z } from "zod";
 
@@ -16,8 +16,8 @@ const batchConfigurationSchema = z.object({
   criteria: criteriaSchema.describe("Criterion definitions shared by this configuration."),
 });
 const evaluationSchema = z.object({
-  promptId: z.uuid().describe("Saved prompt ID."),
-  promptRevisionId: z.uuid().describe("Exact prompt revision ID to evaluate."),
+  contextId: z.uuid().describe("Saved context ID."),
+  contextRevisionId: z.uuid().describe("Exact context revision ID to evaluate."),
   targetModel: z.string().trim().min(1).describe("Configured target model ID or display label."),
   targetModels: z
     .array(z.string().trim().min(1).describe("Configured target model ID or display label."))
@@ -55,13 +55,13 @@ export function createEvaluationTool(
     name: "evaluate",
     title: "Start evaluation",
     description:
-      "Start a durable evaluation for one exact prompt revision across supplied cases and judge models. Optional target models, Criteria configurations, or repetitions expand the request into a persisted evaluation matrix.",
+      "Start a durable evaluation for one exact context revision across supplied cases and judge models. Optional target models, Criteria configurations, or repetitions expand the request into a persisted evaluation matrix.",
     parameters: evaluationSchema,
     annotations: { destructiveHint: false, openWorldHint: true },
     async execute(
       {
-        promptId,
-        promptRevisionId,
+        contextId,
+        contextRevisionId,
         targetModel,
         targetModels,
         judgeModels,
@@ -86,8 +86,8 @@ export function createEvaluationTool(
           );
         }
         const batchInput = {
-          promptId,
-          promptRevisionId,
+          contextId,
+          contextRevisionId,
           targetModels: (targetModels ?? [targetModel]).map((model) =>
             resolveConfiguredModelId(model, models),
           ),
@@ -118,8 +118,8 @@ export function createEvaluationTool(
       const run = await evaluations.startAgentRun(
         actorUserId,
         {
-          promptId,
-          promptRevisionId,
+          contextId,
+          contextRevisionId,
           targetModel: resolveConfiguredModelId(targetModel, models),
           judgeModels: judgeModels.map((judge) => resolveConfiguredModelId(judge, models)),
           cases: cases.map((testCase) => ({

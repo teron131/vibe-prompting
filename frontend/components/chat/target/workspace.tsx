@@ -1,4 +1,4 @@
-/** Reuses the conversation presentation for prompt-pinned Target Runs while keeping their traces outside general chat history. */
+/** Reuses the conversation presentation for context-pinned Target Runs while keeping their traces outside general chat history. */
 
 "use client";
 
@@ -20,7 +20,7 @@ import { Message } from "@/components/chat/elements/message";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import type { ChatReasoningEffort, ConfiguredModel } from "@/contracts/chat";
-import type { PromptSummary } from "@/contracts/prompts";
+import type { ContextSummary } from "@/contracts/contexts";
 import type {
   TargetRun,
   TargetRunEvent,
@@ -48,24 +48,24 @@ const runDateFormatter = new Intl.DateTimeFormat(undefined, {
 });
 
 export function TargetWorkspace({
-  activePrompt,
+  activeContext,
   initialRunId,
   models,
   onModelChange,
-  onOpenPrompt,
-  onPromptResolved,
+  onOpenContext,
+  onContextResolved,
   onQuoteInAgent,
   onReasoningEffortChange,
   reasoningEffort,
   selectedModelId,
 }: {
-  activePrompt?: PromptSummary;
+  activeContext?: ContextSummary;
   initialRunId?: string;
   models: ConfiguredModel[];
   onModelChange(modelId: string): void;
-  onOpenPrompt(): void;
-  onPromptResolved(promptId: string): void;
-  onQuoteInAgent(input: { promptId: string; runId: string; title: string }): void;
+  onOpenContext(): void;
+  onContextResolved(contextId: string): void;
+  onQuoteInAgent(input: { contextId: string; runId: string; title: string }): void;
   onReasoningEffortChange(reasoningEffort: ChatReasoningEffort): void;
   reasoningEffort: ChatReasoningEffort;
   selectedModelId: string;
@@ -91,12 +91,12 @@ export function TargetWorkspace({
       setRunning(response.active);
       setEvents(response.events);
       setError(response.events.find((event) => event.type === "error")?.message);
-      onPromptResolved(response.run.promptId);
+      onContextResolved(response.run.contextId);
       onModelChange(response.run.targetModel);
       onReasoningEffortChange(response.run.reasoningEffort);
       return response;
     },
-    [onModelChange, onPromptResolved, onReasoningEffortChange],
+    [onModelChange, onContextResolved, onReasoningEffortChange],
   );
 
   useEffect(() => {
@@ -112,13 +112,13 @@ export function TargetWorkspace({
   }, [initialRunId, loadRun, run?.id]);
 
   useEffect(() => {
-    if (!activePrompt) {
+    if (!activeContext) {
       loadRequestRef.current += 1;
       setRuns([]);
       if (!initialRunId) setRun(undefined);
       return;
     }
-    if (run?.promptId && run.promptId !== activePrompt.id) {
+    if (run?.contextId && run.contextId !== activeContext.id) {
       loadRequestRef.current += 1;
       setRun(undefined);
       setEvents([]);
@@ -126,7 +126,9 @@ export function TargetWorkspace({
     }
     let active = true;
     void targetApi
-      .json<TargetRunsResponse>(`/api/target-runs?promptId=${encodeURIComponent(activePrompt.id)}`)
+      .json<TargetRunsResponse>(
+        `/api/target-runs?contextId=${encodeURIComponent(activeContext.id)}`,
+      )
       .then(({ runs: summaries }) => {
         if (!active) return;
         setRuns(summaries);
@@ -135,7 +137,7 @@ export function TargetWorkspace({
     return () => {
       active = false;
     };
-  }, [activePrompt?.id, initialRunId, run?.promptId]);
+  }, [activeContext?.id, initialRunId, run?.contextId]);
 
   useEffect(() => {
     if (!run?.id || !running) return;
@@ -191,7 +193,7 @@ export function TargetWorkspace({
 
   async function submit() {
     const message = instruction.trim();
-    if (!message || !activePrompt || !selectedModelId || running) return;
+    if (!message || !activeContext || !selectedModelId || running) return;
     setInstruction("");
     setError(undefined);
     setEvents([]);
@@ -206,8 +208,8 @@ export function TargetWorkspace({
         : await targetApi.json<TargetRun>("/api/target-runs", {
             body: JSON.stringify({
               instruction: message,
-              promptId: activePrompt.id,
-              promptRevisionId: activePrompt.revisionId,
+              contextId: activeContext.id,
+              contextRevisionId: activeContext.revisionId,
               reasoningEffort,
               targetModel: selectedModelId,
             }),
@@ -239,7 +241,8 @@ export function TargetWorkspace({
     setEvents([]);
     setRunning(false);
     setError(undefined);
-    if (activePrompt) router.replace(`/?mode=target&prompt=${encodeURIComponent(activePrompt.id)}`);
+    if (activeContext)
+      router.replace(`/?mode=target&context=${encodeURIComponent(activeContext.id)}`);
   }
 
   if (loading) {
@@ -258,7 +261,7 @@ export function TargetWorkspace({
       aria-label="Target Test"
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
     >
-      {activePrompt ? (
+      {activeContext ? (
         <>
           <div className="shrink-0 border-b bg-muted/10 px-4 py-2 sm:px-6">
             <div className="flex items-center justify-end">
@@ -269,9 +272,9 @@ export function TargetWorkspace({
                     className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                     onClick={() =>
                       onQuoteInAgent({
-                        promptId: run.promptId,
+                        contextId: run.contextId,
                         runId: run.id,
-                        title: run.promptTitle,
+                        title: run.contextTitle,
                       })
                     }
                     type="button"
@@ -332,10 +335,10 @@ export function TargetWorkspace({
             onScroll={onScroll}
             onScrollToBottom={isAtBottom ? undefined : scrollToBottom}
           >
-            <PromptContextMessage
-              onOpen={onOpenPrompt}
-              revisionNumber={run?.promptRevisionNumber ?? activePrompt.revisionNumber}
-              title={run?.promptTitle ?? activePrompt.title}
+            <ContextMessage
+              onOpen={onOpenContext}
+              revisionNumber={run?.contextRevisionNumber ?? activeContext.revisionNumber}
+              title={run?.contextTitle ?? activeContext.title}
             />
             {messages.length ? (
               messages.map((message, index) => (
@@ -344,7 +347,7 @@ export function TargetWorkspace({
                   key={message.id}
                   message={message}
                   modelId={run?.targetModel ?? selectedModelId}
-                  onPromptReference={() => undefined}
+                  onContextReference={() => undefined}
                   streaming={
                     running && index === messages.length - 1 && message.role === "assistant"
                   }
@@ -364,7 +367,7 @@ export function TargetWorkspace({
             ) : null}
           </ConversationView>
           <ChatComposer
-            activePrompt={activePrompt}
+            activeContext={activeContext}
             attachments={[]}
             enabledTools={[]}
             instruction={instruction}
@@ -372,14 +375,14 @@ export function TargetWorkspace({
             onAttachmentsChange={() => undefined}
             onInstructionChange={setInstruction}
             onModelChange={onModelChange}
-            onOpenPrompt={onOpenPrompt}
-            onPromptChange={() => undefined}
+            onOpenContext={onOpenContext}
+            onContextChange={() => undefined}
             onQuoteRemove={() => undefined}
             onReasoningEffortChange={onReasoningEffortChange}
             onStop={() => void stop()}
             onSubmit={() => void submit()}
             onToolsChange={() => undefined}
-            prompts={[]}
+            contexts={[]}
             quotes={[]}
             reasoningEffort={run?.reasoningEffort ?? reasoningEffort}
             running={running}
@@ -393,13 +396,13 @@ export function TargetWorkspace({
         <div className="grid flex-1 place-items-center px-6 text-center">
           <div className="max-w-sm">
             <FlaskConical aria-hidden="true" className="mx-auto size-7 text-muted-foreground" />
-            <h2 className="mt-4 text-lg font-semibold">Select a Prompt to Test</h2>
+            <h2 className="mt-4 text-lg font-semibold">Select a Context to Test</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Target Runs always pin an exact saved prompt revision before the AI SDK agent
+              Target Runs always pin an exact saved context revision before the AI SDK agent
               executes.
             </p>
-            <Button className="mt-4" onClick={onOpenPrompt} variant="outline">
-              Choose prompt
+            <Button className="mt-4" onClick={onOpenContext} variant="outline">
+              Choose context
             </Button>
           </div>
         </div>
@@ -408,7 +411,7 @@ export function TargetWorkspace({
   );
 }
 
-function PromptContextMessage({
+function ContextMessage({
   onOpen,
   revisionNumber,
   title,
@@ -420,14 +423,14 @@ function PromptContextMessage({
   return (
     <Message role="user">
       <button
-        aria-label={`Open ${title} prompt`}
+        aria-label={`Open ${title} context`}
         className="w-fit max-w-full rounded-[1.35rem] rounded-br-md border bg-muted/50 px-4 py-3 text-left transition-colors hover:bg-accent"
         onClick={onOpen}
         type="button"
       >
         <span className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase text-muted-foreground">
           <FileText aria-hidden="true" className="size-3.5" />
-          Prompt inserted
+          Context inserted
         </span>
         <span className="flex min-w-0 items-baseline gap-2">
           <span className="truncate text-sm font-medium text-foreground">{title}</span>
@@ -452,8 +455,8 @@ function TargetEmptyState() {
         <FlaskConical aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
         <h2 className="mt-4 text-xl font-semibold">Test the Selected Target</h2>
         <p className="mt-2 text-balance text-sm leading-6 text-muted-foreground">
-          Start a multi-turn trace against the exact prompt revision inserted above. The run is
-          logged with the prompt, not with Agent chat history.
+          Start a multi-turn trace against the exact context revision inserted above. The run is
+          logged with the context, not with Agent chat history.
         </p>
       </div>
     </div>

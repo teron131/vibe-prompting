@@ -10,7 +10,7 @@ import type { HybridSearch } from "../src/vibe-prompting/search.ts";
 const queries = await import("../src/vibe-prompting/evaluation/results/queries.ts");
 const calls: Array<{ name: string; filters: NormalizedFilters }> = [];
 const facets = {
-  prompts: [],
+  contexts: [],
   revisions: [],
   statuses: [],
   judgeModels: [],

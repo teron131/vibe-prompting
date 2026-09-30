@@ -25,7 +25,7 @@ export type AgentTool = {
 };
 
 export type AgentToolkitId =
-  | "prompt-library"
+  | "context-library"
   | "criteria-library"
   | "evaluation-runs"
   | "evaluation-results"

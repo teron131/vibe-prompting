@@ -9,7 +9,7 @@ export {
   defineAgentTool,
   requireAgentActor,
 } from "./api.ts";
-export { PromptLibraryToolkit, createPromptEditTools } from "./prompt-library.ts";
+export { ContextLibraryToolkit, createContextEditTools } from "./context-library.ts";
 export { CriteriaLibraryToolkit } from "./criteria-library.ts";
 export { EvaluationRunsToolkit } from "./evaluation-runs.ts";
 export { EvaluationResultsToolkit } from "./evaluation-search.ts";

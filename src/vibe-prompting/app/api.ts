@@ -13,9 +13,9 @@ import {
 
 import type { ApplicationServices } from "./application.ts";
 import { projectServerError } from "./errors.ts";
+import { registerContextRoutes } from "./routes/contexts.ts";
 import { registerCriteriaRoutes } from "./routes/criteria.ts";
 import { registerEvaluationRoutes } from "./routes/evaluations.ts";
-import { registerPromptRoutes } from "./routes/prompts.ts";
 import { registerResultRoutes } from "./routes/results.ts";
 import { getApplicationServices, registerShutdown } from "./runtime.ts";
 
@@ -48,7 +48,7 @@ export async function createApiServer(application?: ApplicationServices): Promis
       info: {
         title: "Vibe Prompting API",
         description:
-          "Edit durable prompts, execute asynchronous evaluations, and analyze their persisted results.",
+          "Edit durable contexts, execute asynchronous evaluations, and analyze their persisted results.",
         version: "1.0.0",
       },
     },
@@ -71,7 +71,7 @@ export async function createApiServer(application?: ApplicationServices): Promis
     async () => ({ models: await services.getConfiguredModels() }),
   );
 
-  registerPromptRoutes(server, services);
+  registerContextRoutes(server, services);
   registerEvaluationRoutes(server, services);
   registerCriteriaRoutes(server, services);
   registerResultRoutes(server, services);

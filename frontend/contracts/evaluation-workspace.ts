@@ -9,8 +9,8 @@ export type EvaluationWorkspaceFilters = {
   searchField?: "all" | "comment" | "evidence" | "input" | "output";
   criterion?: string;
   runId?: string;
-  promptId?: string;
-  promptRevisionId?: string;
+  contextId?: string;
+  contextRevisionId?: string;
   targetModels?: string[];
   judgeModels?: string[];
   status?: EvaluationRunStatus;
@@ -42,9 +42,9 @@ export type EvaluationResultItem = {
   caseId: string;
   runId: string;
   position: number;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextRevisionId: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetModel: string;
   targetRunId: string | null;
   targetRunTurnId: string | null;
@@ -60,7 +60,7 @@ export type EvaluationResultItem = {
 };
 
 export type EvaluationWorkspaceFacets = {
-  prompts: Array<{ count: number; id: string; label: string }>;
+  contexts: Array<{ count: number; id: string; label: string }>;
   revisions: Array<{ count: number; value: string }>;
   targetModels: Array<{ count: number; value: string }>;
   judgeModels: Array<{ count: number; value: string }>;
@@ -141,12 +141,12 @@ export type EvaluationStructuredQuery =
     })
   | (EvaluationWorkspaceFilters & {
       operation: "group_count";
-      groupBy: "dataType" | "judge" | "prompt" | "revision" | "status" | "targetModel";
+      groupBy: "dataType" | "judge" | "context" | "revision" | "status" | "targetModel";
       limit?: number;
     })
   | (EvaluationWorkspaceFilters & {
       operation: "average";
-      groupBy?: "criterion" | "judge" | "prompt" | "revision" | "targetModel";
+      groupBy?: "criterion" | "judge" | "context" | "revision" | "targetModel";
       limit?: number;
     });
 

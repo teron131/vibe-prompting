@@ -60,7 +60,7 @@ type UserMessageInput = {
   instruction: string;
   messageId: string;
   modelId: string;
-  quotes?: Array<Extract<StoredMessagePart, { type: "prompt-quote" | "target-run-quote" }>>;
+  quotes?: Array<Extract<StoredMessagePart, { type: "context-quote" | "target-run-quote" }>>;
 };
 
 const CHAT_MESSAGES_PER_HOUR = 300;
@@ -540,7 +540,8 @@ function projectMessage(row: MessageRow): ChatMessage {
 function projectWorkspaceContext(value: unknown): ChatWorkspaceContext {
   if (!value || typeof value !== "object" || Array.isArray(value)) return defaultWorkspaceContext();
   const context = value as Record<string, unknown>;
-  const activePromptId = typeof context.activePromptId === "string" ? context.activePromptId : null;
+  const activeContextId =
+    typeof context.activeContextId === "string" ? context.activeContextId : null;
   const enabledTools = Array.isArray(context.enabledTools)
     ? context.enabledTools.filter(
         (tool): tool is ChatWorkspaceContext["enabledTools"][number] =>
@@ -555,7 +556,7 @@ function projectWorkspaceContext(value: unknown): ChatWorkspaceContext {
       ? context.reasoningEffort
       : "medium";
   return {
-    activePromptId,
+    activeContextId,
     enabledTools,
     panelOpen: context.panelOpen === true,
     reasoningEffort,
@@ -564,8 +565,8 @@ function projectWorkspaceContext(value: unknown): ChatWorkspaceContext {
 
 function defaultWorkspaceContext(): ChatWorkspaceContext {
   return {
-    activePromptId: null,
-    enabledTools: ["prompt-library", "evaluations", "web-search"],
+    activeContextId: null,
+    enabledTools: ["context-library", "skills", "evaluations", "web-search"],
     panelOpen: false,
     reasoningEffort: "medium",
   };

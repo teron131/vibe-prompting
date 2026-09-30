@@ -12,9 +12,9 @@ export {
   type ChatToolId,
 } from "./chat.ts";
 export {
-  editPrompt,
-  streamPromptEdit,
-  type PromptEdit,
-  type PromptEditInput,
-} from "./prompt-edit.ts";
+  editContext,
+  streamContextEdit,
+  type ContextEdit,
+  type ContextEditInput,
+} from "./context-edit.ts";
 export type { AgentStreamEvent } from "./events.ts";

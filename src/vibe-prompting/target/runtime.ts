@@ -1,4 +1,4 @@
-/** Opens the AI SDK model and optional Exa tools for a resolved Target definition and owns their cleanup. */
+/** Opens the prompt or skill runtime for an exact context-bound Target definition and owns model, workspace, and optional search cleanup. */
 
 import { createMCPClient } from "@ai-sdk/mcp";
 import type { ToolSet } from "ai";
@@ -7,6 +7,7 @@ import { createModel, createReasoningProviderOptions } from "../agents/ai-sdk/mo
 import { EXA_WEB_SEARCH_TOOL, getExaMcpConnection } from "../clients/exa.ts";
 import { type ModelContext, standaloneModelContext } from "../clients/llm/context.ts";
 import { type AiSdkTargetRuntime, createAiSdkTargetRuntime } from "./adapters/ai-sdk.ts";
+import { createSkillTargetRuntime } from "./adapters/skills.ts";
 import type { PinnedTargetDefinition, Target, TargetProfile } from "./schemas.ts";
 
 export type PinnedTarget = {
@@ -27,6 +28,17 @@ export async function openTargetRuntime(
   definition: PinnedTargetDefinition,
   models: ModelContext = standaloneModelContext,
 ): Promise<PinnedTarget> {
+  if (definition.skill) {
+    models.signal.throwIfAborted();
+    const runtime = createSkillTargetRuntime(definition, models);
+    return {
+      close: runtime.close,
+      effectiveInstructionsHash: definition.effectiveInstructionsHash,
+      profile: definition.profile,
+      runtime,
+      target: runtime.target,
+    };
+  }
   const model = createModel(definition.targetModel, models);
   const exa = definition.profile.configuration.tools?.includes("web-search")
     ? await connectAiSdkExaSearch(models)

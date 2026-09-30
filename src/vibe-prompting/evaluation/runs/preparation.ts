@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 
 import type { ModelContext } from "../../clients/llm/context.ts";
-import { PromptConflictError, type PromptSystem } from "../../prompt-system/index.ts";
+import { ContextConflictError, type ContextSystem } from "../../context-system/index.ts";
 import type { TargetSystem } from "../../target/index.ts";
 import type { TargetRuns } from "../../target/runs/index.ts";
 import { type EvaluationCase, requestSchema } from "../api.ts";
@@ -21,17 +21,17 @@ import type { NewEvaluationRun } from "./store.ts";
 
 /** Pins live dependencies while preserving the exact persisted fingerprint and batch ordering. */
 export class EvaluationPreparation {
-  readonly #prompts: PromptSystem;
+  readonly #contexts: ContextSystem;
   readonly #targets: TargetSystem;
   readonly #targetRuns: TargetRuns;
   readonly #models: ModelContext;
   constructor(
-    prompts: PromptSystem,
+    contexts: ContextSystem,
     targets: TargetSystem,
     targetRuns: TargetRuns,
     models: ModelContext,
   ) {
-    this.#prompts = prompts;
+    this.#contexts = contexts;
     this.#targets = targets;
     this.#targetRuns = targetRuns;
     this.#models = models;
@@ -53,14 +53,14 @@ export class EvaluationPreparation {
     const request = requestSchema.parse({ cases: input.cases, judgeModels: input.judgeModels });
     const judgeModels = request.judgeModels;
     requireConfiguredModels([input.targetModel, ...judgeModels], this.#models);
-    const prompt = await this.#prompts.getPrompt(input.promptId);
-    if (prompt.revisionId !== input.promptRevisionId) {
-      throw new PromptConflictError(prompt.activeRevisionId);
+    const context = await this.#contexts.getContext(input.contextId);
+    if (context.revisionId !== input.contextRevisionId) {
+      throw new ContextConflictError(context.activeRevisionId);
     }
     const { profile, effectiveInstructionsHash } = await this.#targets.resolveDefinition({
       actorUserId,
-      promptId: prompt.id,
-      promptRevisionId: prompt.revisionId,
+      contextId: context.id,
+      contextRevisionId: context.revisionId,
       targetModel: input.targetModel,
     });
     const configurationFingerprint = createConfigurationFingerprint({
@@ -72,8 +72,8 @@ export class EvaluationPreparation {
       cases: request.cases,
     });
     return {
-      promptId: prompt.id,
-      promptRevisionId: prompt.revisionId,
+      contextId: context.id,
+      contextRevisionId: context.revisionId,
       targetProfileId: profile.id,
       targetProfileRevisionId: profile.revisionId,
       targetModel: input.targetModel,
@@ -139,8 +139,8 @@ export class EvaluationPreparation {
       effectiveInstructionsHash: targetRun.effectiveInstructionsHash,
       isSyntheticExample: false,
       judgeModels: input.judgeModels,
-      promptId: targetRun.promptId,
-      promptRevisionId: targetRun.promptRevisionId,
+      contextId: targetRun.contextId,
+      contextRevisionId: targetRun.contextRevisionId,
       source,
       targetModel: targetRun.targetModel,
       targetProfileId: targetRun.targetProfileId,
@@ -182,8 +182,8 @@ export class EvaluationPreparation {
         await this.run(
           actorUserId,
           {
-            promptId: input.promptId,
-            promptRevisionId: input.promptRevisionId,
+            contextId: input.contextId,
+            contextRevisionId: input.contextRevisionId,
             targetModel: job.targetModel,
             judgeModels: input.judgeModels,
             cases: input.cases.map(({ input: caseInput }) => ({
@@ -199,7 +199,7 @@ export class EvaluationPreparation {
     }
     return { preview, records };
   }
-  /** Parses batch input and checks its models and pinned prompt revision before execution. */
+  /** Parses batch input and checks its models and pinned context revision before execution. */
   async #requireBatchInput(rawInput: unknown): Promise<EvaluationBatchInput> {
     const parsed = evaluationBatchInputSchema.safeParse(rawInput);
     if (!parsed.success)
@@ -208,9 +208,9 @@ export class EvaluationPreparation {
       );
     const input = parsed.data;
     requireConfiguredModels([...input.targetModels, ...input.judgeModels], this.#models);
-    const prompt = await this.#prompts.getPrompt(input.promptId);
-    if (prompt.revisionId !== input.promptRevisionId) {
-      throw new PromptConflictError(prompt.activeRevisionId);
+    const context = await this.#contexts.getContext(input.contextId);
+    if (context.revisionId !== input.contextRevisionId) {
+      throw new ContextConflictError(context.activeRevisionId);
     }
     return input;
   }

@@ -3,8 +3,8 @@
 import { createHash } from "node:crypto";
 
 import { type ModelContext, standaloneModelContext } from "../clients/llm/context.ts";
+import type { ContextSystem } from "../context-system/index.ts";
 import type { Database } from "../database/index.ts";
-import type { PromptSystem } from "../prompt-system/index.ts";
 import { TargetProfiles } from "./profiles.ts";
 import { openTargetRuntime, type PinnedTarget } from "./runtime.ts";
 import type {
@@ -19,30 +19,30 @@ import type {
 export class TargetSystem {
   readonly #models: ModelContext;
   readonly #profiles: TargetProfiles;
-  readonly #prompts: PromptSystem;
+  readonly #contexts: ContextSystem;
 
   constructor(
     database: Database,
-    prompts: PromptSystem,
+    contexts: ContextSystem,
     models: ModelContext = standaloneModelContext,
   ) {
     this.#models = models;
-    this.#profiles = new TargetProfiles(database, prompts);
-    this.#prompts = prompts;
+    this.#profiles = new TargetProfiles(database, contexts);
+    this.#contexts = contexts;
   }
 
-  /** Creates a revisioned profile for an existing prompt. */
+  /** Creates a revisioned profile for an existing context. */
   async createProfile(actorUserId: string, input: CreateProfileInput): Promise<TargetProfile> {
     return this.#profiles.createProfile(actorUserId, input);
   }
 
-  async getProfileForPrompt(promptId: string): Promise<TargetProfile> {
-    return this.#profiles.getProfileForPrompt(promptId);
+  async getProfileForContext(contextId: string): Promise<TargetProfile> {
+    return this.#profiles.getProfileForContext(contextId);
   }
 
-  /** Persists a default profile only when the prompt has no explicit profile. */
-  async ensureProfileForPrompt(actorUserId: string, promptId: string): Promise<TargetProfile> {
-    return this.#profiles.ensureProfileForPrompt(actorUserId, promptId);
+  /** Persists a default profile only when the context has no explicit profile. */
+  async ensureProfileForContext(actorUserId: string, contextId: string): Promise<TargetProfile> {
+    return this.#profiles.ensureProfileForContext(actorUserId, contextId);
   }
 
   /** Advances a profile only when its expected revision still owns the head. */
@@ -55,30 +55,45 @@ export class TargetSystem {
 
   /** Pins exact historical revisions when supplied, otherwise resolves or creates the current profile without opening provider connections. */
   async resolveDefinition(input: TargetPinInput): Promise<PinnedTargetDefinition> {
-    const [profile, prompt] = await Promise.all([
+    const [profile, context] = await Promise.all([
       input.targetProfileId && input.targetProfileRevisionId
         ? this.#profiles.getRevision(
-            input.promptId,
+            input.contextId,
             input.targetProfileId,
             input.targetProfileRevisionId,
           )
-        : this.#profiles.ensureProfileForPrompt(input.actorUserId, input.promptId),
-      this.#prompts.getRevision(input.promptId, input.promptRevisionId),
+        : this.#profiles.ensureProfileForContext(input.actorUserId, input.contextId),
+      this.#contexts.getRevision(input.contextId, input.contextRevisionId),
     ]);
-    const effectiveInstructions = [profile.instructions, prompt.markdown]
+    const skill = context.skill;
+    const effectiveInstructions = [
+      profile.instructions,
+      skill
+        ? `Use the ${skill.name} skill for every user request. Read its complete SKILL.md before answering; follow its instructions. If you cannot read it, report the failure instead of proceeding without it.`
+        : context.markdown,
+    ]
       .filter(Boolean)
       .join("\n\n");
     const effectiveInstructionsHash = createHash("sha256")
-      .update(effectiveInstructions)
+      .update(
+        skill
+          ? JSON.stringify({
+              runtime: "sandbox-skills-v1",
+              instructions: effectiveInstructions,
+              skill: { ...skill, markdown: context.markdown },
+            })
+          : effectiveInstructions,
+      )
       .digest("hex");
     return {
-      promptId: input.promptId,
-      promptRevisionId: input.promptRevisionId,
+      contextId: input.contextId,
+      contextRevisionId: input.contextRevisionId,
       targetModel: input.targetModel,
       reasoningEffort: input.reasoningEffort,
       profile,
       effectiveInstructions,
       effectiveInstructionsHash,
+      ...(skill && { skill: { ...skill, markdown: context.markdown } }),
     };
   }
 

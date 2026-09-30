@@ -7,8 +7,8 @@ import { type ConfiguredModelReference, resolveConfiguredModelId } from "../mode
 import { AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
 
 const startSchema = z.object({
-  promptId: z.uuid().describe("Saved prompt ID."),
-  promptRevisionId: z.uuid().describe("Exact prompt revision ID to run."),
+  contextId: z.uuid().describe("Saved context ID."),
+  contextRevisionId: z.uuid().describe("Exact context revision ID to run."),
   targetModel: z.string().trim().min(1).describe("Configured target model ID or display label."),
   instruction: z.string().trim().min(1).describe("Initial user turn sent to the Target."),
 });
@@ -30,7 +30,7 @@ export class TargetRunsToolkit extends AgentToolkit {
         name: "start_target_run",
         title: "Start Target Run",
         description:
-          "Start a durable multi-turn Target Run pinned to one exact prompt revision and configured target model, separate from general chat history.",
+          "Start a durable multi-turn Target Run pinned to one exact context revision and configured target model, separate from general chat history.",
         parameters: startSchema,
         annotations: { destructiveHint: false, openWorldHint: true },
         async execute(input, context) {
@@ -54,7 +54,7 @@ export class TargetRunsToolkit extends AgentToolkit {
         name: "continue_target_run",
         title: "Continue Target Run",
         description:
-          "Add one user turn to an existing durable Target Run while preserving its pinned prompt revision, target model, configuration, and turn history.",
+          "Add one user turn to an existing durable Target Run while preserving its pinned context revision, target model, configuration, and turn history.",
         parameters: continueSchema,
         annotations: { destructiveHint: false, openWorldHint: true },
         async execute({ runId, instruction }, context) {
@@ -71,7 +71,7 @@ export class TargetRunsToolkit extends AgentToolkit {
         name: "read_target_run",
         title: "Read Target Run",
         description:
-          "Read one durable Target Run trace with its exact prompt revision, runtime provenance, reasoning and tool activity, turn statuses, inputs, and completed outputs.",
+          "Read one durable Target Run trace with its exact context revision, runtime provenance, reasoning and tool activity, turn statuses, inputs, and completed outputs.",
         parameters: readSchema,
         annotations: { readOnlyHint: true, openWorldHint: false },
         async execute({ runId }, context) {

@@ -25,8 +25,8 @@ mock.module("../src/vibe-prompting/agents/openai-agents/runtime.ts", {
   },
 });
 const { streamChatRun } = await import("../src/vibe-prompting/agents/openai-agents/chat.ts");
-const { streamPromptEdit } =
-  await import("../src/vibe-prompting/agents/openai-agents/prompt-edit.ts");
+const { streamContextEdit } =
+  await import("../src/vibe-prompting/agents/openai-agents/context-edit.ts");
 after(() => mock.restoreAll());
 beforeEach(() => {
   inputs.length = 0;
@@ -64,11 +64,11 @@ function input(): ChatRunInput {
   } as unknown as ChatRunInput;
 }
 
-test("prompt editing uses a fresh scope and keeps edits out of durable prompt storage", async () => {
+test("context editing uses a fresh scope and keeps edits out of durable context storage", async () => {
   execute = async (tools) => {
     assert.deepEqual(
       tools.map((tool) => tool.name),
-      ["read_prompt", "edit_prompt", "web_search_exa"],
+      ["read_context", "edit_context", "web_search_exa"],
     );
     const content = await tools[0]!.execute({}, {});
     assert.equal(typeof content, "string");
@@ -85,8 +85,8 @@ test("prompt editing uses a fresh scope and keeps edits out of durable prompt st
     instruction: "Update",
     modelContext: input().modelContext,
   };
-  assert.equal((await streamPromptEdit(original, () => {})).markdown, "updated");
-  assert.equal((await streamPromptEdit(original, () => {})).markdown, "updated");
+  assert.equal((await streamContextEdit(original, () => {})).markdown, "updated");
+  assert.equal((await streamContextEdit(original, () => {})).markdown, "updated");
   assert.equal(original.markdown, "original");
 });
 

@@ -13,7 +13,7 @@ export type {
   ChatToolId,
   ChatWorkspaceContext,
   DeleteChatResponse,
-  PromptQuote,
+  ContextQuote,
   ResponseTelemetry,
   RunEvent,
   SteerChatResponse,

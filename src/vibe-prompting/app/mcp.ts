@@ -5,10 +5,10 @@ import { type AuthInfo, FastMCP } from "@prefecthq/fastmcp-ts/server";
 import {
   type AgentTool,
   AgentToolkit,
+  ContextLibraryToolkit,
   CriteriaLibraryToolkit,
   EvaluationResultsToolkit,
   EvaluationRunsToolkit,
-  PromptLibraryToolkit,
   ScenarioRunsToolkit,
   TargetRunsToolkit,
 } from "../agents/tools/index.ts";
@@ -28,7 +28,7 @@ export function createMcpServer(
   const loadModelReferences = async () =>
     (await loadModels()).map(({ id, label }) => ({ id, label }));
   const toolkits = [
-    new PromptLibraryToolkit(services.prompts),
+    new ContextLibraryToolkit(services.contexts),
     new CriteriaLibraryToolkit(services.criterion),
     new EvaluationRunsToolkit(
       services.evaluations,

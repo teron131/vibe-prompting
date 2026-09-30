@@ -2,28 +2,28 @@
 
 ## Proposal
 
-Build a backend-first system that lets humans and AI agents create, version, search, refine, run, and selectively evaluate prompts through stable programmatic operations.
+Build a backend-first system that lets humans and AI agents create, version, search, refine, run, and selectively evaluate contexts through stable programmatic operations.
 
-The TypeScript API, HTTP/OpenAPI server, MCP server, built-in agent, and browser are adapters over the same Prompt System, Target System, and Evaluation System. The browser is a useful reference client, but no core workflow or business rule belongs only to the UI.
+The TypeScript API, HTTP/OpenAPI server, MCP server, built-in agent, and browser are adapters over the same Context System, Target System, and Evaluation System. The browser is a useful reference client, but no core workflow or business rule belongs only to the UI.
 
-The product is an 80/20 prompt-engineering runtime for practical iteration, not a scientific benchmark laboratory, universal artifact platform, model-distillation system, or replacement for Langfuse.
+The product is an 80/20 context-engineering runtime for practical iteration, not a scientific benchmark laboratory, universal artifact platform, model-distillation system, or replacement for Langfuse.
 
 ## Domain Model
 
-- A Prompt owns stable identity, a human-readable title, metadata, a pointer to its active revision, and an independent editor history cursor for undo and redo.
-- A Prompt Revision is an immutable full-content snapshot with a parent revision, author (`human` or `ai`), change request, and creation time.
-- A Prompt Passage is a derived section of one revision used for sentence- and paragraph-level search; it is not separately authoritative content.
+- A Context owns stable identity, a human-readable title, metadata, a pointer to its active revision, and an independent editor history cursor for undo and redo.
+- A Context Revision is an immutable full-content snapshot with a parent revision, author (`human` or `ai`), change request, and creation time.
+- A Context Passage is a derived section of one revision used for sentence- and paragraph-level search; it is not separately authoritative content.
 - A Target is any opaque input-output runtime with a configured model identity and an `invoke` operation.
-- A Target Profile is revisioned runtime configuration and supplemental instructions associated with a Prompt without copying its content.
-- A Pinned Target combines one Target Profile revision, one exact Prompt Revision, and one configured model into a repeatable runtime for an application run.
+- A Target Profile is revisioned runtime configuration and supplemental instructions associated with a Context without copying its content.
+- A Pinned Target combines one Target Profile revision, one exact Context Revision, and one configured model into a repeatable runtime for an application run.
 - A Target Run is a durable multi-turn trace over one Pinned Target, separate from general chat history and available to human and AI clients.
-- An Evaluation Request contains cases, criteria, judges, and a Target without requiring a Prompt or Target Profile.
+- An Evaluation Request contains cases, criteria, judges, and a Target without requiring a Context or Target Profile.
 - A Criterion is a named reusable typed judge contract with one shared workspace identity and mutable content for future evaluations.
 - Criteria is a named ordered permutation of shared Criterion references; each Evaluation Run still stores its exact resolved Criterion snapshots so later Criterion or Criteria edits cannot change historical meaning.
 - An Evaluation Run records one execution and its outputs, per-criterion scores, judge attribution, evidence, status, and configuration.
-- An Evaluation Run may reference an exact Prompt Revision when the evaluated Target was constructed from that revision, but Evaluation does not belong to Prompt and a Prompt does not require Evaluation.
+- An Evaluation Run may reference an exact Context Revision when the evaluated Target was constructed from that revision, but Evaluation does not belong to Context and a Context does not require Evaluation.
 
-Prompt, Target Profile, and Evaluation records remain separate. Their relationships are expressed by stable identifiers and pinned revision identifiers rather than by embedding runtime or evaluation state inside a Prompt.
+Context, Target Profile, and Evaluation records remain separate. Their relationships are expressed by stable identifiers and pinned revision identifiers rather than by embedding runtime or evaluation state inside a Context.
 
 ## Workspace and Access Model
 
@@ -34,7 +34,7 @@ The product currently has one implicit shared workspace rather than separate org
 - An active User may create and use workspace resources until the membership or application session is revoked.
 - An Application Session is an opaque revocable browser credential whose hash and expiry are stored in PostgreSQL; it is distinct from Google identity tokens and OAuth state.
 - A Chat and its messages belong to one User and are never shared through workspace reads.
-- Prompts, Prompt Revisions, Target Profiles, Target Runs, Criterion, Criteria, Evaluation Runs, and Settings are shared workspace resources with user attribution on writes.
+- Contexts, Context Revisions, Target Profiles, Target Runs, Criterion, Criteria, Evaluation Runs, and Settings are shared workspace resources with user attribution on writes.
 - Rebuild-owned examples are ordinary removable database records rather than runtime fallbacks or generated seed data. The example chat is assigned once to the most recently active member because chats remain private, and deleting any example does not recreate it.
 
 Google OpenID Connect owns identity verification, while the application owns membership, invitations, sessions, authorization, and data access.
@@ -42,34 +42,34 @@ Shared projections may expose a contributor's display name when useful, but must
 Browser routes derive the actor or viewer from the application session rather than accepting a user identifier from the browser.
 PostgreSQL transactions own private-chat scope, optimistic revision conflicts, durable workflow state, cancellation, queue ordering, and invitation throttling.
 
-## Prompt System
+## Context System
 
-The Prompt System is the single owner of durable prompt behavior:
+The Context System is the single owner of durable context behavior:
 
-- Create, list, read, update, and search prompts.
+- Create, list, read, update, and search contexts.
 - Read exact revisions and revision metadata.
 - Append human and AI revisions with optimistic concurrency.
 - Navigate immutable history with undo and redo by moving the editor history cursor without changing the active revision.
-- Select the active revision used by product-wide prompt consumers.
-- Search active revisions at prompt and passage granularity.
+- Select the active revision used by product-wide context consumers.
+- Search active revisions at context and passage granularity.
 
-PostgreSQL stores complete Markdown snapshots because prompts are small and exact recovery is more valuable than storage-level diff complexity. Line-, word-, character-, and whitespace-level diffs are derived when requested and are never the source of truth.
+PostgreSQL stores complete Markdown snapshots because contexts are small and exact recovery is more valuable than storage-level diff complexity. Line-, word-, character-, and whitespace-level diffs are derived when requested and are never the source of truth.
 
-Prompt System owns projection of active revisions into searchable passages. The shared search capability owns target-agnostic keyword matching, semantic fallback, ranking thresholds, and the derived embedding cache, while external embedding transport remains a client dependency. Prompt search can therefore change ranking or providers without changing prompt storage contracts.
+Context System owns projection of active revisions into searchable passages. The shared search capability owns target-agnostic keyword matching, semantic fallback, ranking thresholds, and the derived embedding cache, while external embedding transport remains a client dependency. Context search can therefore change ranking or providers without changing context storage contracts.
 
 ## Target System
 
-The Target System owns construction of runtimes that can execute prompt behavior without owning prompt editing or evaluation:
+The Target System owns construction of runtimes that can execute context behavior without owning context editing or evaluation:
 
 - Keep the public Target contract small: a configured model identity and an opaque input-output invocation.
 - Accept caller-supplied Targets directly for transport-neutral evaluation.
-- Store Target Profiles and their revisions separately from Prompt content so runtime instructions, tools, and limits can change without duplicating prompts.
-- Construct a Pinned Target from an exact Prompt Revision, one Target Profile revision, and one configured model, then record the effective-instructions hash and resolved configuration on a durable run.
-- Provide a vanilla Vercel AI SDK runtime for the application fallback while keeping AI SDK and LangChain adapters available for externally constructed agents.
+- Store Target Profiles and their revisions separately from Context content so runtime instructions, tools, and limits can change without duplicating contexts.
+- Construct a Pinned Target from an exact Context Revision, one Target Profile revision, and one configured model, then record the effective-instructions hash and resolved configuration on a durable run.
+- Run plain prompts through the Vercel AI SDK and skills through a read-only local OpenAI SandboxAgent, while keeping AI SDK and LangChain adapters available for externally constructed agents.
 - Persist Target Runs and their completed turn history so a client can continue the same pinned runtime or inspect the exact trace later.
 - Reuse generic agent integrations and lower-level search and spend-limit clients rather than implementing provider behavior inside Target System.
 
-Target System does not own judges, scores, prompt revisions, or the built-in editing agent. A richer external runtime may remain entirely opaque as long as it satisfies the Target input-output contract.
+Target System does not own judges, scores, context revisions, or the built-in editing agent. A richer external runtime may remain entirely opaque as long as it satisfies the Target input-output contract.
 
 ## Evaluation System
 
@@ -83,7 +83,7 @@ The Evaluation System owns one transport-neutral evaluation capability shared by
 - Expand batch configuration into an exact manifest before execution, then start each run asynchronously and expose progress through durable run status.
 - Search paginated case results by exact identifier, hybrid text retrieval, and shared filters, then compute compatible analytics over the same filtered result set.
 - Accept any caller-supplied Target through the public `evaluate(target, request)` operation.
-- Resolve a Pinned Target through Prompt System and Target System for prompt-linked durable runs without either system depending on Evaluation.
+- Resolve a Pinned Target through Context System and Target System for context-linked durable runs without either system depending on Evaluation.
 - Return the same evaluation meaning whether invoked from MCP, HTTP, the built-in agent, or the browser.
 
 Common checks such as language, intent, grounding, truthfulness, and response quality may be offered as editable presets. They are not mandatory global gates.
@@ -94,7 +94,7 @@ Langfuse remains an optional observability and export integration. Evaluation wo
 
 The built-in agent is one client of the backend systems rather than the product owner. It should expose a small coding-agent-style workflow through functions:
 
-- Find a prompt through list or passage search.
+- Find a context through list or passage search.
 - Read the current content and exact revision before changing it.
 - Load that revision into an isolated in-memory workspace, apply structured line-addressed edits, and save the completed content as one AI revision.
 - Evaluate only when the user requests evaluation or supplies acceptance criteria.
@@ -105,33 +105,33 @@ The built-in agent is one client of the backend systems rather than the product 
 - Treat the built-in OpenAI Agents SDK runtime as the editing and orchestration client, not as the Target runtime being evaluated.
 - Use external search only when current or outside information is required.
 
-The workspace is one in-memory Markdown string loaded from Prompt System rather than a real or virtual filesystem. It is not another prompt store and must not create a second evaluation implementation. Any successful edit is committed through Prompt System, and every evaluation uses Evaluation System.
+The workspace is one in-memory Markdown string loaded from Context System rather than a real or virtual filesystem. It is not another context store and must not create a second evaluation implementation. Any successful edit is committed through Context System, and every evaluation uses Evaluation System.
 
 ## Agent Editing Contract
 
-The editing agent receives one narrowly scoped document capability rather than general filesystem tools. Document state and Hashline editing remain generic; the prompt adapter binds tool names and revision persistence:
+The editing agent receives one narrowly scoped document capability rather than general filesystem tools. Document state and Hashline editing remain generic; the context adapter binds tool names and revision persistence:
 
-- `read_prompt` returns the complete current Markdown with each physical line represented as `LINE#HASH:content`.
-- `edit_prompt` accepts structured `replace_range`, `insert_before`, `insert_after`, and `append` operations that reference hashes copied from the latest read.
+- `read_context` returns the complete current Markdown with each physical line represented as `LINE#HASH:content`.
+- `edit_context` accepts structured `replace_range`, `insert_before`, `insert_after`, and `append` operations that reference hashes copied from the latest read.
 - The backend validates every referenced line against the current in-memory content and applies the complete batch atomically.
 - Stale, overlapping, ambiguous, malformed, and no-op edits fail clearly and require the agent to read again when necessary.
-- Successful workspace content is persisted once through Prompt System with the expected revision identifier and becomes a new immutable AI-authored revision.
+- Successful workspace content is persisted once through Context System with the expected revision identifier and becomes a new immutable AI-authored revision.
 
 Hashline is only an addressing technique in this product. It does not justify a patch language, filesystem facade, temporary file, CLI, MCP editing server, daemon, block parser, merge engine, relocation heuristic, or automatic repair of malformed agent input.
 
 ## Public Surfaces
 
 - The TypeScript API is the direct in-process contract for application composition and external library use.
-- Fastify exposes trusted loopback HTTP and OpenAPI operations for prompt editing, configured models, durable Target Runs, durable evaluation runs and batches, Criterion, Criteria, paginated results, analytics, structured queries, and result exploration over the same systems.
-- MCP is a trusted application adapter that exposes Prompt System, Target System, and Evaluation System operations without inventing separate semantics or hosting an independent editing implementation.
+- Fastify exposes trusted loopback HTTP and OpenAPI operations for context editing, configured models, durable Target Runs, durable evaluation runs and batches, Criterion, Criteria, paginated results, analytics, structured queries, and result exploration over the same systems.
+- MCP is a trusted application adapter that exposes Context System, Target System, and Evaluation System operations without inventing separate semantics or hosting an independent editing implementation.
 - The built-in agent composes the same operations into natural-language workflows.
 - The Next.js browser authenticates through Google and application sessions, then provides a simple non-technical interface over those operations without becoming their owner.
 
-Adapters may translate schemas, authentication, streaming, and presentation. They must not implement separate prompt versioning, evaluation semantics, or persistence rules.
+Adapters may translate schemas, authentication, streaming, and presentation. They must not implement separate context versioning, evaluation semantics, or persistence rules.
 
 ## Ownership Boundaries
 
-- `prompt-system/` owns prompt identity, immutable revisions, history navigation, derived search, and its persistence rules.
+- `context-system/` owns context identity, immutable revisions, history navigation, derived search, and its persistence rules.
 - `target/` owns the small Target contract, revisioned Target Profiles, pinned runtime construction, and AI SDK or LangChain interoperability adapters.
 - `target/runs/` owns durable multi-turn Target Run lifecycle, pinned history replay, event snapshots, and PostgreSQL trace persistence.
 - `evaluation/api.ts` and `evaluation/engine/` own transport-neutral evaluation, judge orchestration, and optional Langfuse tracing, consuming canonical definitions from the Criteria System.
@@ -141,7 +141,7 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 - `scenarios/` owns multi-turn workflow progression across Target Runs and optional Evaluation Runs.
 - `agents/tools/` owns framework-neutral agent tool definitions over direct clients and public system operations, `agents/ai-sdk/` and `agents/openai-agents/` own agent runtime integration, and each runtime usage owns its tool adaptation.
 - `auth/` owns Google-backed identity upsert, pending and active membership, invitation throttling, and opaque application-session lifecycle.
-- `conversations/` owns private durable general-chat history, owner scoping, and detached assistant-run reconciliation rather than prompt or evaluation records.
+- `conversations/` owns private durable general-chat history, owner scoping, and detached assistant-run reconciliation rather than context or evaluation records.
 - `database/` owns the PostgreSQL client, ordered migrations, migration locking, and database setup rather than domain queries or authorization rules.
 - `search.ts` owns target-agnostic hybrid matching, semantic ranking, thresholds, and derived embedding-cache lifecycle; each domain owner projects its own searchable documents.
 - `clients/` owns direct model and service clients plus shared provider primitives that do not construct agent runtimes, including LangChain chat models, embeddings, Exa Search API access, Exa MCP connection data, Langfuse, model identity, pricing, and spend accounting.
@@ -152,38 +152,38 @@ Adapters may translate schemas, authentication, streaming, and presentation. The
 ## What Not to Build
 
 - A UI-first backend whose useful workflows only exist through browser routes.
-- A generic Artifact abstraction before the product has a real non-prompt object with different behavior.
+- A generic Artifact abstraction before the product has a real non-context object with different behavior.
 - A mandatory edit-search-evaluate ceremony.
 - A combined revise-and-evaluate domain operation that hides the saved revision between two independent actions.
-- Separate evaluation implementations for temporary workspaces, persisted prompts, HTTP, MCP, or the browser.
+- Separate evaluation implementations for temporary workspaces, persisted contexts, HTTP, MCP, or the browser.
 - A Target runtime that owns judge orchestration or an evaluator that knows how a supplied opaque Target works internally.
 - Transport-based domain actors such as `browser` and `operator`; authors are `human` or `ai`, while transport is separate metadata when needed.
-- Storage-level text diffs or many copied prompt records masquerading as versions.
+- Storage-level text diffs or many copied context records masquerading as versions.
 - A hard dependency on Langfuse or a duplicate Langfuse dashboard.
 - Native or unrestricted host filesystem access for an agent.
-- A standalone CLI, MCP server, daemon, or filesystem emulation layer for editing one database-backed prompt.
+- A standalone CLI, MCP server, daemon, or filesystem emulation layer for editing one database-backed context.
 - Raw unified, V4A, or bespoke patch syntax when structured edit operations can express the same change directly.
 - A backend dependency on repo-local skills, development-only task procedures, or an external agent application's configuration.
 - A multi-turn simulator when a complete history plus one generated next response is sufficient.
 
 ## Current Alignment
 
-The implemented baseline has distinct Prompt, Target, and Evaluation systems. `PromptSystem` owns immutable full revisions, human/AI authors, optimistic concurrency, an independent editor history cursor, explicit active-revision selection, deletion, and active-revision passage projection. `TargetSystem` owns revisioned prompt-associated profiles, constructs pinned vanilla AI SDK targets, and persists separate multi-turn Target Runs that both human and AI clients can start, continue, and inspect. Public AI SDK and LangChain adapters support externally supplied runtimes. The shared hybrid search capability applies one keyword and semantic policy to prompt passages, chats, and evaluation cases while each owner controls its document projection.
+The implemented baseline has distinct Context, Target, and Evaluation systems. `ContextSystem` owns prompts and skills with immutable full revisions, human/AI authors, optimistic concurrency, an independent editor history cursor, explicit active-revision selection, deletion, and active-revision passage projection. `TargetSystem` owns revisioned context-associated profiles, selects plain-prompt AI SDK or read-only skill SandboxAgent execution, and persists separate multi-turn Target Runs that both human and AI clients can start, continue, and inspect. Public AI SDK and LangChain adapters support externally supplied runtimes. The shared hybrid search capability applies one keyword and semantic policy to context passages, chats, and evaluation cases while each owner controls its document projection.
 
-Evaluation exposes the transport-neutral `evaluate(target, request)` boundary plus durable prompt-linked asynchronous runs and batches. It can also score a completed Target Run turn through the same judge graph while skipping target invocation and retaining trace provenance. A batch pins every job and persists all run records atomically before detached execution begins, while completion can only commit outputs and scores for a run that remains active. The backend stores exact prompt, target profile, model, configuration, output, score, evidence, judge attribution, status, synthetic provenance, Criterion snapshots, and optional Target Run references. Criterion and Criteria are reusable CRUD resources, while result browsing, typed aggregates, chronological trends, and allowlisted structured exploration all read the same persisted facts and filters.
+Evaluation exposes the transport-neutral `evaluate(target, request)` boundary plus durable context-linked asynchronous runs and batches. It can also score a completed Target Run turn through the same judge graph while skipping target invocation and retaining trace provenance. A batch pins every job and persists all run records atomically before detached execution begins, while completion can only commit outputs and scores for a run that remains active. The backend stores exact context, target profile, model, configuration, output, score, evidence, judge attribution, status, synthetic provenance, Criterion snapshots, and optional Target Run references. Criterion and Criteria are reusable CRUD resources, while result browsing, typed aggregates, chronological trends, and allowlisted structured exploration all read the same persisted facts and filters.
 
-Google-backed Users, invitation-gated membership, and opaque revocable sessions now protect the browser workspace. Chats are owner-scoped in PostgreSQL, while prompts, revisions, profiles, settings, Target Runs, and Evaluation Runs remain shared and retain contributor attribution. Shared projections expose contributor names where useful without exposing member email addresses. The trusted Fastify adapter is forced to loopback and validates supplied actor or viewer identifiers as active members, while browser routes always derive identity from the session.
+Google-backed Users, invitation-gated membership, and opaque revocable sessions now protect the browser workspace. Chats are owner-scoped in PostgreSQL, while contexts, revisions, profiles, settings, Target Runs, and Evaluation Runs remain shared and retain contributor attribution. Shared projections expose contributor names where useful without exposing member email addresses. The trusted Fastify adapter is forced to loopback and validates supplied actor or viewer identifiers as active members, while browser routes always derive identity from the session.
 
 Evaluation and Scenario queues start after recovery completes, provider capacity hands off slots without exceeding its configured limit, and PostgreSQL guards cancellation and terminal workflow transitions against late workers. Invitation failures are transactionally throttled, migration execution is serialized with an advisory lock, and the database pool supports concurrent request and workflow activity.
 
-The built-in agent uses separate structured prompt editing, Target Run, evaluation execution, evaluation search, and evaluation analytics tools, passes revision IDs explicitly, and can operate the same durable Target Runs and evaluation batches as a human client. Prompt editing operates on one isolated in-memory string with hash-addressed structured operations and persists only through Prompt System. The configured helper model only translates plain-language questions into validated read operations at low reasoning effort. The browser reuses the general conversation presentation in an explicit Test Target mode whose traces are not stored in general chat history, and it can launch judge-only evaluation from a selected completed turn. The other run setup, result exploration, aggregate analytics, criteria management, and LLM-assisted exploration surfaces remain clients of backend owners.
+The built-in agent uses separate structured context editing, Target Run, evaluation execution, evaluation search, and evaluation analytics tools, passes revision IDs explicitly, and can operate the same durable Target Runs and evaluation batches as a human client. Context editing operates on one isolated in-memory string with hash-addressed structured operations and persists only through Context System. The configured helper model only translates plain-language questions into validated read operations at low reasoning effort. The browser reuses the general conversation presentation in an explicit Test Target mode whose traces are not stored in general chat history, and it can launch judge-only evaluation from a selected completed turn. The other run setup, result exploration, aggregate analytics, criteria management, and LLM-assisted exploration surfaces remain clients of backend owners.
 
-`examples/default-workspace.json` captures one coherent AI-concepts example from the Luna workflow: a canonical v1 prompt, its related tool-using chat, a two-turn Target Run, and two completed Evaluation Runs judged by two configured models. The explicit example seed command imports those ordinary records after schema setup, while a database reset preserves real active members, applies the schema migration once, and does not recreate a deleted example unless that command runs again.
+`examples/default-workspace.json` captures one coherent AI-concepts example from the Luna workflow: a canonical v1 prompt, a reusable v2 skill, the original tool-using chat, a two-turn Target Run, and two completed Evaluation Runs judged by two configured models. The explicit example seed command imports those ordinary records after schema setup, while a database reset preserves real active members, applies the schema migration once, and does not recreate a deleted example unless that command runs again.
 
 The remaining gaps are narrower:
 
 - Asynchronous execution is still owned by the current server process. Durable queue and terminal state are stored in PostgreSQL and startup reconciliation marks abandoned running work as interrupted, but durable resumption or a separate worker process is not yet implemented.
-- Persisted application runs currently construct the built-in prompt-linked AI SDK Target; durable execution of a caller-supplied opaque Target needs an explicit remote or callback boundary before it is warranted.
+- Persisted application runs construct the built-in context-linked prompt or skill Target; durable execution of a caller-supplied opaque Target needs an explicit remote or callback boundary before it is warranted.
 - Target Profile revision management remains backend-only even though the active profile and pinned revision are visible in the direct-test workflow.
 - Membership uses one shared invitation code, and administrative member listing, revocation, or code rotation has no browser workflow yet.
 - Langfuse export and broader editable presets remain optional follow-up work rather than prerequisites for the core loop.
@@ -192,8 +192,8 @@ The remaining gaps are narrower:
 
 Treat authentication, membership, private chats, shared workspace attribution, and PostgreSQL workflow coordination as the stable application backbone rather than the next feature area.
 
-Continue the result-driven product loop: find and read an exact Prompt Revision, apply one atomic batch of hash-addressed structured edits, save one immutable revision, construct or receive a Target, preview and optionally start an evaluation batch, and inspect durable results and aggregates from any supported adapter.
+Continue the result-driven product loop: find and read an exact Context Revision, apply one atomic batch of hash-addressed structured edits, save one immutable revision, construct or receive a Target, preview and optionally start an evaluation batch, and inspect durable results and aggregates from any supported adapter.
 
-Use real prompt and evaluation work through MCP as the primary improvement loop: complete the task, persist only reusable context, treat reproducible friction as product evidence, make a bounded change when the task earns it, and replay the same workflow to verify the improvement.
+Use real context and evaluation work through MCP as the primary improvement loop: complete the task, persist only reusable context, treat reproducible friction as product evidence, make a bounded change when the task earns it, and replay the same workflow to verify the improvement.
 
-Prioritize meaningful agent workflow, prompt iteration, and evaluation improvements. Revisit the multi-user backbone only when a concrete feature exposes a missing authorization or ownership rule, and add durable worker ownership, broader presets, or Langfuse export only when observed usage earns them.
+Prioritize meaningful agent workflow, context iteration, and evaluation improvements. Revisit the multi-user backbone only when a concrete feature exposes a missing authorization or ownership rule, and add durable worker ownership, broader presets, or Langfuse export only when observed usage earns them.

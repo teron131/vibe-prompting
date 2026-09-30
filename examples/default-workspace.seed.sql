@@ -3,6 +3,8 @@
 DO $seed$
 DECLARE
   actor_id uuid;
+  active_revision_added boolean := false;
+  inserted_revision_count integer;
   fixture constant jsonb := current_setting('vibe_prompting.example_workspace_fixture')::jsonb;
   case_data jsonb;
   message_data jsonb;
@@ -89,41 +91,56 @@ BEGIN
   )
   ON CONFLICT (criteria_id, position) DO NOTHING;
 
-  INSERT INTO prompts (id, title, active_revision_id, created_at, updated_at)
+  INSERT INTO contexts (id, title, active_revision_id, created_at, updated_at)
   VALUES (
-    (fixture #>> '{prompt,id}')::uuid,
-    fixture #>> '{prompt,title}',
-    (fixture #>> '{prompt,activeRevisionId}')::uuid,
-    (fixture #>> '{promptRows,0,createdAt}')::timestamptz,
-    (fixture #>> '{prompt,updatedAt}')::timestamptz
+    (fixture #>> '{context,id}')::uuid,
+    fixture #>> '{context,title}',
+    (fixture #>> '{context,activeRevisionId}')::uuid,
+    (fixture #>> '{contextRows,0,createdAt}')::timestamptz,
+    (fixture #>> '{context,updatedAt}')::timestamptz
   )
   ON CONFLICT (id) DO NOTHING;
 
-  FOR revision_data IN SELECT value FROM jsonb_array_elements(fixture->'promptRows')
+  FOR revision_data IN SELECT value FROM jsonb_array_elements(fixture->'contextRows')
   LOOP
-    INSERT INTO prompt_revisions (
-      id, prompt_id, parent_revision_id, revision_number, markdown, change_request, author, created_at, created_by_user_id
+    INSERT INTO context_revisions (
+      id, context_id, parent_revision_id, revision_number, markdown, skill, change_request, author, created_at, created_by_user_id
     )
     VALUES (
       (revision_data->>'id')::uuid,
-      (revision_data->>'promptId')::uuid,
+      (revision_data->>'contextId')::uuid,
       (revision_data->>'parentRevisionId')::uuid,
       (revision_data->>'revisionNumber')::integer,
       revision_data->>'markdown',
+      NULLIF(revision_data->'skill', 'null'::jsonb),
       revision_data->>'changeRequest',
       revision_data->>'author',
       (revision_data->>'createdAt')::timestamptz,
       actor_id
     )
-    ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT DO NOTHING;
+    GET DIAGNOSTICS inserted_revision_count = ROW_COUNT;
+    IF inserted_revision_count > 0 AND revision_data->>'id' = fixture #>> '{context,activeRevisionId}' THEN
+      active_revision_added := true;
+    END IF;
   END LOOP;
 
+  -- Advance only an untouched example on its first import of the new revision; reseeding preserves user edits and activation choices.
+  IF active_revision_added THEN
+    UPDATE contexts
+    SET active_revision_id = (fixture #>> '{context,activeRevisionId}')::uuid, updated_at = (fixture #>> '{context,updatedAt}')::timestamptz
+    WHERE id = (fixture #>> '{context,id}')::uuid AND active_revision_id = (fixture #>> '{contextRows,0,id}')::uuid;
+    UPDATE chats
+    SET workspace_context_json = fixture #> '{chat,context}'
+    WHERE id = (fixture #>> '{chat,chat,id}')::uuid AND workspace_context_json = jsonb_set(fixture #> '{chat,context}', '{enabledTools}', '["context-library","evaluations"]'::jsonb);
+  END IF;
+
   profile_data := fixture #> '{targetProfileRows,0}';
-  INSERT INTO target_profiles (id, name, prompt_id, current_revision_id)
+  INSERT INTO target_profiles (id, name, context_id, current_revision_id)
   VALUES (
     (profile_data->>'id')::uuid,
     profile_data->>'name',
-    (profile_data->>'promptId')::uuid,
+    (profile_data->>'contextId')::uuid,
     (profile_data->>'currentRevisionId')::uuid
   )
   ON CONFLICT (id) DO NOTHING;
@@ -187,13 +204,13 @@ BEGIN
   FOR run_data IN SELECT value FROM jsonb_array_elements(fixture->'targetRuns')
   LOOP
     INSERT INTO target_runs (
-      id, prompt_id, prompt_revision_id, target_profile_id, target_profile_revision_id, target_model_id,
+      id, context_id, context_revision_id, target_profile_id, target_profile_revision_id, target_model_id,
       reasoning_effort, effective_instructions_hash, source, chat_id, started_by_user_id, created_at, updated_at
     )
     VALUES (
       (run_data->>'id')::uuid,
-      (run_data->>'promptId')::uuid,
-      (run_data->>'promptRevisionId')::uuid,
+      (run_data->>'contextId')::uuid,
+      (run_data->>'contextRevisionId')::uuid,
       (run_data->>'targetProfileId')::uuid,
       (run_data->>'targetProfileRevisionId')::uuid,
       run_data->>'targetModelId',
@@ -242,15 +259,15 @@ BEGIN
   FOR run_data IN SELECT value FROM jsonb_array_elements(fixture->'evaluations')
   LOOP
     INSERT INTO evaluation_runs (
-      id, prompt_id, prompt_revision_id, chat_id, source, target_model_id, judge_model_ids,
+      id, context_id, context_revision_id, chat_id, source, target_model_id, judge_model_ids,
       status, configuration_fingerprint, error_message, created_at, completed_at,
       is_synthetic_example, started_by_user_id, target_profile_id, target_profile_revision_id,
       effective_instructions_hash, target_run_id, target_run_turn_id
     )
     VALUES (
       (run_data->>'id')::uuid,
-      (run_data->>'promptId')::uuid,
-      (run_data->>'promptRevisionId')::uuid,
+      (run_data->>'contextId')::uuid,
+      (run_data->>'contextRevisionId')::uuid,
       (run_data->>'chatId')::uuid,
       run_data->>'source',
       run_data->>'targetModelId',

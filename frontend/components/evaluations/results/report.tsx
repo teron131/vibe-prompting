@@ -1,4 +1,4 @@
-/** Reloads one durable evaluation report, polls honest running state, and separates attributed results from the exact prompt artifact. */
+/** Reloads one durable evaluation report, polls honest running state, and separates attributed results from the exact context artifact. */
 
 "use client";
 
@@ -16,17 +16,17 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { ModelIdentityLabel } from "@/components/chat/model-selector";
+import { MarkdownPreview } from "@/components/contexts/markdown-preview";
 import { DefaultExampleBadge } from "@/components/evaluations/shared/default-example-badge";
-import { MarkdownPreview } from "@/components/prompts/markdown-preview";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
+import type { ContextDetail } from "@/contracts/contexts";
 import type {
   BooleanTrendPoint,
   EvaluationRun,
   EvaluationRunResponse,
   EvaluationRunSummary,
 } from "@/contracts/evaluations";
-import type { PromptDetail } from "@/contracts/prompts";
 import { createApiRequester, createErrorReader } from "@/shared/api";
 import { formatDateTime } from "@/shared/date";
 import { memberDisplayName } from "@/shared/member";
@@ -45,7 +45,7 @@ const readError = createErrorReader("Evaluation report request failed.");
 export function EvaluationReport({ runId }: { runId: string }) {
   const [run, setRun] = useState<EvaluationRun>();
   const [trend, setTrend] = useState<BooleanTrendPoint[]>([]);
-  const [view, setView] = useState<"prompt" | "results">("results");
+  const [view, setView] = useState<"context" | "results">("results");
   const [source, setSource] = useState(false);
   const [error, setError] = useState<string>();
   const [cancelling, setCancelling] = useState(false);
@@ -117,14 +117,16 @@ export function EvaluationReport({ runId }: { runId: string }) {
   async function retry() {
     if (!run) return;
     try {
-      const prompt = await evaluationReportApi.json<PromptDetail>(`/api/prompts/${run.promptId}`);
+      const context = await evaluationReportApi.json<ContextDetail>(
+        `/api/contexts/${run.contextId}`,
+      );
       const next = await evaluationReportApi.json<EvaluationRunSummary>("/api/evaluations", {
         body: JSON.stringify({
           cases: run.cases.map(({ criteria, input }) => ({ criteria, input })),
           isSyntheticExample: run.isSyntheticExample,
           judgeModels: run.judgeModels,
-          promptId: run.promptId,
-          promptRevisionId: prompt.prompt.activeRevisionId,
+          contextId: run.contextId,
+          contextRevisionId: context.context.activeRevisionId,
           targetModel: run.targetModel,
         }),
         headers: { "content-type": "application/json" },
@@ -181,17 +183,17 @@ export function EvaluationReport({ runId }: { runId: string }) {
             </Link>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h2 className="min-w-0 truncate text-xl font-semibold tracking-tight sm:text-2xl">
-                {run.promptTitle}
+                {run.contextTitle}
               </h2>
               <span className="rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
-                v{run.promptRevisionNumber}
+                v{run.contextRevisionNumber}
               </span>
               {run.isSyntheticExample ? (
                 <DefaultExampleBadge className="text-[11px] tracking-wide" />
               ) : null}
             </div>
             <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
-              Attributed results for one durable prompt revision, target, case set, and judge set.
+              Attributed results for one durable context revision, target, case set, and judge set.
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
@@ -230,9 +232,9 @@ export function EvaluationReport({ runId }: { runId: string }) {
           <ProvenanceDatum label="Target">
             <ModelIdentityLabel labelClassName="font-mono" modelId={run.targetModel} />
           </ProvenanceDatum>
-          <ProvenanceDatum label="Prompt Revision">
-            <span className="font-mono" title={run.promptRevisionId}>
-              v{run.promptRevisionNumber} · {run.promptRevisionId.slice(0, 8)}
+          <ProvenanceDatum label="Context Revision">
+            <span className="font-mono" title={run.contextRevisionId}>
+              v{run.contextRevisionNumber} · {run.contextRevisionId.slice(0, 8)}
             </span>
           </ProvenanceDatum>
           <ProvenanceDatum label="Cases">
@@ -288,7 +290,7 @@ export function EvaluationReport({ runId }: { runId: string }) {
               value={run.source === "ai" ? "AI-authored" : "Human-authored"}
             />
             <ExactDatum label="Started by" value={memberDisplayName(run.startedByName)} />
-            <ExactDatum label="Prompt ID" value={run.promptId} />
+            <ExactDatum label="Context ID" value={run.contextId} />
             <ExactDatum label="Configuration Fingerprint" value={run.configurationFingerprint} />
             <ExactDatum
               label="Effective Instructions Hash"
@@ -329,31 +331,31 @@ export function EvaluationReport({ runId }: { runId: string }) {
         <button
           className={cn(
             "ml-6 border-b-2 px-1 py-3 text-sm font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-            view === "prompt" ? "border-foreground" : "border-transparent text-muted-foreground",
+            view === "context" ? "border-foreground" : "border-transparent text-muted-foreground",
           )}
-          onClick={() => setView("prompt")}
+          onClick={() => setView("context")}
           type="button"
         >
           <FileText aria-hidden="true" className="mr-2 inline size-4" />
-          Prompt Artifact
+          Context Artifact
         </button>
       </nav>
       <div className="pt-6">
-        {view === "prompt" ? (
+        {view === "context" ? (
           <section>
             <div className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <div className="text-sm font-semibold">Exact Evaluated Revision</div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  This immutable artifact, not the active prompt revision, produced the results.
+                  This immutable artifact, not the active context revision, produced the results.
                 </p>
               </div>
               <div className="flex gap-2">
                 <Link
                   className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs hover:bg-accent"
-                  href={`/prompts/${run.promptId}`}
+                  href={`/contexts/${run.contextId}`}
                 >
-                  Prompt Detail
+                  Context Detail
                   <ExternalLink aria-hidden="true" className="size-3" />
                 </Link>
                 <Button onClick={() => setSource((value) => !value)} size="sm" variant="ghost">
@@ -363,10 +365,10 @@ export function EvaluationReport({ runId }: { runId: string }) {
             </div>
             {source ? (
               <pre className="min-h-96 whitespace-pre-wrap break-words py-6 font-mono text-sm leading-6 sm:py-8">
-                {run.promptMarkdown}
+                {run.contextMarkdown}
               </pre>
             ) : (
-              <MarkdownPreview className="min-h-96 py-6 sm:py-8" markdown={run.promptMarkdown} />
+              <MarkdownPreview className="min-h-96 py-6 sm:py-8" markdown={run.contextMarkdown} />
             )}
           </section>
         ) : (

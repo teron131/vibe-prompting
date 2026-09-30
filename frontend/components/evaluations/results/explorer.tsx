@@ -341,7 +341,7 @@ export function EvaluationResultsExplorer() {
               ) : null}
               <h1 className="min-w-0 truncate text-base font-semibold tracking-tight">
                 {selected
-                  ? `${selected.promptTitle} · v${selected.promptRevisionNumber}`
+                  ? `${selected.contextTitle} · v${selected.contextRevisionNumber}`
                   : "Results"}
               </h1>
             </div>
@@ -363,7 +363,7 @@ export function EvaluationResultsExplorer() {
             {selected ? (
               <>
                 <p aria-live="polite" className="sr-only">
-                  {selected.promptTitle} version {selected.promptRevisionNumber} selected,{" "}
+                  {selected.contextTitle} version {selected.contextRevisionNumber} selected,{" "}
                   {selected.status}.
                 </p>
                 <ResultDetailPane
@@ -545,7 +545,7 @@ function ResultFiltersPanel({
   updateFilter<Key extends keyof ResultFilters>(key: Key, value: ResultFilters[Key]): void;
 }) {
   const hasLinkedScope = Boolean(
-    filters.promptRevisionId || filters.from || filters.runId || filters.to,
+    filters.contextRevisionId || filters.from || filters.runId || filters.to,
   );
 
   return (
@@ -564,12 +564,12 @@ function ResultFiltersPanel({
       <div className="space-y-2">
         <FilterSelect
           className="w-full"
-          label="Prompt"
-          onValueChange={(value) => updateFilter("promptId", value || undefined)}
-          value={filters.promptId ?? ""}
+          label="Context"
+          onValueChange={(value) => updateFilter("contextId", value || undefined)}
+          value={filters.contextId ?? ""}
         >
-          <option value="">All prompts</option>
-          {facets.prompts.map((facet) => (
+          <option value="">All contexts</option>
+          {facets.contexts.map((facet) => (
             <option key={facet.id} value={facet.id}>
               {facet.label} ({facet.count})
             </option>
@@ -654,11 +654,11 @@ function ResultFiltersPanel({
       ) : null}
       {hasLinkedScope ? (
         <div aria-label="Linked result scope" className="mt-2 flex flex-wrap gap-2" role="group">
-          {filters.promptRevisionId ? (
+          {filters.contextRevisionId ? (
             <ScopeFilter
               label="Revision"
-              onRemove={() => updateFilter("promptRevisionId", undefined)}
-              value={filters.promptRevisionId.slice(0, 8)}
+              onRemove={() => updateFilter("contextRevisionId", undefined)}
+              value={filters.contextRevisionId.slice(0, 8)}
             />
           ) : null}
           {filters.from ? (
@@ -690,8 +690,8 @@ function ResultFiltersPanel({
 
 function resultFilterCount(filters: ResultFilters): number {
   return [
-    filters.promptId,
-    filters.promptRevisionId,
+    filters.contextId,
+    filters.contextRevisionId,
     filters.targetModels?.length,
     filters.judgeModels?.length,
     filters.status,
@@ -768,7 +768,7 @@ function ResultRow({
           <span
             className={cn("min-w-0 truncate text-sm", selected ? "font-semibold" : "font-medium")}
           >
-            {item.promptTitle} · v{item.promptRevisionNumber}
+            {item.contextTitle} · v{item.contextRevisionNumber}
           </span>
           {turnCount > 1 ? (
             <span className="shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
@@ -862,7 +862,7 @@ function ResultDetailPane({
           <ModelMetadata label="Target" models={[item.targetModel]} />
           <Metadata
             label="Revision"
-            value={`v${item.promptRevisionNumber} · ${item.promptRevisionId.slice(0, 8)}`}
+            value={`v${item.contextRevisionNumber} · ${item.contextRevisionId.slice(0, 8)}`}
           />
           <ModelMetadata label="Judges" models={item.judgeModels} />
           <Metadata
@@ -1204,7 +1204,7 @@ function escapeRegExp(value: string): string {
 const emptyFacets: EvaluationWorkspaceFacets = {
   dataTypes: [],
   judgeModels: [],
-  prompts: [],
+  contexts: [],
   revisions: [],
   statuses: [],
   targetModels: [],

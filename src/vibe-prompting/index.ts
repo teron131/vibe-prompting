@@ -14,7 +14,7 @@ export {
   type PlatformId,
   type RuntimeConfig,
 } from "./config/index.ts";
-export * from "./prompt-system/index.ts";
+export * from "./context-system/index.ts";
 export * from "./evaluation/index.ts";
 export * from "./target/index.ts";
 export * from "./criteria/index.ts";

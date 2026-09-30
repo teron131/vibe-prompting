@@ -1,4 +1,4 @@
-/** Starts prompt-revision-pinned Target Runs and lists their prompt-scoped durable history outside general chat. */
+/** Starts context-revision-pinned Target Runs and lists their context-scoped durable history outside general chat. */
 
 import { getApplicationServices } from "vibe-prompting/server";
 
@@ -13,10 +13,10 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   try {
     const user = await requireActiveSessionUser();
-    const promptId = requireUuid(new URL(request.url).searchParams.get("promptId"), "Prompt ID");
+    const contextId = requireUuid(new URL(request.url).searchParams.get("contextId"), "Context ID");
     const services = await getApplicationServices();
     return Response.json(
-      { runs: await services.targetRuns.listRuns(user.id, promptId) } satisfies TargetRunsResponse,
+      { runs: await services.targetRuns.listRuns(user.id, contextId) } satisfies TargetRunsResponse,
       { headers: NO_STORE_HEADERS },
     );
   } catch (error) {

@@ -1,4 +1,4 @@
-/** Starts durable static or generative Scenario Runs against exact prompt revisions. */
+/** Starts durable static or generative Scenario Runs against exact context revisions. */
 
 import { getApplicationServices } from "vibe-prompting/server";
 

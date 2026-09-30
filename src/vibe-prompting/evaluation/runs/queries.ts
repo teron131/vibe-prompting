@@ -10,10 +10,10 @@ import {
 
 type RunSummaryRow = {
   id: string;
-  promptId: string;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextId: string;
+  contextRevisionId: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetProfileId: string | null;
   targetProfileRevisionId: string | null;
   targetProfileName: string | null;
@@ -37,7 +37,7 @@ type RunSummaryRow = {
 };
 
 type RunRow = RunSummaryRow & {
-  promptMarkdown: string;
+  contextMarkdown: string;
   targetConfiguration: Record<string, unknown> | null;
 };
 
@@ -58,8 +58,8 @@ export async function requireRunRow(sql: DatabaseClient, runId: string): Promise
 function selectRunRow(sql: DatabaseClient, runId: string) {
   return sql<RunRow[]>`
     SELECT
-      evaluation_runs.id, evaluation_runs.prompt_id,
-      evaluation_runs.prompt_revision_id,
+      evaluation_runs.id, evaluation_runs.context_id,
+      evaluation_runs.context_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
       starter.name AS started_by_name,
       evaluation_runs.target_model_id AS target_model,
@@ -73,13 +73,13 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
       evaluation_runs.created_at, evaluation_runs.completed_at,
       chats.owner_user_id AS chat_owner_user_id,
       target_profiles.name AS target_profile_name,
-      prompts.title AS prompt_title,
-      prompt_revisions.revision_number AS prompt_revision_number,
-      prompt_revisions.markdown AS prompt_markdown,
+      contexts.title AS context_title,
+      context_revisions.revision_number AS context_revision_number,
+      context_revisions.markdown AS context_markdown,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    JOIN contexts ON contexts.id = evaluation_runs.context_id
+    JOIN context_revisions ON context_revisions.id = evaluation_runs.context_revision_id
     JOIN auth_users AS starter ON starter.id = evaluation_runs.started_by_user_id
     LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     LEFT JOIN target_profile_revisions
@@ -89,7 +89,7 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
     LEFT JOIN chats ON chats.id = evaluation_runs.chat_id
     WHERE evaluation_runs.id = ${runId}
     GROUP BY
-      evaluation_runs.id, prompts.title, prompt_revisions.revision_number, prompt_revisions.markdown,
+      evaluation_runs.id, contexts.title, context_revisions.revision_number, context_revisions.markdown,
       target_profiles.name, target_profile_revisions.configuration, chats.owner_user_id,
       starter.name
   `;
@@ -98,8 +98,8 @@ function selectRunRow(sql: DatabaseClient, runId: string) {
 export function selectRunRows(sql: DatabaseClient, limit: number) {
   return sql<RunSummaryRow[]>`
     SELECT
-      evaluation_runs.id, evaluation_runs.prompt_id,
-      evaluation_runs.prompt_revision_id,
+      evaluation_runs.id, evaluation_runs.context_id,
+      evaluation_runs.context_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
       starter.name AS started_by_name,
       evaluation_runs.target_model_id AS target_model,
@@ -112,26 +112,26 @@ export function selectRunRows(sql: DatabaseClient, limit: number) {
       evaluation_runs.created_at, evaluation_runs.completed_at,
       chats.owner_user_id AS chat_owner_user_id,
       target_profiles.name AS target_profile_name,
-      prompts.title AS prompt_title, prompt_revisions.revision_number AS prompt_revision_number,
+      contexts.title AS context_title, context_revisions.revision_number AS context_revision_number,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    JOIN contexts ON contexts.id = evaluation_runs.context_id
+    JOIN context_revisions ON context_revisions.id = evaluation_runs.context_revision_id
     JOIN auth_users AS starter ON starter.id = evaluation_runs.started_by_user_id
     LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
     LEFT JOIN chats ON chats.id = evaluation_runs.chat_id
-    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.revision_number, target_profiles.name, chats.owner_user_id, starter.name
+    GROUP BY evaluation_runs.id, contexts.title, context_revisions.revision_number, target_profiles.name, chats.owner_user_id, starter.name
     ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
     LIMIT ${limit}
   `;
 }
 
-export function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, limit: number) {
+export function selectRunRowsForContext(sql: DatabaseClient, contextId: string, limit: number) {
   return sql<RunSummaryRow[]>`
     SELECT
-      evaluation_runs.id, evaluation_runs.prompt_id,
-      evaluation_runs.prompt_revision_id,
+      evaluation_runs.id, evaluation_runs.context_id,
+      evaluation_runs.context_revision_id,
       evaluation_runs.chat_id, evaluation_runs.source, evaluation_runs.started_by_user_id,
       starter.name AS started_by_name,
       evaluation_runs.target_model_id AS target_model,
@@ -144,17 +144,17 @@ export function selectRunRowsForPrompt(sql: DatabaseClient, promptId: string, li
       evaluation_runs.created_at, evaluation_runs.completed_at,
       chats.owner_user_id AS chat_owner_user_id,
       target_profiles.name AS target_profile_name,
-      prompts.title AS prompt_title, prompt_revisions.revision_number AS prompt_revision_number,
+      contexts.title AS context_title, context_revisions.revision_number AS context_revision_number,
       count(evaluation_cases.id)::integer AS case_count
     FROM evaluation_runs
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    JOIN contexts ON contexts.id = evaluation_runs.context_id
+    JOIN context_revisions ON context_revisions.id = evaluation_runs.context_revision_id
     JOIN auth_users AS starter ON starter.id = evaluation_runs.started_by_user_id
     LEFT JOIN target_profiles ON target_profiles.id = evaluation_runs.target_profile_id
     LEFT JOIN evaluation_cases ON evaluation_cases.run_id = evaluation_runs.id
     LEFT JOIN chats ON chats.id = evaluation_runs.chat_id
-    WHERE evaluation_runs.prompt_id = ${promptId}
-    GROUP BY evaluation_runs.id, prompts.title, prompt_revisions.revision_number, target_profiles.name, chats.owner_user_id, starter.name
+    WHERE evaluation_runs.context_id = ${contextId}
+    GROUP BY evaluation_runs.id, contexts.title, context_revisions.revision_number, target_profiles.name, chats.owner_user_id, starter.name
     ORDER BY evaluation_runs.created_at DESC, evaluation_runs.id DESC
     LIMIT ${limit}
   `;
@@ -172,10 +172,10 @@ export function selectCases(sql: DatabaseClient, runId: string) {
 export function projectRunSummary(row: RunSummaryRow, viewerUserId: string): EvaluationRunSummary {
   return {
     id: row.id,
-    promptId: row.promptId,
-    promptRevisionId: row.promptRevisionId,
-    promptRevisionNumber: row.promptRevisionNumber,
-    promptTitle: row.promptTitle,
+    contextId: row.contextId,
+    contextRevisionId: row.contextRevisionId,
+    contextRevisionNumber: row.contextRevisionNumber,
+    contextTitle: row.contextTitle,
     targetProfileId: row.targetProfileId,
     targetProfileRevisionId: row.targetProfileRevisionId,
     targetProfileName: row.targetProfileName,

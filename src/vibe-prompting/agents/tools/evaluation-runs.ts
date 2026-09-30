@@ -9,7 +9,7 @@ import { AgentToolkit, defineAgentTool, requireAgentActor } from "./api.ts";
 import { createEvaluationTool } from "./evaluation.ts";
 
 const listSchema = z.object({
-  promptId: z.uuid().optional().describe("Optional saved prompt ID filter."),
+  contextId: z.uuid().optional().describe("Optional saved context ID filter."),
   limit: z.number().int().min(1).max(100).default(20).describe("Maximum runs to return."),
 });
 const runSchema = z.object({ runId: z.uuid().describe("Evaluation Run ID.") });
@@ -38,7 +38,7 @@ export class EvaluationRunsToolkit extends AgentToolkit {
         name: "list_evaluation_runs",
         title: "List evaluation runs",
         description:
-          "List recent durable Evaluation Run summaries and statuses, optionally filtered to one saved prompt.",
+          "List recent durable Evaluation Run summaries and statuses, optionally filtered to one saved context.",
         parameters: listSchema,
         annotations: { readOnlyHint: true, openWorldHint: false },
         async execute(input, context) {

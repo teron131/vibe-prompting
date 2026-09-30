@@ -157,8 +157,8 @@ export function ScenarioReport({ runId }: { runId: string }) {
         <section className="grid divide-y border-y text-xs sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           <ScenarioFact label="State" value={scenarioStatus(response)} />
           <ScenarioFact
-            label="Prompt"
-            value={`${scenario.promptTitle} · v${scenario.promptRevisionNumber}`}
+            label="Context"
+            value={`${scenario.contextTitle} · v${scenario.contextRevisionNumber}`}
           />
           <ScenarioFact label="Target Model" value={scenario.targetModel} />
           {scenario.mode === "generative" ? (

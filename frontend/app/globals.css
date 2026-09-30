@@ -1,4 +1,4 @@
-/* Carries the donor-aligned neutral design tokens and global interaction floor for the prompt workspace. */
+/* Carries the donor-aligned neutral design tokens and global interaction floor for the context workspace. */
 
 @import "../node_modules/tailwindcss/index.css";
 @import "../node_modules/katex/dist/katex.min.css";

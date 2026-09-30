@@ -1,4 +1,4 @@
-/** Provides the shared multiline form control used by prompt and evaluation editors. */
+/** Provides the shared multiline form control used by context and evaluation editors. */
 
 import { forwardRef, type TextareaHTMLAttributes } from "react";
 

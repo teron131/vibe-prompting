@@ -5,12 +5,12 @@ import { redirect } from "next/navigation";
 export default async function EvaluationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ prompt?: string | string[] }>;
+  searchParams: Promise<{ context?: string | string[] }>;
 }) {
-  const { prompt } = await searchParams;
+  const { context } = await searchParams;
   redirect(
-    typeof prompt === "string"
-      ? `/evaluations/run?prompt=${encodeURIComponent(prompt)}`
+    typeof context === "string"
+      ? `/evaluations/run?context=${encodeURIComponent(context)}`
       : "/evaluations/results",
   );
 }

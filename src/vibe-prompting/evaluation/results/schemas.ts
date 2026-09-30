@@ -24,9 +24,9 @@ export type ResultListItem = {
   caseId: string;
   runId: string;
   position: number;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextRevisionId: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetModel: string;
   judgeModels: string[];
   status: EvaluationRunStatus;
@@ -42,7 +42,7 @@ export type ResultListItem = {
 };
 
 export type EvaluationWorkspaceFacets = {
-  prompts: Array<{ count: number; id: string; label: string }>;
+  contexts: Array<{ count: number; id: string; label: string }>;
   revisions: Array<{ count: number; value: string }>;
   targetModels: Array<{ count: number; value: string }>;
   judgeModels: Array<{ count: number; value: string }>;
@@ -130,8 +130,8 @@ export type NormalizedFilters = {
   caseIds: string[] | null;
   criterion: string | null;
   runId: string | null;
-  promptId: string | null;
-  promptRevisionId: string | null;
+  contextId: string | null;
+  contextRevisionId: string | null;
   targetModels: string[] | null;
   judgeModels: string[] | null;
   status: EvaluationRunStatus | null;
@@ -163,8 +163,8 @@ export const evaluationFiltersSchema = z
     searchField: z.enum(["all", "comment", "evidence", "input", "output"]).optional(),
     criterion: z.string().trim().min(1).max(1_000).optional(),
     runId: z.uuid().optional(),
-    promptId: z.uuid().optional(),
-    promptRevisionId: z.uuid().optional(),
+    contextId: z.uuid().optional(),
+    contextRevisionId: z.uuid().optional(),
     targetModels: modelsSchema,
     judgeModels: modelsSchema,
     status: statusSchema.optional(),
@@ -193,12 +193,12 @@ export const evaluationStructuredQuerySchema = z.discriminatedUnion("operation",
   }),
   evaluationFiltersSchema.safeExtend({
     operation: z.literal("group_count"),
-    groupBy: z.enum(["dataType", "judge", "prompt", "revision", "status", "targetModel"]),
+    groupBy: z.enum(["dataType", "judge", "context", "revision", "status", "targetModel"]),
     limit: z.number().int().min(1).max(50).default(20),
   }),
   evaluationFiltersSchema.safeExtend({
     operation: z.literal("average"),
-    groupBy: z.enum(["criterion", "judge", "prompt", "revision", "targetModel"]).optional(),
+    groupBy: z.enum(["criterion", "judge", "context", "revision", "targetModel"]).optional(),
     limit: z.number().int().min(1).max(50).default(20),
   }),
 ]);
@@ -235,7 +235,7 @@ type StoredEvaluationCase = {
 };
 
 export type StoredEvaluationRun = EvaluationRunSummary & {
-  promptMarkdown: string;
+  contextMarkdown: string;
   targetConfiguration: Record<string, unknown> | null;
   cases: StoredEvaluationCase[];
 };

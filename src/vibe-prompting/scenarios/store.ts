@@ -18,8 +18,8 @@ import {
 
 type ScenarioRow = {
   id: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetModel: string;
   reasoningEffort: TargetReasoningEffort;
   mode: ScenarioMode;
@@ -38,8 +38,8 @@ type ScenarioRow = {
 };
 
 type NewScenarioRunBase = {
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   targetModel: string;
   reasoningEffort: TargetReasoningEffort;
   evaluationPlan: ScenarioEvaluationPlan | null;
@@ -55,8 +55,8 @@ export type NewScenarioRun = NewScenarioRunBase &
   );
 
 type ScenarioExecutionBase = {
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   targetModel: string;
   reasoningEffort: TargetReasoningEffort;
   evaluationPlan: ScenarioEvaluationPlan | null;
@@ -119,12 +119,12 @@ export class ScenarioRunStore {
     await this.#database.run(async (sql) => {
       await sql`
         INSERT INTO scenario_runs (
-          id, prompt_id, prompt_revision_id, target_model_id, reasoning_effort, mode,
+          id, context_id, context_revision_id, target_model_id, reasoning_effort, mode,
           instruction_text, static_messages_json, driver_model_id, max_turns, status, source,
           chat_id, started_by_user_id, evaluation_plan_json
         )
         VALUES (
-          ${runId}, ${input.promptId}, ${input.promptRevisionId}, ${input.targetModel},
+          ${runId}, ${input.contextId}, ${input.contextRevisionId}, ${input.targetModel},
           ${input.reasoningEffort}, ${input.mode},
           ${input.mode === "generative" ? input.instruction : null},
           ${input.mode === "static" ? sql.json(input.messages as postgres.JSONValue[]) : null},
@@ -163,8 +163,8 @@ export class ScenarioRunStore {
     return this.#database.run(async (sql) => {
       const [row] = await sql<ScenarioExecutionRow[]>`
         SELECT
-          prompt_id,
-          prompt_revision_id,
+          context_id,
+          context_revision_id,
           target_model_id AS target_model,
           reasoning_effort,
           mode,
@@ -181,8 +181,8 @@ export class ScenarioRunStore {
       `;
       if (!row) throw new ScenarioRunNotFoundError(runId);
       const common = {
-        promptId: row.promptId,
-        promptRevisionId: row.promptRevisionId,
+        contextId: row.contextId,
+        contextRevisionId: row.contextRevisionId,
         targetModel: row.targetModel,
         reasoningEffort: row.reasoningEffort,
         evaluationPlan: row.evaluationPlan,
@@ -345,8 +345,8 @@ async function requireScenarioRow(sql: DatabaseClient, runId: string): Promise<S
   const [row] = await sql<ScenarioRow[]>`
     SELECT
       scenario_runs.id,
-      prompt_revisions.revision_number AS prompt_revision_number,
-      prompts.title AS prompt_title,
+      context_revisions.revision_number AS context_revision_number,
+      contexts.title AS context_title,
       scenario_runs.target_model_id AS target_model,
       scenario_runs.reasoning_effort,
       scenario_runs.mode,
@@ -363,8 +363,8 @@ async function requireScenarioRow(sql: DatabaseClient, runId: string): Promise<S
       scenario_runs.evaluation_error_message,
       scenario_runs.created_at
     FROM scenario_runs
-    JOIN prompts ON prompts.id = scenario_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = scenario_runs.prompt_revision_id
+    JOIN contexts ON contexts.id = scenario_runs.context_id
+    JOIN context_revisions ON context_revisions.id = scenario_runs.context_revision_id
     WHERE scenario_runs.id = ${runId}
   `;
   if (!row) throw new ScenarioRunNotFoundError(runId);
@@ -374,8 +374,8 @@ async function requireScenarioRow(sql: DatabaseClient, runId: string): Promise<S
 function projectScenarioRun(row: ScenarioRow): ScenarioRecord {
   const base = {
     id: row.id,
-    promptRevisionNumber: row.promptRevisionNumber,
-    promptTitle: row.promptTitle,
+    contextRevisionNumber: row.contextRevisionNumber,
+    contextTitle: row.contextTitle,
     targetModel: row.targetModel,
     reasoningEffort: row.reasoningEffort,
     evaluationErrorMessage: row.evaluationErrorMessage,

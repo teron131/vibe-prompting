@@ -1,4 +1,4 @@
-/** Owns Target Run persistence, immutable completed turns, exact runtime provenance, and prompt-scoped history projection. */
+/** Owns Target Run persistence, immutable completed turns, exact runtime provenance, and context-scoped history projection. */
 
 import { randomUUID } from "node:crypto";
 
@@ -19,10 +19,10 @@ import {
 
 type RunRow = {
   id: string;
-  promptId: string;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextId: string;
+  contextRevisionId: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetProfileId: string;
   targetProfileName: string;
   targetProfileRevisionId: string;
@@ -58,8 +58,8 @@ type TurnRow = {
 
 export type TargetRunExecutionContext = {
   effectiveInstructionsHash: string;
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   reasoningEffort: TargetRunSummary["reasoningEffort"];
   responseHistory: Array<{ input: string; responseMessages: ModelMessage[] }>;
   targetModel: string;
@@ -69,8 +69,8 @@ export type TargetRunExecutionContext = {
 };
 
 export type NewTargetRun = {
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   targetProfileId: string;
   targetProfileRevisionId: string;
   targetModel: string;
@@ -117,12 +117,12 @@ export class TargetRunStore {
     await this.#database.transaction(async (sql) => {
       await sql`
         INSERT INTO target_runs (
-          id, prompt_id, prompt_revision_id, target_profile_id, target_profile_revision_id,
+          id, context_id, context_revision_id, target_profile_id, target_profile_revision_id,
           target_model_id, reasoning_effort, effective_instructions_hash, source, chat_id,
           started_by_user_id
         )
         VALUES (
-          ${runId}, ${input.promptId}, ${input.promptRevisionId}, ${input.targetProfileId},
+          ${runId}, ${input.contextId}, ${input.contextRevisionId}, ${input.targetProfileId},
           ${input.targetProfileRevisionId}, ${input.targetModel},
           ${input.reasoningEffort}, ${input.effectiveInstructionsHash}, ${input.source}, ${input.chatId},
           ${input.startedByUserId}
@@ -227,9 +227,9 @@ export class TargetRunStore {
     });
   }
 
-  async list(viewerUserId: string, promptId: string, limit = 30): Promise<TargetRunSummary[]> {
+  async list(viewerUserId: string, contextId: string, limit = 30): Promise<TargetRunSummary[]> {
     return this.#database.run(async (sql) => {
-      const rows = await selectRunRows(sql, promptId, Math.min(Math.max(limit, 1), 100));
+      const rows = await selectRunRows(sql, contextId, Math.min(Math.max(limit, 1), 100));
       return rows.map((row) => projectRunSummary(row, viewerUserId));
     });
   }
@@ -250,8 +250,8 @@ export class TargetRunStore {
         .map(({ input, responseMessages }) => ({ input, responseMessages }));
       return {
         effectiveInstructionsHash: row.effectiveInstructionsHash,
-        promptId: row.promptId,
-        promptRevisionId: row.promptRevisionId,
+        contextId: row.contextId,
+        contextRevisionId: row.contextRevisionId,
         reasoningEffort: row.reasoningEffort,
         responseHistory,
         targetModel: row.targetModel,
@@ -296,18 +296,18 @@ function selectRunRowsById(sql: DatabaseClient, runId: string) {
   >`${runProjection(sql)} WHERE target_runs.id = ${runId} GROUP BY ${runGrouping(sql)}`;
 }
 
-function selectRunRows(sql: DatabaseClient, promptId: string, limit: number) {
+function selectRunRows(sql: DatabaseClient, contextId: string, limit: number) {
   return sql<
     RunRow[]
-  >`${runProjection(sql)} WHERE target_runs.prompt_id = ${promptId} GROUP BY ${runGrouping(sql)} ORDER BY target_runs.updated_at DESC, target_runs.id DESC LIMIT ${limit}`;
+  >`${runProjection(sql)} WHERE target_runs.context_id = ${contextId} GROUP BY ${runGrouping(sql)} ORDER BY target_runs.updated_at DESC, target_runs.id DESC LIMIT ${limit}`;
 }
 
 function runProjection(sql: DatabaseClient) {
   return sql`
     SELECT
       target_runs.id,
-      target_runs.prompt_id,
-      target_runs.prompt_revision_id,
+      target_runs.context_id,
+      target_runs.context_revision_id,
       target_runs.target_profile_id,
       target_runs.target_profile_revision_id,
       target_runs.target_model_id AS target_model,
@@ -319,8 +319,8 @@ function runProjection(sql: DatabaseClient) {
       starter.name AS started_by_name,
       target_runs.created_at,
       target_runs.updated_at,
-      prompts.title AS prompt_title,
-      prompt_revisions.revision_number AS prompt_revision_number,
+      contexts.title AS context_title,
+      context_revisions.revision_number AS context_revision_number,
       target_profiles.name AS target_profile_name,
       target_profile_revisions.configuration AS target_configuration,
       chats.owner_user_id AS chat_owner_user_id,
@@ -330,8 +330,8 @@ function runProjection(sql: DatabaseClient) {
         'interrupted'
       ) AS latest_status
     FROM target_runs
-    JOIN prompts ON prompts.id = target_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = target_runs.prompt_revision_id
+    JOIN contexts ON contexts.id = target_runs.context_id
+    JOIN context_revisions ON context_revisions.id = target_runs.context_revision_id
     JOIN auth_users AS starter ON starter.id = target_runs.started_by_user_id
     JOIN target_profiles ON target_profiles.id = target_runs.target_profile_id
     JOIN target_profile_revisions
@@ -345,8 +345,8 @@ function runProjection(sql: DatabaseClient) {
 function runGrouping(sql: DatabaseClient) {
   return sql`
     target_runs.id,
-    prompts.title,
-    prompt_revisions.revision_number,
+    contexts.title,
+    context_revisions.revision_number,
     target_profiles.name,
     target_profile_revisions.configuration,
     chats.owner_user_id,
@@ -382,10 +382,10 @@ function projectRunSummary(row: RunRow, viewerUserId: string): TargetRunSummary 
     effectiveInstructionsHash: row.effectiveInstructionsHash,
     id: row.id,
     latestStatus: row.latestStatus,
-    promptId: row.promptId,
-    promptRevisionId: row.promptRevisionId,
-    promptRevisionNumber: row.promptRevisionNumber,
-    promptTitle: row.promptTitle,
+    contextId: row.contextId,
+    contextRevisionId: row.contextRevisionId,
+    contextRevisionNumber: row.contextRevisionNumber,
+    contextTitle: row.contextTitle,
     reasoningEffort: row.reasoningEffort,
     source: row.source,
     startedByName: row.startedByName,

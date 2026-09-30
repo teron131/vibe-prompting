@@ -17,9 +17,9 @@ type ResultRow = {
   caseId: string;
   runId: string;
   position: number;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextRevisionId: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetModel: string;
   judgeModels: string[];
   status: EvaluationRunStatus;
@@ -66,21 +66,21 @@ export function selectResultRows(
       evaluation_cases.id AS case_id, evaluation_cases.position,
       evaluation_cases.input_json AS input, evaluation_cases.output_json AS output,
       evaluation_runs.id AS run_id,
-      evaluation_runs.prompt_revision_id, evaluation_runs.target_model_id AS target_model,
+      evaluation_runs.context_revision_id, evaluation_runs.target_model_id AS target_model,
       evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
       evaluation_runs.status, evaluation_runs.judge_model_ids AS judge_models,
       evaluation_runs.error_message, evaluation_runs.is_synthetic_example,
-      evaluation_runs.created_at, evaluation_runs.completed_at, prompts.title AS prompt_title,
-      prompt_revisions.revision_number AS prompt_revision_number
+      evaluation_runs.created_at, evaluation_runs.completed_at, contexts.title AS context_title,
+      context_revisions.revision_number AS context_revision_number
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    JOIN contexts ON contexts.id = evaluation_runs.context_id
+    JOIN context_revisions ON context_revisions.id = evaluation_runs.context_revision_id
     WHERE
       (${filters.runId}::uuid IS NULL OR evaluation_runs.id = ${filters.runId})
       AND
-      (${filters.promptId}::uuid IS NULL OR evaluation_runs.prompt_id = ${filters.promptId})
-      AND (${filters.promptRevisionId}::uuid IS NULL OR evaluation_runs.prompt_revision_id = ${filters.promptRevisionId})
+      (${filters.contextId}::uuid IS NULL OR evaluation_runs.context_id = ${filters.contextId})
+      AND (${filters.contextRevisionId}::uuid IS NULL OR evaluation_runs.context_revision_id = ${filters.contextRevisionId})
       AND ${targetModelsCondition(sql, filters)}
       AND (${filters.status}::text IS NULL OR evaluation_runs.status = ${filters.status})
       AND (${filters.from}::timestamptz IS NULL OR evaluation_runs.created_at >= ${filters.from})
@@ -114,16 +114,16 @@ export function selectResultById(sql: DatabaseClient, caseId: string) {
       evaluation_cases.id AS case_id, evaluation_cases.position,
       evaluation_cases.input_json AS input, evaluation_cases.output_json AS output,
       evaluation_runs.id AS run_id,
-      evaluation_runs.prompt_revision_id, evaluation_runs.target_model_id AS target_model,
+      evaluation_runs.context_revision_id, evaluation_runs.target_model_id AS target_model,
       evaluation_runs.target_run_id, evaluation_runs.target_run_turn_id,
       evaluation_runs.status, evaluation_runs.judge_model_ids AS judge_models,
       evaluation_runs.error_message, evaluation_runs.is_synthetic_example,
-      evaluation_runs.created_at, evaluation_runs.completed_at, prompts.title AS prompt_title,
-      prompt_revisions.revision_number AS prompt_revision_number
+      evaluation_runs.created_at, evaluation_runs.completed_at, contexts.title AS context_title,
+      context_revisions.revision_number AS context_revision_number
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
-    JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
+    JOIN contexts ON contexts.id = evaluation_runs.context_id
+    JOIN context_revisions ON context_revisions.id = evaluation_runs.context_revision_id
     WHERE evaluation_cases.id = ${caseId}
   `;
 }
@@ -166,9 +166,9 @@ export function projectCaseResults(rows: ResultRow[], scores: ScoreRow[]): Resul
     caseId: row.caseId,
     runId: row.runId,
     position: row.position,
-    promptRevisionId: row.promptRevisionId,
-    promptRevisionNumber: row.promptRevisionNumber,
-    promptTitle: row.promptTitle,
+    contextRevisionId: row.contextRevisionId,
+    contextRevisionNumber: row.contextRevisionNumber,
+    contextTitle: row.contextTitle,
     targetModel: row.targetModel,
     judgeModels: row.judgeModels,
     status: row.status,
@@ -193,8 +193,8 @@ export function countFilteredCases(sql: DatabaseClient, filters: NormalizedFilte
     WHERE
       (${filters.runId}::uuid IS NULL OR evaluation_runs.id = ${filters.runId})
       AND
-      (${filters.promptId}::uuid IS NULL OR evaluation_runs.prompt_id = ${filters.promptId})
-      AND (${filters.promptRevisionId}::uuid IS NULL OR evaluation_runs.prompt_revision_id = ${filters.promptRevisionId})
+      (${filters.contextId}::uuid IS NULL OR evaluation_runs.context_id = ${filters.contextId})
+      AND (${filters.contextRevisionId}::uuid IS NULL OR evaluation_runs.context_revision_id = ${filters.contextRevisionId})
       AND ${targetModelsCondition(sql, filters)}
       AND (${filters.status}::text IS NULL OR evaluation_runs.status = ${filters.status})
       AND (${filters.from}::timestamptz IS NULL OR evaluation_runs.created_at >= ${filters.from})
@@ -247,8 +247,8 @@ export async function selectSearchDocuments(
     WHERE
       (${filters.runId}::uuid IS NULL OR evaluation_runs.id = ${filters.runId})
       AND
-      (${filters.promptId}::uuid IS NULL OR evaluation_runs.prompt_id = ${filters.promptId})
-      AND (${filters.promptRevisionId}::uuid IS NULL OR evaluation_runs.prompt_revision_id = ${filters.promptRevisionId})
+      (${filters.contextId}::uuid IS NULL OR evaluation_runs.context_id = ${filters.contextId})
+      AND (${filters.contextRevisionId}::uuid IS NULL OR evaluation_runs.context_revision_id = ${filters.contextRevisionId})
       AND ${targetModelsCondition(sql, filters)}
       AND (${filters.status}::text IS NULL OR evaluation_runs.status = ${filters.status})
       AND (${filters.from}::timestamptz IS NULL OR evaluation_runs.created_at >= ${filters.from})
@@ -279,16 +279,16 @@ export async function selectFacets(
   sql: DatabaseClient,
   filters: NormalizedFilters,
 ): Promise<EvaluationWorkspaceFacets> {
-  const [prompts, revisions, targetModels, statuses, judgeModels, dataTypes] = await Promise.all([
-    selectPromptFacets(sql, withoutFacet(filters, "promptId")),
-    selectRunFacet(sql, withoutFacet(filters, "promptRevisionId"), "revision"),
+  const [contexts, revisions, targetModels, statuses, judgeModels, dataTypes] = await Promise.all([
+    selectContextFacets(sql, withoutFacet(filters, "contextId")),
+    selectRunFacet(sql, withoutFacet(filters, "contextRevisionId"), "revision"),
     selectRunFacet(sql, withoutFacet(filters, "targetModels"), "targetModel"),
     selectRunFacet(sql, withoutFacet(filters, "status"), "status"),
     selectScoreFacet(sql, withoutFacet(filters, "judgeModels"), "judge"),
     selectScoreFacet(sql, withoutFacet(filters, "dataType"), "dataType"),
   ]);
   return {
-    prompts,
+    contexts,
     revisions,
     targetModels,
     judgeModels,
@@ -304,16 +304,16 @@ function withoutFacet<Key extends keyof NormalizedFilters>(
   return { ...filters, [key]: null };
 }
 
-function selectPromptFacets(sql: DatabaseClient, filters: NormalizedFilters) {
+function selectContextFacets(sql: DatabaseClient, filters: NormalizedFilters) {
   return sql<Array<{ count: number; id: string; label: string }>>`
-    SELECT evaluation_runs.prompt_id AS id, prompts.title AS label, count(DISTINCT evaluation_cases.id)::integer AS count
+    SELECT evaluation_runs.context_id AS id, contexts.title AS label, count(DISTINCT evaluation_cases.id)::integer AS count
     FROM evaluation_cases
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
+    JOIN contexts ON contexts.id = evaluation_runs.context_id
     LEFT JOIN evaluation_scores ON evaluation_scores.case_id = evaluation_cases.id
     WHERE ${filterConditions(sql, filters)}
-    GROUP BY evaluation_runs.prompt_id, prompts.title
-    ORDER BY count DESC, prompts.title
+    GROUP BY evaluation_runs.context_id, contexts.title
+    ORDER BY count DESC, contexts.title
   `;
 }
 
@@ -324,7 +324,7 @@ function selectRunFacet(
 ) {
   const expression =
     facet === "revision"
-      ? sql`evaluation_runs.prompt_revision_id::text`
+      ? sql`evaluation_runs.context_revision_id::text`
       : facet === "status"
         ? sql`evaluation_runs.status`
         : sql`evaluation_runs.target_model_id`;
@@ -361,8 +361,8 @@ function filterConditions(sql: DatabaseClient, filters: NormalizedFilters) {
   return sql`
     (${filters.runId}::uuid IS NULL OR evaluation_runs.id = ${filters.runId})
     AND
-    (${filters.promptId}::uuid IS NULL OR evaluation_runs.prompt_id = ${filters.promptId})
-    AND (${filters.promptRevisionId}::uuid IS NULL OR evaluation_runs.prompt_revision_id = ${filters.promptRevisionId})
+    (${filters.contextId}::uuid IS NULL OR evaluation_runs.context_id = ${filters.contextId})
+    AND (${filters.contextRevisionId}::uuid IS NULL OR evaluation_runs.context_revision_id = ${filters.contextRevisionId})
     AND ${targetModelsCondition(sql, filters)}
     AND (${filters.status}::text IS NULL OR evaluation_runs.status = ${filters.status})
     AND (${filters.from}::timestamptz IS NULL OR evaluation_runs.created_at >= ${filters.from})
@@ -574,10 +574,10 @@ export function selectTimeline(sql: DatabaseClient, filters: NormalizedFilters) 
 
 export function selectGroupedRows(
   facets: EvaluationWorkspaceFacets,
-  groupBy: "dataType" | "judge" | "prompt" | "revision" | "status" | "targetModel",
+  groupBy: "dataType" | "judge" | "context" | "revision" | "status" | "targetModel",
 ): Array<{ label: string; value: number }> {
-  if (groupBy === "prompt")
-    return facets.prompts.map(({ count, label }) => ({ label, value: count }));
+  if (groupBy === "context")
+    return facets.contexts.map(({ count, label }) => ({ label, value: count }));
   const source =
     groupBy === "dataType"
       ? facets.dataTypes
@@ -594,7 +594,7 @@ export function selectGroupedRows(
 export function selectNumericQueryRows(
   sql: DatabaseClient,
   filters: NormalizedFilters,
-  groupBy: "criterion" | "judge" | "prompt" | "revision" | "targetModel" | undefined,
+  groupBy: "criterion" | "judge" | "context" | "revision" | "targetModel" | undefined,
   limit: number,
 ) {
   if (!groupBy)
@@ -615,10 +615,10 @@ export function selectNumericQueryRows(
       ? sql`evaluation_scores.criterion_json->>'name'`
       : groupBy === "judge"
         ? sql`evaluation_scores.judge_model_id`
-        : groupBy === "prompt"
-          ? sql`prompts.title`
+        : groupBy === "context"
+          ? sql`contexts.title`
           : groupBy === "revision"
-            ? sql`evaluation_runs.prompt_revision_id::text`
+            ? sql`evaluation_runs.context_revision_id::text`
             : sql`evaluation_runs.target_model_id`;
   return sql<Array<{ count: number; label: string; value: number }>>`
     SELECT
@@ -628,7 +628,7 @@ export function selectNumericQueryRows(
     FROM evaluation_scores
     JOIN evaluation_cases ON evaluation_cases.id = evaluation_scores.case_id
     JOIN evaluation_runs ON evaluation_runs.id = evaluation_cases.run_id
-    JOIN prompts ON prompts.id = evaluation_runs.prompt_id
+    JOIN contexts ON contexts.id = evaluation_runs.context_id
     WHERE evaluation_scores.data_type = 'NUMERIC'
       AND jsonb_typeof(evaluation_scores.value_json) = 'number'
       AND ${filterConditions(sql, filters)}

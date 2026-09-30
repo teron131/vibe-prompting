@@ -3,6 +3,7 @@
 import "dotenv/config";
 import { readFile } from "node:fs/promises";
 
+import { readSkillMetadata } from "../src/vibe-prompting/context-system/skills.ts";
 import { DEFAULT_DATABASE_URL } from "../src/vibe-prompting/database/client.ts";
 import { Database } from "../src/vibe-prompting/database/index.ts";
 import { setupDatabase } from "../src/vibe-prompting/database/setup.ts";
@@ -12,7 +13,10 @@ const [fixtureSource, seedSource] = await Promise.all([
   readFile(new URL("../examples/default-workspace.json", import.meta.url), "utf8"),
   readFile(new URL("../examples/default-workspace.seed.sql", import.meta.url), "utf8"),
 ]);
-const fixture = JSON.stringify(JSON.parse(fixtureSource));
+const data = JSON.parse(fixtureSource);
+for (const revision of data.contextRows)
+  revision.skill = readSkillMetadata(revision.markdown) ?? null;
+const fixture = JSON.stringify(data);
 
 await setupDatabase(databaseUrl);
 const database = new Database(databaseUrl);

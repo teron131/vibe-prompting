@@ -1,32 +1,42 @@
 {
-  "prompt": {
+  "context": {
     "id": "ce18263f-2eec-4277-9d6b-424f0634f492",
     "title": "EXAMPLE — AI Concepts, Clearly",
-    "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
-    "revisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-    "revisionNumber": 1,
-    "activeRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-    "activeRevisionNumber": 1,
-    "revisionCount": 1,
-    "updatedAt": "2026-08-23T06:15:26.191Z"
+    "markdown": "---\nname: ai-concepts-clearly\ndescription: Explain AI concepts for curious general readers, including reinforcement learning, language models versus computer vision, and training versus inference.\n---\n\n# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
+    "revisionId": "b75f6b12-0779-4e0e-a906-820a24f63490",
+    "revisionNumber": 2,
+    "activeRevisionId": "b75f6b12-0779-4e0e-a906-820a24f63490",
+    "activeRevisionNumber": 2,
+    "revisionCount": 2,
+    "updatedAt": "2026-09-30T09:24:08.696Z"
   },
-  "promptRows": [
+  "contextRows": [
     {
       "id": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
       "parentRevisionId": null,
       "revisionNumber": 1,
       "markdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
       "changeRequest": null,
       "author": "human",
       "createdAt": "2026-08-23T06:15:26.191Z"
+    },
+    {
+      "id": "b75f6b12-0779-4e0e-a906-820a24f63490",
+      "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "parentRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+      "revisionNumber": 2,
+      "markdown": "---\nname: ai-concepts-clearly\ndescription: Explain AI concepts for curious general readers, including reinforcement learning, language models versus computer vision, and training versus inference.\n---\n\n# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
+      "changeRequest": "Make the default AI concepts example a reusable skill.",
+      "author": "ai",
+      "createdAt": "2026-09-30T09:24:08.696Z"
     }
   ],
   "targetProfileRows": [
     {
       "id": "aa9c1065-236e-4887-b9c0-62216c9539dc",
       "name": "AI SDK agent",
-      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
       "currentRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
       "revisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
       "parentRevisionId": null,
@@ -75,8 +85,8 @@
       "updatedAt": "2026-08-23T06:16:43.939Z"
     },
     "context": {
-      "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
-      "enabledTools": ["prompt-library", "evaluations"],
+      "activeContextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "enabledTools": ["context-library", "skills", "evaluations"],
       "panelOpen": true,
       "reasoningEffort": "medium"
     },
@@ -101,10 +111,10 @@
         "metadata": {
           "modelId": "gpt-5.6-luna",
           "completedAt": "2026-08-23T06:15:34.343Z",
-          "enabledTools": ["prompt-library", "evaluations"],
-          "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+          "enabledTools": ["context-library", "evaluations"],
+          "activeContextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
           "reasoningEffort": "medium",
-          "activePromptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+          "activeContextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
         },
         "parts": [
           {
@@ -115,10 +125,10 @@
             "name": "start_target_run",
             "type": "tool",
             "input": {
-              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
               "instruction": "What is reinforcement learning, and when would you use it instead of supervised learning?",
               "targetModelId": "GPT-5.6 Luna",
-              "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+              "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
             },
             "state": "completed",
             "callId": "call_64DQaRweEOqiRDn3Xc8qiVyO",
@@ -141,20 +151,20 @@
                 ],
                 "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
                 "source": "ai",
-                "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
                 "createdAt": "2026-08-23T06:15:30.524Z",
                 "turnCount": 1,
                 "updatedAt": "2026-08-23T06:15:30.524Z",
-                "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                "contextTitle": "EXAMPLE — AI Concepts, Clearly",
                 "latestStatus": "running",
                 "startedByName": "Example Builder",
                 "targetModelId": "gpt-5.6-luna",
                 "reasoningEffort": "medium",
                 "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
-                "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                 "targetProfileName": "AI SDK agent",
                 "targetConfiguration": {},
-                "promptRevisionNumber": 1,
+                "contextRevisionNumber": 1,
                 "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
                 "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
               },
@@ -172,8 +182,8 @@
             "type": "text"
           },
           {
-            "type": "prompt-revision",
-            "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+            "type": "context-revision",
+            "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
             "revisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
           }
         ],
@@ -199,10 +209,10 @@
         "metadata": {
           "modelId": "gpt-5.6-luna",
           "completedAt": "2026-08-23T06:15:58.246Z",
-          "enabledTools": ["prompt-library", "evaluations"],
-          "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+          "enabledTools": ["context-library", "evaluations"],
+          "activeContextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
           "reasoningEffort": "medium",
-          "activePromptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+          "activeContextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
         },
         "parts": [
           {
@@ -258,20 +268,20 @@
                 ],
                 "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
                 "source": "ai",
-                "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
                 "createdAt": "2026-08-23T06:15:30.524Z",
                 "turnCount": 2,
                 "updatedAt": "2026-08-23T06:15:52.638Z",
-                "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                "contextTitle": "EXAMPLE — AI Concepts, Clearly",
                 "latestStatus": "running",
                 "startedByName": "Example Builder",
                 "targetModelId": "gpt-5.6-luna",
                 "reasoningEffort": "medium",
                 "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
-                "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                 "targetProfileName": "AI SDK agent",
                 "targetConfiguration": {},
-                "promptRevisionNumber": 1,
+                "contextRevisionNumber": 1,
                 "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
                 "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
               },
@@ -306,11 +316,11 @@
                 }
               ],
               "judges": ["GPT-5.6 Luna", "Gemini 3.7 Flash"],
-              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
               "repetitions": null,
               "targetModelId": "GPT-5.6 Luna",
               "targetModelIds": null,
-              "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+              "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
               "batchConfigurations": null
             },
             "state": "completed",
@@ -321,11 +331,11 @@
                 "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
                 "source": "ai",
                 "status": "running",
-                "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
                 "caseCount": 1,
                 "createdAt": "2026-08-23T06:15:52.641Z",
                 "completedAt": null,
-                "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                "contextTitle": "EXAMPLE — AI Concepts, Clearly",
                 "targetRunId": null,
                 "errorMessage": null,
                 "judgeModelIds": ["gpt-5.6-luna", "gemini-3.7-flash"],
@@ -333,10 +343,10 @@
                 "targetModelId": "gpt-5.6-luna",
                 "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
                 "targetRunTurnId": null,
-                "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                 "targetProfileName": "AI SDK agent",
                 "isSyntheticExample": false,
-                "promptRevisionNumber": 1,
+                "contextRevisionNumber": 1,
                 "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
                 "configurationFingerprint": "d4f77a308a3e734b3fce86f4bc2851bb8571077cc15700a7b3fa7bfec697d62e",
                 "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
@@ -372,11 +382,11 @@
                 }
               ],
               "judges": ["GPT-5.6 Luna", "Gemini 3.7 Flash"],
-              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
               "repetitions": null,
               "targetModelId": "GPT-5.6 Luna",
               "targetModelIds": null,
-              "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+              "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
               "batchConfigurations": null
             },
             "state": "completed",
@@ -387,11 +397,11 @@
                 "chatId": "7b0b4bba-47ba-498e-b9ff-84a9c4a177ee",
                 "source": "ai",
                 "status": "running",
-                "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
                 "caseCount": 1,
                 "createdAt": "2026-08-23T06:15:52.648Z",
                 "completedAt": null,
-                "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                "contextTitle": "EXAMPLE — AI Concepts, Clearly",
                 "targetRunId": null,
                 "errorMessage": null,
                 "judgeModelIds": ["gpt-5.6-luna", "gemini-3.7-flash"],
@@ -399,10 +409,10 @@
                 "targetModelId": "gpt-5.6-luna",
                 "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
                 "targetRunTurnId": null,
-                "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                 "targetProfileName": "AI SDK agent",
                 "isSyntheticExample": false,
-                "promptRevisionNumber": 1,
+                "contextRevisionNumber": 1,
                 "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
                 "configurationFingerprint": "6a726c0277401c9cf2aae836fe360d180659456bf593c82dc00f7a45a28a3585",
                 "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d"
@@ -443,10 +453,10 @@
         "metadata": {
           "modelId": "gpt-5.6-luna",
           "completedAt": "2026-08-23T06:16:43.938Z",
-          "enabledTools": ["prompt-library", "evaluations"],
-          "activePromptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+          "enabledTools": ["context-library", "evaluations"],
+          "activeContextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
           "reasoningEffort": "medium",
-          "activePromptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+          "activeContextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
         },
         "parts": [
           {
@@ -466,12 +476,12 @@
               "search": null,
               "status": "completed",
               "dataType": null,
-              "promptId": null,
+              "contextId": null,
               "criterion": null,
               "searchField": null,
               "judgeModelIds": null,
               "targetModelIds": null,
-              "promptRevisionId": null
+              "contextRevisionId": null
             },
             "state": "completed",
             "callId": "call_0n4oPdmEZXVJks0kSjnDEcbF",
@@ -491,12 +501,12 @@
               "search": null,
               "status": "completed",
               "dataType": null,
-              "promptId": null,
+              "contextId": null,
               "criterion": null,
               "searchField": null,
               "judgeModelIds": null,
               "targetModelIds": null,
-              "promptRevisionId": null
+              "contextRevisionId": null
             },
             "state": "completed",
             "callId": "call_WeFkbc3OmIIyqIgOtWwSqjCN",
@@ -520,12 +530,12 @@
               "search": null,
               "status": "completed",
               "dataType": null,
-              "promptId": null,
+              "contextId": null,
               "criterion": null,
               "searchField": null,
               "judgeModelIds": null,
               "targetModelIds": null,
-              "promptRevisionId": null
+              "contextRevisionId": null
             },
             "state": "completed",
             "callId": "call_oLf8FTHIHfu07DDX4P2CLjWr",
@@ -549,12 +559,12 @@
               "search": "reinforcement learning",
               "status": null,
               "dataType": null,
-              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
               "criterion": null,
               "searchField": "input",
               "judgeModelIds": null,
               "targetModelIds": null,
-              "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+              "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
             },
             "state": "completed",
             "callId": "call_eCxOmHzRGHkNZ12xK20DgkrO",
@@ -643,15 +653,15 @@
                     "position": 0,
                     "createdAt": "2026-08-23T06:15:52.641Z",
                     "completedAt": "2026-08-23T06:16:06.609Z",
-                    "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                    "contextTitle": "EXAMPLE — AI Concepts, Clearly",
                     "targetRunId": null,
                     "errorMessage": null,
                     "judgeModelIds": ["gpt-5.6-luna", "gemini-3.7-flash"],
                     "targetModelId": "gpt-5.6-luna",
                     "targetRunTurnId": null,
-                    "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                    "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                     "isSyntheticExample": false,
-                    "promptRevisionNumber": 1
+                    "contextRevisionNumber": 1
                   }
                 ],
                 "total": 1,
@@ -663,14 +673,14 @@
                 },
                 "appliedFilters": {
                   "search": "reinforcement learning",
-                  "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                  "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
                   "searchField": "input",
-                  "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+                  "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
                 }
               },
               "summary": "Found 1 matching evaluation cases and returned 1.",
               "artifact": {
-                "href": "/evaluations/results?search=reinforcement+learning&searchField=input&promptId=ce18263f-2eec-4277-9d6b-424f0634f492&promptRevisionId=cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "href": "/evaluations/results?search=reinforcement+learning&searchField=input&contextId=ce18263f-2eec-4277-9d6b-424f0634f492&contextRevisionId=cef0bd7f-1439-4737-b7c8-701640c6c415",
                 "kind": "evaluation-search"
               }
             },
@@ -693,12 +703,12 @@
               "search": "language model",
               "status": null,
               "dataType": null,
-              "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+              "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
               "criterion": null,
               "searchField": "input",
               "judgeModelIds": null,
               "targetModelIds": null,
-              "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+              "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
             },
             "state": "completed",
             "callId": "call_yB5t9e6KU2BMq5i7hmrAkanv",
@@ -783,15 +793,15 @@
                     "position": 0,
                     "createdAt": "2026-08-23T06:15:52.648Z",
                     "completedAt": "2026-08-23T06:16:06.903Z",
-                    "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+                    "contextTitle": "EXAMPLE — AI Concepts, Clearly",
                     "targetRunId": null,
                     "errorMessage": null,
                     "judgeModelIds": ["gpt-5.6-luna", "gemini-3.7-flash"],
                     "targetModelId": "gpt-5.6-luna",
                     "targetRunTurnId": null,
-                    "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+                    "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
                     "isSyntheticExample": false,
-                    "promptRevisionNumber": 1
+                    "contextRevisionNumber": 1
                   }
                 ],
                 "total": 1,
@@ -803,14 +813,14 @@
                 },
                 "appliedFilters": {
                   "search": "language model",
-                  "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+                  "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
                   "searchField": "input",
-                  "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
+                  "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415"
                 }
               },
               "summary": "Found 1 matching evaluation cases and returned 1.",
               "artifact": {
-                "href": "/evaluations/results?search=language+model&searchField=input&promptId=ce18263f-2eec-4277-9d6b-424f0634f492&promptRevisionId=cef0bd7f-1439-4737-b7c8-701640c6c415",
+                "href": "/evaluations/results?search=language+model&searchField=input&contextId=ce18263f-2eec-4277-9d6b-424f0634f492&contextRevisionId=cef0bd7f-1439-4737-b7c8-701640c6c415",
                 "kind": "evaluation-search"
               }
             },
@@ -836,10 +846,10 @@
       "effectiveInstructionsHash": "433602e6a3e07ad43348ffad21cf95d2dda5715878e7548c4ae0e6719371195d",
       "id": "1e4812c4-4b0c-40c0-97ec-66a983942d81",
       "latestStatus": "completed",
-      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
-      "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-      "promptRevisionNumber": 1,
-      "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+      "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+      "contextRevisionNumber": 1,
+      "contextTitle": "EXAMPLE — AI Concepts, Clearly",
       "reasoningEffort": "medium",
       "source": "ai",
       "startedByName": "Example Builder",
@@ -947,10 +957,10 @@
   "evaluations": [
     {
       "id": "9f21237d-3f89-46d2-bdee-ed699895e8b0",
-      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
-      "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-      "promptRevisionNumber": 1,
-      "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+      "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+      "contextRevisionNumber": 1,
+      "contextTitle": "EXAMPLE — AI Concepts, Clearly",
       "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
       "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
       "targetProfileName": "AI SDK agent",
@@ -969,7 +979,7 @@
       "errorMessage": null,
       "createdAt": "2026-08-23T06:15:52.648Z",
       "completedAt": "2026-08-23T06:16:06.903Z",
-      "promptMarkdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
+      "contextMarkdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
       "targetConfiguration": {},
       "cases": [
         {
@@ -1063,10 +1073,10 @@
     },
     {
       "id": "b8a1d95b-af08-4ad4-bdf7-60d1989dfc8e",
-      "promptId": "ce18263f-2eec-4277-9d6b-424f0634f492",
-      "promptRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
-      "promptRevisionNumber": 1,
-      "promptTitle": "EXAMPLE — AI Concepts, Clearly",
+      "contextId": "ce18263f-2eec-4277-9d6b-424f0634f492",
+      "contextRevisionId": "cef0bd7f-1439-4737-b7c8-701640c6c415",
+      "contextRevisionNumber": 1,
+      "contextTitle": "EXAMPLE — AI Concepts, Clearly",
       "targetProfileId": "aa9c1065-236e-4887-b9c0-62216c9539dc",
       "targetProfileRevisionId": "593b9e96-87f2-452b-b025-29972e01c92b",
       "targetProfileName": "AI SDK agent",
@@ -1085,7 +1095,7 @@
       "errorMessage": null,
       "createdAt": "2026-08-23T06:15:52.641Z",
       "completedAt": "2026-08-23T06:16:06.609Z",
-      "promptMarkdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
+      "contextMarkdown": "# AI Concepts, Clearly\n\nExplain artificial intelligence concepts for curious general readers, with especially clear coverage of reinforcement learning, language models versus computer vision, and training versus inference.\n\n## Response style\n\n- Start with a direct, plain-language answer.\n- Define technical terms when first introduced.\n- Use familiar examples or analogies when they clarify the idea.\n- For reinforcement learning, explain the agent, environment, actions, rewards, and trial-and-error learning; contrast it with supervised learning and explain when each is a good fit.\n- Clearly distinguish language models, which work primarily with language and other sequential text-like data, from computer vision systems, which interpret images or video; mention that modern systems can combine modalities when relevant.\n- Clearly distinguish training, when a model learns patterns from data, from inference, when it uses what it has learned to produce an output.\n- Compare related concepts directly when useful, emphasizing purpose, inputs, learning process, and typical applications.\n- Use no equations, formulas, or symbolic mathematical notation.\n- Keep the answer concise but include enough context for a beginner to understand it.",
       "targetConfiguration": {},
       "cases": [
         {

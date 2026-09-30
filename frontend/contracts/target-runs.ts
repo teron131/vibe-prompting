@@ -1,4 +1,4 @@
-/** Owns browser-safe Target Run trace, activity, and prompt-scoped history shapes shared by routes and UI modes. */
+/** Owns browser-safe Target Run trace, activity, and context-scoped history shapes shared by routes and UI modes. */
 
 import type { MessagePart, RunEvent } from "./chat";
 
@@ -30,10 +30,10 @@ export type TargetRunTurn = {
 
 export type TargetRunSummary = {
   id: string;
-  promptId: string;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextId: string;
+  contextRevisionId: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetProfileId: string;
   targetProfileName: string;
   targetProfileRevisionId: string;

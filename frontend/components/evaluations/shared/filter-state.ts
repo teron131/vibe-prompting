@@ -13,8 +13,8 @@ export function parseEvaluationFilters(search: string): EvaluationWorkspaceFilte
     dataType: (params.get("dataType") as EvaluationDataType | null) ?? undefined,
     from: params.get("from") ?? undefined,
     judgeModels: repeated(params, "judgeModel"),
-    promptId: params.get("promptId") ?? undefined,
-    promptRevisionId: params.get("promptRevisionId") ?? undefined,
+    contextId: params.get("contextId") ?? undefined,
+    contextRevisionId: params.get("contextRevisionId") ?? undefined,
     runId: params.get("runId") ?? undefined,
     search: params.get("search") ?? undefined,
     searchField:

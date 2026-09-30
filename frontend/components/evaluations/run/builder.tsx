@@ -27,12 +27,12 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
 import type { ConfiguredModel, ConfiguredModelsResponse } from "@/contracts/chat";
+import type { ContextsResponse, ContextSummary } from "@/contracts/contexts";
 import type {
   Criteria,
   CriteriaListResponse,
   EvaluationBatchConfiguration,
 } from "@/contracts/evaluations";
-import type { PromptsResponse, PromptSummary } from "@/contracts/prompts";
 import {
   isScenarioActive,
   isScenarioEvaluationActive,
@@ -40,6 +40,7 @@ import {
 } from "@/contracts/scenario-runs";
 import type { TargetProfile, TargetProfileResponse } from "@/contracts/targets";
 import { createApiRequester, createErrorReader } from "@/shared/api";
+import { readContextStorage } from "@/shared/context-storage";
 
 const RecordedEvaluationBuilder = dynamic(() =>
   import("./recorded").then(({ RecordedEvaluationBuilder }) => RecordedEvaluationBuilder),
@@ -56,7 +57,7 @@ type SavedConfiguration = {
   repetitions: number;
 };
 
-type LastRunConfiguration = Omit<SavedConfiguration, "name"> & { promptId: string };
+type LastRunConfiguration = Omit<SavedConfiguration, "name"> & { contextId: string };
 
 type ScenarioMode = "generative" | "static";
 
@@ -83,9 +84,11 @@ const MAX_SCENARIOS = 10;
 const DEFAULT_SCENARIO: ScenarioDraft = { instruction: "", maxTurns: 5, messages: [""] };
 
 export function EvaluationRunBuilder({
+  initialContextId,
   targetRunId,
   targetRunTurnId,
 }: {
+  initialContextId?: string;
   targetRunId?: string;
   targetRunTurnId?: string;
 } = {}) {
@@ -94,14 +97,14 @@ export function EvaluationRunBuilder({
       <RecordedEvaluationBuilder targetRunId={targetRunId} targetRunTurnId={targetRunTurnId} />
     );
   }
-  return <EvaluationScenarioRunBuilder />;
+  return <EvaluationScenarioRunBuilder initialContextId={initialContextId} />;
 }
 
-function EvaluationScenarioRunBuilder() {
-  const [prompts, setPrompts] = useState<PromptSummary[]>([]);
+function EvaluationScenarioRunBuilder({ initialContextId }: { initialContextId?: string }) {
+  const [contexts, setContexts] = useState<ContextSummary[]>([]);
   const [models, setModels] = useState<ConfiguredModel[]>([]);
   const [criteria, setCriteria] = useState<Criteria[]>([]);
-  const [promptId, setPromptId] = useState("");
+  const [contextId, setContextId] = useState("");
   const [targetProfile, setTargetProfile] = useState<TargetProfile | null>();
   const [targetModels, setTargetModels] = useState<string[]>([]);
   const [judgeModels, setJudgeModels] = useState<string[]>([]);
@@ -124,24 +127,26 @@ function EvaluationScenarioRunBuilder() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const manifestRef = useRef<HTMLElement>(null);
   const trackedScenarioIds = trackedScenarioBatch?.runIds.join(",") ?? "";
-  const selectedPrompt = prompts.find(({ id }) => id === promptId);
+  const selectedContext = contexts.find(({ id }) => id === contextId);
 
   useEffect(() => {
     Promise.all([
       evaluationApi.json<ConfiguredModelsResponse>("/api/config"),
-      evaluationApi.json<PromptsResponse>("/api/prompts"),
+      evaluationApi.json<ContextsResponse>("/api/contexts"),
       evaluationApi.json<CriteriaListResponse>("/api/evaluations/criteria"),
     ])
-      .then(([config, promptData, criteriaData]) => {
+      .then(([config, contextData, criteriaData]) => {
         const lastRun = readLastRunConfiguration();
         const lastScenarioBatch = readTrackedScenarioBatch();
         setModels(config.models);
         setCriteria(criteriaData.criteria);
-        setPrompts(promptData.prompts);
-        setPromptId(
-          lastRun && promptData.prompts.some(({ id }) => id === lastRun.promptId)
-            ? lastRun.promptId
-            : "",
+        setContexts(contextData.contexts);
+        setContextId(
+          initialContextId && contextData.contexts.some(({ id }) => id === initialContextId)
+            ? initialContextId
+            : lastRun && contextData.contexts.some(({ id }) => id === lastRun.contextId)
+              ? lastRun.contextId
+              : "",
         );
         setTargetModels(restoreSelection(lastRun?.targetModels, config.models, []));
         setJudgeModels(restoreSelection(lastRun?.judgeModels, config.models, []));
@@ -159,12 +164,12 @@ function EvaluationScenarioRunBuilder() {
       })
       .catch((error) => toast.error(readError(error)));
     setSavedConfigurations(readSavedConfigurations());
-  }, []);
+  }, [initialContextId]);
 
   useEffect(() => {
     if (!runStateReady) return;
     const lastRun: LastRunConfiguration = {
-      promptId,
+      contextId,
       targetModels,
       judgeModels,
       configurationIds,
@@ -180,7 +185,7 @@ function EvaluationScenarioRunBuilder() {
     configurationIds,
     driverModel,
     judgeModels,
-    promptId,
+    contextId,
     repetitions,
     runStateReady,
     scenarioMode,
@@ -189,11 +194,11 @@ function EvaluationScenarioRunBuilder() {
   ]);
 
   useEffect(() => {
-    if (!promptId) return setTargetProfile(undefined);
+    if (!contextId) return setTargetProfile(undefined);
     setTargetProfile(undefined);
     let active = true;
     void evaluationApi
-      .json<TargetProfileResponse>(`/api/targets?promptId=${encodeURIComponent(promptId)}`)
+      .json<TargetProfileResponse>(`/api/targets?contextId=${encodeURIComponent(contextId)}`)
       .then(({ profile }) => {
         if (active) setTargetProfile(profile);
       })
@@ -203,7 +208,7 @@ function EvaluationScenarioRunBuilder() {
     return () => {
       active = false;
     };
-  }, [promptId]);
+  }, [contextId]);
 
   useEffect(() => {
     if (!trackedScenarioIds) {
@@ -267,9 +272,9 @@ function EvaluationScenarioRunBuilder() {
   }, [scenarioRetry, trackedScenarioIds]);
 
   async function startScenarioBatch() {
-    if (!selectedPrompt) return;
+    if (!selectedContext) return;
     const matrix = buildScenarioMatrix({
-      prompt: selectedPrompt,
+      context: selectedContext,
       targetModels,
       judgeModels,
       criteria,
@@ -383,8 +388,8 @@ function EvaluationScenarioRunBuilder() {
           messages.every((message) => message.trim()),
       ));
   const setupRequirements = getSetupRequirements({
-    promptId,
-    selectedPrompt,
+    contextId,
+    selectedContext,
     targetModels,
     judgeModels,
     configurationIds,
@@ -396,9 +401,9 @@ function EvaluationScenarioRunBuilder() {
   });
   const canAddScenario = scenarios.length < MAX_SCENARIOS;
   const selectedCriteria = criteria.filter(({ id }) => configurationIds.includes(id));
-  const scenarioMatrix = selectedPrompt
+  const scenarioMatrix = selectedContext
     ? buildScenarioMatrix({
-        prompt: selectedPrompt,
+        context: selectedContext,
         targetModels,
         judgeModels,
         criteria,
@@ -451,7 +456,7 @@ function EvaluationScenarioRunBuilder() {
         <EvaluationPageBar sticky>
           <h1 className="shrink-0 text-base font-semibold tracking-tight">Evaluation Run</h1>
           <p className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground @min-[920px]:block">
-            Configure prompt, models, criteria, Scenarios, and repetitions.
+            Configure context, models, criteria, Scenarios, and repetitions.
           </p>
           <p className="ml-auto shrink-0 font-mono text-[11px] uppercase text-muted-foreground">
             {count(completeScenarioCount, "Scenario")} · {repetitions}×
@@ -460,16 +465,20 @@ function EvaluationScenarioRunBuilder() {
 
         <div className="px-4 pb-12 sm:px-6 min-[840px]:px-7 xl:px-10">
           <RunSection
-            description="Choose the prompt revision, target models that answer, and judge models that score."
-            title="Prompt and Models"
+            description="Choose the context revision, target models that answer, and judge models that score."
+            title="Context and Models"
           >
             <div className="grid gap-4 @min-[980px]:grid-cols-[minmax(18rem,1fr)_minmax(16rem,0.8fr)]">
-              <Field label="Prompt Revision">
-                <Select onValueChange={setPromptId} value={promptId}>
-                  <option value="">Choose a prompt revision</option>
-                  {prompts.map((prompt) => (
-                    <option key={prompt.id} value={prompt.id}>
-                      {prompt.title} · v{prompt.revisionNumber}
+              <Field label="Context Revision">
+                <Select
+                  aria-label="Context revision"
+                  onValueChange={setContextId}
+                  value={contextId}
+                >
+                  <option value="">Choose a context revision</option>
+                  {contexts.map((context) => (
+                    <option key={context.id} value={context.id}>
+                      {context.title} · v{context.revisionNumber}
                     </option>
                   ))}
                 </Select>
@@ -478,21 +487,25 @@ function EvaluationScenarioRunBuilder() {
                 <Definition
                   label="Agent Setup"
                   value={
-                    !promptId
-                      ? "Choose a prompt"
-                      : targetProfile === undefined
-                        ? "Loading…"
-                        : (targetProfile?.name ?? "AI SDK agent")
+                    !contextId
+                      ? "Choose a context"
+                      : selectedContext?.skill
+                        ? "Skill agent"
+                        : targetProfile === undefined
+                          ? "Loading…"
+                          : (targetProfile?.name ?? "AI SDK agent")
                   }
                 />
                 <Definition
                   label="Runtime"
                   value={
-                    !promptId
+                    !contextId
                       ? "—"
-                      : targetProfile
-                        ? `${targetProfile.configuration.maxSteps ?? "Default"} steps · ${targetProfile.configuration.tools?.length ? targetProfile.configuration.tools.join(", ") : "no tools"}`
-                        : "AI SDK defaults"
+                      : selectedContext?.skill
+                        ? "Explicit skill · read-only workspace"
+                        : targetProfile
+                          ? `${targetProfile.configuration.maxSteps ?? "Default"} steps · ${targetProfile.configuration.tools?.length ? targetProfile.configuration.tools.join(", ") : "no tools"}`
+                          : "AI SDK defaults"
                   }
                 />
               </dl>
@@ -1174,20 +1187,20 @@ function getSetupRequirements(input: {
   configurationIds: string[];
   draftScenarioCount: number;
   judgeModels: string[];
-  promptId: string;
+  contextId: string;
   repetitions: number;
   scenarioCount: number;
   scenarioMode: ScenarioMode;
   scenariosReady: boolean;
-  selectedPrompt?: PromptSummary;
+  selectedContext?: ContextSummary;
   targetModels: string[];
 }): Array<{ label: string; models?: string[]; ready: boolean; value: string }> {
   return [
     {
-      label: "Prompt Revision",
-      ready: Boolean(input.promptId),
-      value: input.selectedPrompt
-        ? `${input.selectedPrompt.title} · v${input.selectedPrompt.revisionNumber}`
+      label: "Context Revision",
+      ready: Boolean(input.contextId),
+      value: input.selectedContext
+        ? `${input.selectedContext.title} · v${input.selectedContext.revisionNumber}`
         : "Choose a revision",
     },
     {
@@ -1282,8 +1295,8 @@ function count(value: number, noun: string): string {
 }
 
 type ScenarioCreateRequest = {
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   targetModel: string;
   reasoningEffort: "medium";
   evaluationPlan: {
@@ -1301,7 +1314,7 @@ type ScenarioCreateRequest = {
 );
 
 function buildScenarioMatrix(input: {
-  prompt: PromptSummary;
+  context: ContextSummary;
   targetModels: string[];
   judgeModels: string[];
   criteria: Criteria[];
@@ -1328,8 +1341,8 @@ function buildScenarioMatrix(input: {
       input.targetModels.flatMap((targetModel) =>
         Array.from({ length: input.repetitions }, (): ScenarioCreateRequest => {
           const common = {
-            promptId: input.prompt.id,
-            promptRevisionId: input.prompt.revisionId,
+            contextId: input.context.id,
+            contextRevisionId: input.context.revisionId,
             targetModel,
             reasoningEffort: "medium" as const,
             evaluationPlan,
@@ -1364,7 +1377,7 @@ function readSavedConfigurations(): SavedConfiguration[] {
 
 function readLastRunConfiguration(): LastRunConfiguration | undefined {
   try {
-    const value = window.localStorage.getItem(LAST_RUN_STORAGE_KEY);
+    const value = readContextStorage(LAST_RUN_STORAGE_KEY);
     return value ? (JSON.parse(value) as LastRunConfiguration) : undefined;
   } catch {
     return undefined;
@@ -1373,7 +1386,7 @@ function readLastRunConfiguration(): LastRunConfiguration | undefined {
 
 function readTrackedScenarioBatch(): TrackedScenarioBatch | undefined {
   try {
-    const value = window.localStorage.getItem(TRACKED_SCENARIO_STORAGE_KEY);
+    const value = readContextStorage(TRACKED_SCENARIO_STORAGE_KEY);
     return value ? (JSON.parse(value) as TrackedScenarioBatch) : undefined;
   } catch {
     return undefined;

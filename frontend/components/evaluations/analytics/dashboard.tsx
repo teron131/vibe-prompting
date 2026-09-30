@@ -39,12 +39,12 @@ import {
 import { analyticsFilterParams, parseEvaluationFilters } from "../shared/filter-state";
 import { buildCriterionRows, type CriterionRow, formatDuration, formatPercent } from "./model";
 
-type ComparisonDimension = "promptRevisionId" | "targetModel";
+type ComparisonDimension = "contextRevisionId" | "targetModel";
 
 const emptyFacets: EvaluationWorkspaceFacets = {
   dataTypes: [],
   judgeModels: [],
-  prompts: [],
+  contexts: [],
   revisions: [],
   statuses: [],
   targetModels: [],
@@ -91,7 +91,7 @@ export function EvaluationAnalyticsDashboard() {
               ...filters,
               ...(comparisonDimension === "targetModel"
                 ? { targetModels: [baselineValue] }
-                : { promptRevisionId: baselineValue }),
+                : { contextRevisionId: baselineValue }),
             })
           : Promise.resolve(undefined);
       const comparisonFacetRequest =
@@ -100,7 +100,7 @@ export function EvaluationAnalyticsDashboard() {
               ...filters,
               ...(comparisonDimension === "targetModel"
                 ? { targetModels: undefined }
-                : { promptRevisionId: undefined }),
+                : { contextRevisionId: undefined }),
             })
           : Promise.resolve(undefined);
       const [nextData, nextBaseline, nextComparisonSource] = await Promise.all([
@@ -263,8 +263,8 @@ function AnalyticsFilters({
   const activeCount =
     hiddenActiveCount +
     [
-      filters.promptId,
-      filters.promptRevisionId,
+      filters.contextId,
+      filters.contextRevisionId,
       filters.targetModels?.length,
       filters.judgeModels?.length,
       comparisonDimension,
@@ -272,7 +272,7 @@ function AnalyticsFilters({
   const baselineOptions =
     comparisonDimension === "targetModel"
       ? comparisonFacets.targetModels.map(({ count, value }) => ({ count, label: value, value }))
-      : comparisonDimension === "promptRevisionId"
+      : comparisonDimension === "contextRevisionId"
         ? comparisonFacets.revisions.map(({ count, value }) => ({
             count,
             label: shortId(value),
@@ -296,12 +296,12 @@ function AnalyticsFilters({
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         <FilterSelect
           className="w-auto max-w-[14rem] flex-1 basis-40"
-          label="Prompt"
-          onValueChange={(value) => updateFilter("promptId", value || undefined)}
-          value={filters.promptId ?? ""}
+          label="Context"
+          onValueChange={(value) => updateFilter("contextId", value || undefined)}
+          value={filters.contextId ?? ""}
         >
-          <option value="">All prompts</option>
-          {facets.prompts.map((facet) => (
+          <option value="">All contexts</option>
+          {facets.contexts.map((facet) => (
             <option key={facet.id} value={facet.id}>
               {facet.label} ({facet.count})
             </option>
@@ -309,9 +309,9 @@ function AnalyticsFilters({
         </FilterSelect>
         <FilterSelect
           className="w-auto max-w-[14rem] flex-1 basis-40 font-mono"
-          label="Prompt Revision"
-          onValueChange={(value) => updateFilter("promptRevisionId", value || undefined)}
-          value={filters.promptRevisionId ?? ""}
+          label="Context Revision"
+          onValueChange={(value) => updateFilter("contextRevisionId", value || undefined)}
+          value={filters.contextRevisionId ?? ""}
         >
           <option value="">All revisions</option>
           {facets.revisions.map((facet) => (
@@ -408,7 +408,7 @@ function AnalyticsFilters({
         >
           <option value="">No baseline</option>
           <option value="targetModel">Target model</option>
-          <option value="promptRevisionId">Prompt revision</option>
+          <option value="contextRevisionId">Context revision</option>
         </FilterSelect>
         {comparisonDimension ? (
           currentComparisonValue ? (
@@ -473,7 +473,7 @@ function currentComparison(
   if (dimension === "targetModel") {
     return filters.targetModels?.length === 1 ? filters.targetModels[0] : undefined;
   }
-  return dimension === "promptRevisionId" ? filters.promptRevisionId : undefined;
+  return dimension === "contextRevisionId" ? filters.contextRevisionId : undefined;
 }
 
 function ModelFacetLabel({ count, modelId }: { count: number; modelId: string }) {
@@ -486,7 +486,7 @@ function ModelFacetLabel({ count, modelId }: { count: number; modelId: string })
 }
 
 function comparisonLabel(dimension: ComparisonDimension): string {
-  return dimension === "targetModel" ? "target model" : "prompt revision";
+  return dimension === "targetModel" ? "target model" : "context revision";
 }
 
 function DecisionStrip({
@@ -813,7 +813,7 @@ function readInitialState(): {
   return {
     baselineValue: params.get("baseline") ?? "",
     comparisonDimension:
-      compareBy === "promptRevisionId" || compareBy === "targetModel" ? compareBy : undefined,
+      compareBy === "contextRevisionId" || compareBy === "targetModel" ? compareBy : undefined,
     filters: parseEvaluationFilters(window.location.search),
   };
 }
@@ -824,7 +824,7 @@ function hasFacetValues(facets: EvaluationWorkspaceFacets): boolean {
 
 function baselineLabel(dimension: ComparisonDimension | undefined, value: string): string | null {
   if (!dimension || !value) return null;
-  return dimension === "promptRevisionId" ? shortId(value) : value;
+  return dimension === "contextRevisionId" ? shortId(value) : value;
 }
 
 function distributionTitle(segments: Array<{ label: string; share: number }>): string {

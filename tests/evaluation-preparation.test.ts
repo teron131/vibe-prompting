@@ -4,7 +4,7 @@ import { test } from "node:test";
 
 import { EvaluationPreparation } from "../src/vibe-prompting/evaluation/runs/preparation.ts";
 
-const promptId = "11111111-1111-4111-8111-111111111111";
+const contextId = "11111111-1111-4111-8111-111111111111";
 const revisionId = "22222222-2222-4222-8222-222222222222";
 const profileRevisionId = "33333333-3333-4333-8333-333333333333";
 const targetRunId = "44444444-4444-4444-8444-444444444444";
@@ -41,7 +41,7 @@ function fixture() {
     },
   ];
   const dependencies = [
-    { getPrompt: async () => ({ id: promptId, revisionId, activeRevisionId: revisionId }) },
+    { getContext: async () => ({ id: contextId, revisionId, activeRevisionId: revisionId }) },
     {
       resolveDefinition: async (input: unknown) => {
         pins.push(input);
@@ -51,8 +51,8 @@ function fixture() {
     {
       getRun: async () => ({
         id: targetRunId,
-        promptId,
-        promptRevisionId: revisionId,
+        contextId,
+        contextRevisionId: revisionId,
         targetProfileId: profile.id,
         targetProfileRevisionId: profileRevisionId,
         targetConfiguration: profile.configuration,
@@ -71,8 +71,8 @@ function fixture() {
 }
 function runInput() {
   return {
-    promptId,
-    promptRevisionId: revisionId,
+    contextId,
+    contextRevisionId: revisionId,
     targetModel: "target-a",
     judgeModels: ["judge-b", "judge-a"],
     cases: [{ input: "Example", criteria }],
@@ -109,8 +109,8 @@ test("preparation retains the committed fingerprint and ignores judge ordering o
 test("batch preview and preparation preserve configuration, target, repetition ordering", async () => {
   const { preparation, pins } = fixture();
   const input = {
-    promptId,
-    promptRevisionId: revisionId,
+    contextId,
+    contextRevisionId: revisionId,
     targetModels: ["target-b", "target-a"],
     judgeModels: ["judge-b", "judge-a"],
     configurations: [
@@ -177,14 +177,19 @@ test("recorded preparation freezes the selected turn without opening or re-pinni
   );
 });
 
-test("invalid model and stale prompt fail before pinning any executable dependencies", async () => {
+test("invalid model and stale context fail before pinning any executable dependencies", async () => {
   const { preparation, pins } = fixture();
   await assert.rejects(
     preparation.run("actor", { ...runInput(), targetModel: "missing" }, "human", null),
     /not configured/,
   );
   await assert.rejects(
-    preparation.run("actor", { ...runInput(), promptRevisionId: profileRevisionId }, "human", null),
+    preparation.run(
+      "actor",
+      { ...runInput(), contextRevisionId: profileRevisionId },
+      "human",
+      null,
+    ),
     { statusCode: 409 },
   );
   assert.deepEqual(pins, []);

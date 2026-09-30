@@ -26,8 +26,8 @@ const evaluationPlanSchema = z.object({
 });
 
 const startBaseSchema = z.object({
-  promptId: z.uuid().describe("Saved prompt ID."),
-  promptRevisionId: z.uuid().describe("Exact prompt revision ID to run."),
+  contextId: z.uuid().describe("Saved context ID."),
+  contextRevisionId: z.uuid().describe("Exact context revision ID to run."),
   targetModel: modelReferenceSchema.describe("Configured Target model ID or display label."),
   reasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).default("medium"),
   evaluationPlan: evaluationPlanSchema.optional(),
@@ -74,7 +74,7 @@ export class ScenarioRunsToolkit extends AgentToolkit {
         name: "start_scenario_run",
         title: "Start Scenario Run",
         description:
-          "Start a durable static or adaptive generative Scenario against one exact prompt revision and configured Target model.",
+          "Start a durable static or adaptive generative Scenario against one exact context revision and configured Target model.",
         parameters: startSchema,
         annotations: { destructiveHint: false, openWorldHint: true },
         async execute(input, context) {
@@ -96,8 +96,8 @@ export class ScenarioRunsToolkit extends AgentToolkit {
           const request =
             input.mode === "static"
               ? {
-                  promptId: input.promptId,
-                  promptRevisionId: input.promptRevisionId,
+                  contextId: input.contextId,
+                  contextRevisionId: input.contextRevisionId,
                   targetModel,
                   reasoningEffort: input.reasoningEffort,
                   evaluationPlan,
@@ -105,8 +105,8 @@ export class ScenarioRunsToolkit extends AgentToolkit {
                   messages: requireStaticMessages(input.messages),
                 }
               : {
-                  promptId: input.promptId,
-                  promptRevisionId: input.promptRevisionId,
+                  contextId: input.contextId,
+                  contextRevisionId: input.contextRevisionId,
                   targetModel,
                   reasoningEffort: input.reasoningEffort,
                   evaluationPlan,

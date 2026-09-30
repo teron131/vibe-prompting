@@ -1,4 +1,4 @@
-/** Draws compatible Boolean criterion trends for reports and prompt evaluation views. */
+/** Draws compatible Boolean criterion trends for reports and context evaluation views. */
 
 import Link from "next/link";
 

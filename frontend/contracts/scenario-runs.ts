@@ -7,8 +7,8 @@ export type ScenarioRunStatus = EvaluationRunStatus;
 
 type ScenarioRunBase = {
   id: string;
-  promptRevisionNumber: number;
-  promptTitle: string;
+  contextRevisionNumber: number;
+  contextTitle: string;
   targetModel: string;
   reasoningEffort: TargetReasoningEffort;
   evaluationErrorMessage: string | null;

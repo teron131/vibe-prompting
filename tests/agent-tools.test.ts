@@ -14,20 +14,20 @@ import {
 import {
   type AgentTool,
   AgentToolkit,
+  ContextLibraryToolkit,
+  createContextEditTools,
   createExaSearchTool,
-  createPromptEditTools,
   createScopedDocument,
   CriteriaLibraryToolkit,
   EvaluationResultsToolkit,
   EvaluationRunsToolkit,
-  PromptLibraryToolkit,
   ScenarioRunsToolkit,
   TargetRunsToolkit,
 } from "../src/vibe-prompting/agents/tools/index.ts";
 
 test("all published tool names, descriptions, annotations, and input schemas match the baseline", () => {
   const groups = [
-    new PromptLibraryToolkit({} as never),
+    new ContextLibraryToolkit({} as never),
     new CriteriaLibraryToolkit({} as never),
     new EvaluationRunsToolkit({} as never, {} as never, async () => []),
     new EvaluationResultsToolkit({} as never),
@@ -49,8 +49,8 @@ test("all published tool names, descriptions, annotations, and input schemas mat
   const snapshot: Record<string, string> = {};
   for (const group of groups)
     for (const tool of group.tools) snapshot[group.id + "/" + tool.name] = fingerprint(tool);
-  for (const tool of createPromptEditTools(createScopedDocument("text")))
-    snapshot["prompt-edit/" + tool.name] = fingerprint(tool);
+  for (const tool of createContextEditTools(createScopedDocument("text")))
+    snapshot["context-edit/" + tool.name] = fingerprint(tool);
   const exa = createExaSearchTool();
   snapshot["web-search/" + exa.name] = fingerprint(exa);
   assert.deepEqual(
@@ -63,7 +63,7 @@ test("all published tool names, descriptions, annotations, and input schemas mat
 test("document tools are isolated and failed batches cannot partially edit content", async () => {
   const first = createScopedDocument("one\ntwo\nthree\n"),
     second = createScopedDocument("private\n");
-  const [read, edit] = createPromptEditTools(first);
+  const [read, edit] = createContextEditTools(first);
   assert.deepEqual(read!.parameters.parse({ path: "/etc/passwd" }), {});
   assert.equal(await read!.execute({}, {}), formatHashlines(first.read()));
   const refs = references(first.read());
@@ -144,21 +144,21 @@ test("Hashline preserves newline and shifted-reference semantics while rejecting
   );
 });
 
-test("saved prompt edits keep revision checks and persist only a complete valid batch", async () => {
-  const promptId = randomUUID(),
+test("saved context edits keep revision checks and persist only a complete valid batch", async () => {
+  const contextId = randomUUID(),
     revisionId = randomUUID();
   let writes = 0;
   const active = {
-    id: promptId,
+    id: contextId,
     revisionId,
     activeRevisionId: revisionId,
     markdown: "original\n",
-    title: "Prompt",
+    title: "Context",
     revisionCount: 1,
     updatedAt: "now",
   };
-  const toolkit = new PromptLibraryToolkit({
-    getPrompt: async () => active,
+  const toolkit = new ContextLibraryToolkit({
+    getContext: async () => active,
     appendAiEdit: async (
       _actor: string,
       input: { editedMarkdown: string; expectedActiveRevisionId: string },
@@ -168,10 +168,10 @@ test("saved prompt edits keep revision checks and persist only a complete valid 
       return { ...active, markdown: input.editedMarkdown };
     },
   } as never);
-  const tool = toolkit.tools.find((tool) => tool.name === "edit_prompt")!;
+  const tool = toolkit.tools.find((tool) => tool.name === "edit_context")!;
   const ref = references(active.markdown)[0]!;
   const input = {
-    promptId,
+    contextId,
     expectedRevisionId: revisionId,
     changeRequest: "Change text",
     edits: [{ operation: "replace_range", startRef: ref, endRef: ref, lines: ["updated"] }],

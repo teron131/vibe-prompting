@@ -15,7 +15,7 @@ const HASHLINE_LINE_PATTERN = new RegExp(
 const hashlineRefSchema = z
   .string()
   .regex(HASHLINE_REF_PATTERN)
-  .describe("A LINE#HASH reference copied from the latest read_prompt result.");
+  .describe("A LINE#HASH reference copied from the latest read_context result.");
 
 const replacementSchema = z.object({
   operation: z.literal("replace_range"),
@@ -46,7 +46,7 @@ const insertAfterSchema = z.object({
 
 const appendSchema = z.object({
   operation: z.literal("append"),
-  lines: z.array(z.string()).min(1).describe("Complete lines to append to the prompt."),
+  lines: z.array(z.string()).min(1).describe("Complete lines to append to the context."),
 });
 
 export const hashlineEditSchema = z.discriminatedUnion("operation", [
@@ -61,7 +61,7 @@ export const hashlineEditsSchema = z
   .min(1)
   .max(20)
   .describe(
-    "Atomic line-addressed edits applied to the latest read_prompt result; every referenced line must still have the same hash.",
+    "Atomic line-addressed edits applied to the latest read_context result; every referenced line must still have the same hash.",
   );
 
 export type HashlineEdit = z.infer<typeof hashlineEditSchema>;
@@ -102,7 +102,7 @@ export function applyHashlineEdits(originalText: string, edits: HashlineEdit[]):
     result.splice(edit.start, edit.end - edit.start, ...edit.lines);
   }
   const updatedText = joinTextLines(result, hasTrailingNewline);
-  if (updatedText === originalText) throw new Error("The edits do not change the prompt.");
+  if (updatedText === originalText) throw new Error("The edits do not change the context.");
   return updatedText;
 }
 
@@ -184,7 +184,7 @@ function buildStaleReferenceMessage(ref: string, lines: string[], lineNumber: nu
     const line = lines[lineNumber - 1] ?? "";
     details.push(`Current line: ${formatHashlineRef(lineNumber, line)}:${line}`);
   } else {
-    details.push(`Current prompt has ${lines.length} physical lines.`);
+    details.push(`Current context has ${lines.length} physical lines.`);
   }
   const start = Math.max(1, lineNumber - 1);
   const end = Math.min(lines.length, lineNumber + 1);

@@ -19,8 +19,8 @@ type ScoreRow = {
 
 type TrendSourceRow = {
   id: string;
-  promptId: string;
-  promptRevisionId: string;
+  contextId: string;
+  contextRevisionId: string;
   configurationFingerprint: string;
   status: EvaluationRunStatus;
   booleanOnly: boolean;
@@ -28,8 +28,8 @@ type TrendSourceRow = {
 
 type BooleanTrendRow = {
   id: string;
-  promptRevisionId: string;
-  promptRevisionNumber: number;
+  contextRevisionId: string;
+  contextRevisionNumber: number;
   completedAt: Date | null;
   createdAt: Date;
   criterionPosition: number | null;
@@ -56,7 +56,7 @@ export async function readRunReport(
     }
     return {
       ...projectRunSummary(row, viewerUserId),
-      promptMarkdown: row.promptMarkdown,
+      contextMarkdown: row.contextMarkdown,
       targetConfiguration: row.targetConfiguration,
       cases: cases.map((testCase) => ({
         id: testCase.id,
@@ -88,8 +88,8 @@ export async function readBooleanTrend(
     const [row] = await sql<TrendSourceRow[]>`
         SELECT
           evaluation_runs.id,
-          evaluation_runs.prompt_id,
-          evaluation_runs.prompt_revision_id,
+          evaluation_runs.context_id,
+          evaluation_runs.context_revision_id,
           evaluation_runs.configuration_fingerprint,
           evaluation_runs.status,
           NOT EXISTS (
@@ -112,13 +112,13 @@ export async function readBooleanTrend(
         WITH compatible_runs AS (
           SELECT
             evaluation_runs.id,
-            evaluation_runs.prompt_revision_id,
-            prompt_revisions.revision_number AS prompt_revision_number,
+            evaluation_runs.context_revision_id,
+            context_revisions.revision_number AS context_revision_number,
             evaluation_runs.created_at,
             evaluation_runs.completed_at
           FROM evaluation_runs
-          JOIN prompt_revisions ON prompt_revisions.id = evaluation_runs.prompt_revision_id
-          WHERE evaluation_runs.prompt_id = ${source.promptId}
+          JOIN context_revisions ON context_revisions.id = evaluation_runs.context_revision_id
+          WHERE evaluation_runs.context_id = ${source.contextId}
             AND evaluation_runs.configuration_fingerprint = ${source.configurationFingerprint}
             AND evaluation_runs.status = 'completed'
         ), boolean_scores AS (
@@ -140,8 +140,8 @@ export async function readBooleanTrend(
         )
         SELECT
           compatible_runs.id,
-          compatible_runs.prompt_revision_id,
-          compatible_runs.prompt_revision_number,
+          compatible_runs.context_revision_id,
+          compatible_runs.context_revision_number,
           compatible_runs.created_at,
           compatible_runs.completed_at,
           boolean_scores.criterion_position,
@@ -186,8 +186,8 @@ function projectBooleanTrendRows(rows: BooleanTrendRow[]): BooleanTrendPoint[] {
   for (const row of rows) {
     const point = points.get(row.id) ?? {
       runId: row.id,
-      revisionId: row.promptRevisionId,
-      revisionNumber: row.promptRevisionNumber,
+      revisionId: row.contextRevisionId,
+      revisionNumber: row.contextRevisionNumber,
       completedAt: (row.completedAt ?? row.createdAt).toISOString(),
       rates: new Map(),
     };

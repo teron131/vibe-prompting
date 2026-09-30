@@ -4,8 +4,8 @@ import { randomUUID } from "node:crypto";
 
 import type postgres from "postgres";
 
+import type { ContextSystem } from "../context-system/index.ts";
 import type { Database, DatabaseClient } from "../database/index.ts";
-import type { PromptSystem } from "../prompt-system/index.ts";
 import {
   type CreateProfileInput,
   type ProfileRevisionInput,
@@ -36,7 +36,7 @@ type ProfileRow = {
 
 type ProfileHeadRow = {
   currentRevisionId: string;
-  promptId: string;
+  contextId: string;
 };
 
 type ProfileRevisionNumberRow = { revisionNumber: number };
@@ -44,8 +44,8 @@ type ProfileRevisionNumberRow = { revisionNumber: number };
 export class TargetProfileNotFoundError extends Error {
   readonly statusCode = 404;
 
-  constructor(promptId: string) {
-    super(`No target profile is configured for prompt ${promptId}.`);
+  constructor(contextId: string) {
+    super(`No target profile is configured for context ${contextId}.`);
     this.name = "TargetProfileNotFoundError";
   }
 }
@@ -53,14 +53,14 @@ export class TargetProfileNotFoundError extends Error {
 /** Keeps profile validation and transaction boundaries together for the public Target System. */
 export class TargetProfiles {
   readonly #database: Database;
-  readonly #prompts: PromptSystem;
+  readonly #contexts: ContextSystem;
 
-  constructor(database: Database, prompts: PromptSystem) {
+  constructor(database: Database, contexts: ContextSystem) {
     this.#database = database;
-    this.#prompts = prompts;
+    this.#contexts = contexts;
   }
 
-  /** Creates the profile and its initial revision atomically after validating the owning prompt. */
+  /** Creates the profile and its initial revision atomically after validating the owning context. */
   async createProfile(actorUserId: string, input: CreateProfileInput): Promise<TargetProfile> {
     const name = input.name.trim();
     const instructions = input.instructions.trim();
@@ -75,13 +75,13 @@ export class TargetProfiles {
       );
     }
     const configuration = parsedConfiguration.data;
-    await this.#prompts.getPrompt(input.promptId);
+    await this.#contexts.getContext(input.contextId);
     const id = randomUUID();
     const revisionId = randomUUID();
     return this.#database.transaction(async (sql) => {
       await sql`
-        INSERT INTO target_profiles (id, name, prompt_id, current_revision_id)
-        VALUES (${id}, ${name}, ${input.promptId}, ${revisionId})
+        INSERT INTO target_profiles (id, name, context_id, current_revision_id)
+        VALUES (${id}, ${name}, ${input.contextId}, ${revisionId})
       `;
       await sql`
         INSERT INTO target_profile_revisions (
@@ -92,25 +92,26 @@ export class TargetProfiles {
           ${sql.json(configuration as postgres.JSONValue)}, ${actorUserId}
         )
       `;
-      return requireProfileForPrompt(sql, input.promptId);
+      return requireProfileForContext(sql, input.contextId);
     });
   }
 
-  /** Reads the current profile revision for a prompt without creating a default. */
-  async getProfileForPrompt(promptId: string): Promise<TargetProfile> {
-    return this.#database.run((sql) => requireProfileForPrompt(sql, promptId));
+  /** Reads the current profile revision for a context without creating a default. */
+  async getProfileForContext(contextId: string): Promise<TargetProfile> {
+    return this.#database.run((sql) => requireProfileForContext(sql, contextId));
   }
 
-  /** Persists the vanilla AI SDK agent only when a prompt has no explicit target override. */
-  async ensureProfileForPrompt(actorUserId: string, promptId: string): Promise<TargetProfile> {
-    await this.#prompts.getPrompt(promptId);
+  /** Persists a default profile for prompt or skill execution only when the context has no explicit target override. */
+  async ensureProfileForContext(actorUserId: string, contextId: string): Promise<TargetProfile> {
+    const context = await this.#contexts.getContext(contextId);
+    const name = context.skill ? "Skill agent" : "AI SDK agent";
     const id = randomUUID();
     const revisionId = randomUUID();
     return this.#database.transaction(async (sql) => {
       const [created] = await sql<{ id: string }[]>`
-        INSERT INTO target_profiles (id, name, prompt_id, current_revision_id)
-        VALUES (${id}, 'AI SDK agent', ${promptId}, ${revisionId})
-        ON CONFLICT (prompt_id) DO NOTHING
+        INSERT INTO target_profiles (id, name, context_id, current_revision_id)
+        VALUES (${id}, ${name}, ${contextId}, ${revisionId})
+        ON CONFLICT (context_id) DO NOTHING
         RETURNING id
       `;
       if (created) {
@@ -121,7 +122,7 @@ export class TargetProfiles {
           VALUES (${revisionId}, ${id}, 1, '', ${sql.json({})}, ${actorUserId})
         `;
       }
-      return requireProfileForPrompt(sql, promptId);
+      return requireProfileForContext(sql, contextId);
     });
   }
 
@@ -135,7 +136,7 @@ export class TargetProfiles {
     const configuration = targetConfigurationSchema.parse(input.configuration);
     return this.#database.transaction(async (sql) => {
       const [current] = await sql<ProfileHeadRow[]>`
-        SELECT prompt_id, current_revision_id
+        SELECT context_id, current_revision_id
         FROM target_profiles
         WHERE id = ${input.profileId}
         FOR UPDATE
@@ -168,25 +169,25 @@ export class TargetProfiles {
         SET current_revision_id = ${revisionId}
         WHERE id = ${input.profileId}
       `;
-      return requireProfileForPrompt(sql, current.promptId);
+      return requireProfileForContext(sql, current.contextId);
     });
   }
 
-  /** Resolves only revisions belonging to both the requested profile and prompt. */
+  /** Resolves only revisions belonging to both the requested profile and context. */
   async getRevision(
-    promptId: string,
+    contextId: string,
     profileId: string,
     revisionId: string,
   ): Promise<TargetProfile> {
     return this.#database.run((sql) =>
-      requireProfileRevision(sql, promptId, profileId, revisionId),
+      requireProfileRevision(sql, contextId, profileId, revisionId),
     );
   }
 }
 
 async function requireProfileRevision(
   sql: DatabaseClient,
-  promptId: string,
+  contextId: string,
   profileId: string,
   revisionId: string,
 ): Promise<TargetProfile> {
@@ -200,11 +201,11 @@ async function requireProfileRevision(
     FROM target_profiles
     JOIN target_profile_revisions
       ON target_profile_revisions.target_profile_id = target_profiles.id
-    WHERE target_profiles.prompt_id = ${promptId}
+    WHERE target_profiles.context_id = ${contextId}
       AND target_profiles.id = ${profileId}
       AND target_profile_revisions.id = ${revisionId}
   `;
-  if (!row) throw new TargetProfileNotFoundError(promptId);
+  if (!row) throw new TargetProfileNotFoundError(contextId);
   return {
     configuration: targetConfigurationSchema.parse(row.configuration),
     id: row.id,
@@ -214,9 +215,9 @@ async function requireProfileRevision(
   };
 }
 
-async function requireProfileForPrompt(
+async function requireProfileForContext(
   sql: DatabaseClient,
-  promptId: string,
+  contextId: string,
 ): Promise<TargetProfile> {
   const [row] = await sql<ProfileRow[]>`
     SELECT
@@ -228,9 +229,9 @@ async function requireProfileForPrompt(
     FROM target_profiles
     JOIN target_profile_revisions
       ON target_profile_revisions.id = target_profiles.current_revision_id
-    WHERE target_profiles.prompt_id = ${promptId}
+    WHERE target_profiles.context_id = ${contextId}
   `;
-  if (!row) throw new TargetProfileNotFoundError(promptId);
+  if (!row) throw new TargetProfileNotFoundError(contextId);
   return {
     configuration: targetConfigurationSchema.parse(row.configuration),
     id: row.id,

@@ -2,8 +2,8 @@
 
 import { RunQueue } from "../../app/queue.ts";
 import type { ModelContext } from "../../clients/llm/context.ts";
+import type { ContextSystem } from "../../context-system/index.ts";
 import type { Database } from "../../database/index.ts";
-import type { PromptSystem } from "../../prompt-system/index.ts";
 import type { TargetSystem } from "../../target/index.ts";
 import type { TargetRuns } from "../../target/runs/index.ts";
 import { evaluate, evaluateRecorded } from "../api.ts";
@@ -25,7 +25,7 @@ type RunCompletion = {
 
 const MAX_ACTIVE_EVALUATION_JOBS = 2;
 
-/** Coordinates prompt and target dependencies while persistence remains behind the run store. */
+/** Coordinates context and target dependencies while persistence remains behind the run store. */
 export class EvaluationRuns {
   readonly #completions = new Map<string, RunCompletion>();
   readonly #queue: RunQueue;
@@ -36,7 +36,7 @@ export class EvaluationRuns {
 
   constructor(
     database: Database,
-    prompts: PromptSystem,
+    contexts: ContextSystem,
     targets: TargetSystem,
     targetRuns: TargetRuns,
     models: ModelContext,
@@ -44,7 +44,7 @@ export class EvaluationRuns {
   ) {
     this.#store = new EvaluationRunStore(database);
     this.#targets = targets;
-    this.#preparation = new EvaluationPreparation(prompts, targets, targetRuns, models);
+    this.#preparation = new EvaluationPreparation(contexts, targets, targetRuns, models);
     this.#engine = engine;
     this.#queue = new RunQueue({
       name: "Evaluation",
@@ -166,10 +166,10 @@ export class EvaluationRuns {
     return this.#store.getSummary(runId, viewerUserId);
   }
 
-  /** Lists recent run summaries with an optional prompt scope and a bounded page size. */
+  /** Lists recent run summaries with an optional context scope and a bounded page size. */
   async listRuns(
     viewerUserId: string,
-    input: { limit?: number; promptId?: string } = {},
+    input: { limit?: number; contextId?: string } = {},
   ): Promise<EvaluationRunSummary[]> {
     return this.#store.list(viewerUserId, input);
   }
@@ -231,8 +231,8 @@ export class EvaluationRuns {
       } else {
         const pinnedTarget = await this.#targets.createPinnedTarget({
           actorUserId: run.startedByUserId,
-          promptId: run.promptId,
-          promptRevisionId: run.promptRevisionId,
+          contextId: run.contextId,
+          contextRevisionId: run.contextRevisionId,
           targetProfileId: run.targetProfileId ?? undefined,
           targetProfileRevisionId: run.targetProfileRevisionId ?? undefined,
           targetModel: run.targetModel,

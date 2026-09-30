@@ -1,4 +1,4 @@
-/** Reconstructs persisted and live assistant messages with copy actions and optional prompt or evaluation artifacts. */
+/** Reconstructs persisted and live assistant messages with copy actions and optional context or evaluation artifacts. */
 
 "use client";
 
@@ -35,9 +35,9 @@ import {
   ResponseTelemetryLine,
 } from "./response-telemetry";
 
-type PromptReference = {
-  promptId: string;
-  quote?: Extract<MessagePart, { type: "prompt-quote" }>;
+type ContextReference = {
+  contextId: string;
+  quote?: Extract<MessagePart, { type: "context-quote" }>;
   revisionId?: string;
 };
 
@@ -155,7 +155,7 @@ export function AssistantMessage({
   message,
   modelId,
   onEdit,
-  onPromptReference,
+  onContextReference,
   onRerun,
   streaming = false,
 }: {
@@ -164,7 +164,7 @@ export function AssistantMessage({
   message: ChatMessage;
   modelId?: string;
   onEdit?(message: ChatMessage, text: string): void;
-  onPromptReference(reference: PromptReference): void;
+  onContextReference(reference: ContextReference): void;
   onRerun?(): void;
   streaming?: boolean;
 }) {
@@ -209,7 +209,7 @@ export function AssistantMessage({
             .map((part, index) => (
               <MessagePartView
                 key={`${part.type}-${index}`}
-                onPromptReference={onPromptReference}
+                onContextReference={onContextReference}
                 part={part}
                 role={message.role}
               />
@@ -226,7 +226,7 @@ export function AssistantMessage({
       ) : (
         <>
           <MessageParts
-            onPromptReference={onPromptReference}
+            onContextReference={onContextReference}
             parts={message.parts}
             role={message.role}
           />
@@ -298,17 +298,17 @@ type ActivityPart = Extract<MessagePart, { type: "reasoning" | "tool" }>;
 type ToolPart = Extract<MessagePart, { type: "tool" }>;
 
 function MessageParts({
-  onPromptReference,
+  onContextReference,
   parts,
   role,
 }: {
-  onPromptReference(reference: PromptReference): void;
+  onContextReference(reference: ContextReference): void;
   parts: MessagePart[];
   role: ChatMessage["role"];
 }) {
   const rendered: ReactNode[] = [];
-  const revisions = parts.filter((part) => part.type === "prompt-revision");
-  const chronologicalParts = parts.filter((part) => part.type !== "prompt-revision");
+  const revisions = parts.filter((part) => part.type === "context-revision");
+  const chronologicalParts = parts.filter((part) => part.type !== "context-revision");
   let index = 0;
 
   while (index < chronologicalParts.length) {
@@ -317,7 +317,7 @@ function MessageParts({
       rendered.push(
         <MessagePartView
           key={`${part.type}-${index}`}
-          onPromptReference={onPromptReference}
+          onContextReference={onContextReference}
           part={part}
           role={role}
         />,
@@ -340,8 +340,8 @@ function MessageParts({
   for (const [revisionIndex, revision] of revisions.entries()) {
     rendered.push(
       <MessagePartView
-        key={`prompt-revision-${revisionIndex}`}
-        onPromptReference={onPromptReference}
+        key={`context-revision-${revisionIndex}`}
+        onContextReference={onContextReference}
         part={revision}
         role={role}
       />,
@@ -420,33 +420,35 @@ function activitySummary(reasoningCount: number, tools: ToolPart[]) {
 
 function toolAction(name: string) {
   if (name === "web_search_exa") return "web-search";
-  if (name === "read_prompt") return "read-prompt";
-  if (name === "edit_prompt") return "edit-prompt";
-  if (name === "create_prompt") return "create-prompt";
+  if (name === "read_context") return "read-context";
+  if (name === "edit_context") return "edit-context";
+  if (name === "create_context") return "create-context";
   if (name === "evaluate") return "evaluate";
-  if (name === "search_prompts") return "search-prompts";
-  if (name === "list_prompts") return "list-prompts";
+  if (name === "search_contexts") return "search-contexts";
+  if (name === "list_contexts") return "list-contexts";
   return name;
 }
 
 function toolActionSummary(action: string, count: number) {
   if (action === "web-search") return `Searched the web ${count} ${count === 1 ? "time" : "times"}`;
-  if (action === "read-prompt") return `Read ${count} ${count === 1 ? "prompt" : "prompts"}`;
-  if (action === "edit-prompt") return `Edited ${count} ${count === 1 ? "prompt" : "prompts"}`;
-  if (action === "create-prompt") return `Created ${count} ${count === 1 ? "prompt" : "prompts"}`;
+  if (action === "read-context") return `Read ${count} ${count === 1 ? "context" : "contexts"}`;
+  if (action === "edit-context") return `Edited ${count} ${count === 1 ? "context" : "contexts"}`;
+  if (action === "create-context")
+    return `Created ${count} ${count === 1 ? "context" : "contexts"}`;
   if (action === "evaluate") return `Ran ${count} ${count === 1 ? "evaluation" : "evaluations"}`;
-  if (action === "search-prompts")
-    return `Searched prompts ${count} ${count === 1 ? "time" : "times"}`;
-  if (action === "list-prompts") return `Listed prompts ${count} ${count === 1 ? "time" : "times"}`;
+  if (action === "search-contexts")
+    return `Searched contexts ${count} ${count === 1 ? "time" : "times"}`;
+  if (action === "list-contexts")
+    return `Listed contexts ${count} ${count === 1 ? "time" : "times"}`;
   return `Ran ${action} ${count} ${count === 1 ? "time" : "times"}`;
 }
 
 function MessagePartView({
-  onPromptReference,
+  onContextReference,
   part,
   role,
 }: {
-  onPromptReference(reference: PromptReference): void;
+  onContextReference(reference: ContextReference): void;
   part: MessagePart;
   role: ChatMessage["role"];
 }) {
@@ -479,11 +481,11 @@ function MessagePartView({
     return <Reasoning streaming={part.streaming} summary={part.summary} />;
   }
   if (part.type === "tool") return <Tool part={part} />;
-  if (part.type === "prompt-quote")
+  if (part.type === "context-quote")
     return (
       <button
         className="mb-2 block max-w-xl rounded-xl border bg-background/10 px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground"
-        onClick={() => onPromptReference({ promptId: part.promptId, quote: part })}
+        onClick={() => onContextReference({ contextId: part.contextId, quote: part })}
         type="button"
       >
         <span className="flex items-center gap-1.5 text-xs font-medium">
@@ -505,11 +507,13 @@ function MessagePartView({
         <span className="font-mono text-[10px] opacity-70">{part.runId.slice(0, 8)}</span>
       </Link>
     );
-  if (part.type === "prompt-revision")
+  if (part.type === "context-revision")
     return (
       <button
         className="mt-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium hover:bg-accent"
-        onClick={() => onPromptReference({ promptId: part.promptId, revisionId: part.revisionId })}
+        onClick={() =>
+          onContextReference({ contextId: part.contextId, revisionId: part.revisionId })
+        }
         type="button"
       >
         <GitCommitHorizontal aria-hidden="true" className="size-3.5" /> Review changes
